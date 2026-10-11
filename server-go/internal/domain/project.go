@@ -31,8 +31,8 @@ const (
 
 // ValidContentModes / ValidGenerationModes 用于校验。
 var (
-	ValidContentModes     = []ContentMode{ContentNarration, ContentDrama, ContentAd}
-	ValidGenerationModes  = []GenerationMode{GenerationStoryboard, GenerationReferenceVideo}
+	ValidContentModes    = []ContentMode{ContentNarration, ContentDrama, ContentAd}
+	ValidGenerationModes = []GenerationMode{GenerationStoryboard, GenerationReferenceVideo}
 )
 
 // IsValidContentMode 判断内容模式是否合法。
@@ -53,32 +53,6 @@ func IsValidGenerationMode(m string) bool {
 		}
 	}
 	return false
-}
-
-// AssetKind 是资产类型。四类资产共用一套抽象（对应 Python 的 ASSET_SPECS）。
-type AssetKind string
-
-const (
-	AssetCharacter AssetKind = "character"
-	AssetScene     AssetKind = "scene"
-	AssetProp      AssetKind = "prop"
-	AssetProduct   AssetKind = "product"
-)
-
-// AssetSpec 描述一类资产的存储契约。
-type AssetSpec struct {
-	Kind      AssetKind
-	BucketKey string // project.json 上的键名
-	Subdir    string // 项目目录下的子目录
-	SheetKey  string // 定妆图/设计稿字段名
-}
-
-// AssetSpecs 是资产规格的单一真相源，对应 lib/asset_types.ASSET_SPECS。
-var AssetSpecs = map[AssetKind]AssetSpec{
-	AssetCharacter: {Kind: AssetCharacter, BucketKey: "characters", Subdir: "characters", SheetKey: "character_sheet"},
-	AssetScene:     {Kind: AssetScene, BucketKey: "scenes", Subdir: "scenes", SheetKey: "scene_sheet"},
-	AssetProp:      {Kind: AssetProp, BucketKey: "props", Subdir: "props", SheetKey: "prop_sheet"},
-	AssetProduct:   {Kind: AssetProduct, BucketKey: "products", Subdir: "products", SheetKey: "product_sheet"},
 }
 
 // ProjectSubdirs 是创建项目时建立的子目录。
@@ -116,14 +90,14 @@ type Overview struct {
 
 // EpisodeMeta 是 project.json.episodes 的一项。
 type EpisodeMeta struct {
-	Episode       int    `json:"episode"`
-	Title         string `json:"title"`
-	ScriptFile    string `json:"script_file"`
-	DisplayEpisode *int  `json:"display_episode,omitempty"`
-	LedgerStatus  string `json:"ledger_status,omitempty"`
-	Hook          string `json:"hook,omitempty"`
-	SourceRange   *SourceRange `json:"source_range,omitempty"`
-	Outline       *Outline     `json:"outline,omitempty"`
+	Episode        int          `json:"episode"`
+	Title          string       `json:"title"`
+	ScriptFile     string       `json:"script_file"`
+	DisplayEpisode *int         `json:"display_episode,omitempty"`
+	LedgerStatus   string       `json:"ledger_status,omitempty"`
+	Hook           string       `json:"hook,omitempty"`
+	SourceRange    *SourceRange `json:"source_range,omitempty"`
+	Outline        *Outline     `json:"outline,omitempty"`
 }
 
 // SourceRange 记录该集在源文件中的字符区间。
@@ -137,39 +111,6 @@ type SourceRange struct {
 type Outline struct {
 	StoryBeats        []string `json:"story_beats,omitempty"`
 	NextEpisodeTeaser string   `json:"next_episode_teaser,omitempty"`
-}
-
-// Character 是角色资产条目。
-type Character struct {
-	Description             string   `json:"description"`
-	CharacterSheet          string   `json:"character_sheet,omitempty"`
-	VoiceStyle              string   `json:"voice_style,omitempty"`
-	ReferenceImage          string   `json:"reference_image,omitempty"`
-	ReferenceAudio          string   `json:"reference_audio,omitempty"`
-	CharacterAvatar         string   `json:"character_avatar,omitempty"`
-	VoiceNoticeDismissedAt  string   `json:"voice_notice_dismissed_at,omitempty"`
-	VoiceUpdatedAt          string   `json:"voice_updated_at,omitempty"`
-}
-
-// Scene 是场景资产条目。
-type Scene struct {
-	Description string `json:"description"`
-	SceneSheet  string `json:"scene_sheet,omitempty"`
-}
-
-// Prop 是道具资产条目。
-type Prop struct {
-	Description string `json:"description"`
-	PropSheet   string `json:"prop_sheet,omitempty"`
-}
-
-// Product 是产品资产条目。
-type Product struct {
-	Description     string   `json:"description"`
-	ProductSheet    string   `json:"product_sheet,omitempty"`
-	Brand           string   `json:"brand,omitempty"`
-	ReferenceImages []string `json:"reference_images,omitempty"`
-	SellingPoints   []string `json:"selling_points,omitempty"`
 }
 
 // ProjectMetadata 是 project.json.metadata。
@@ -190,45 +131,47 @@ type ProjectFile struct {
 	GenerationMode string `json:"generation_mode"`
 	GridStoryboard bool   `json:"grid_storyboard,omitempty"`
 
-	AspectRatio       string `json:"aspect_ratio,omitempty"`
-	Style             string `json:"style"`
-	StyleTemplateID   string `json:"style_template_id,omitempty"`
-	StyleImage        string `json:"style_image,omitempty"`
-	DefaultDuration   *int   `json:"default_duration,omitempty"`
-	TargetDuration    *int   `json:"target_duration,omitempty"`
-	Brief             string `json:"brief,omitempty"`
-	SourceLanguage    string `json:"source_language,omitempty"`
-	SpeechRate        *float64 `json:"speech_rate_units_per_second,omitempty"`
+	AspectRatio     string   `json:"aspect_ratio,omitempty"`
+	Style           string   `json:"style"`
+	StyleTemplateID string   `json:"style_template_id,omitempty"`
+	StyleImage      string   `json:"style_image,omitempty"`
+	DefaultDuration *int     `json:"default_duration,omitempty"`
+	TargetDuration  *int     `json:"target_duration,omitempty"`
+	Brief           string   `json:"brief,omitempty"`
+	SourceLanguage  string   `json:"source_language,omitempty"`
+	SpeechRate      *float64 `json:"speech_rate_units_per_second,omitempty"`
 
-	NarrationVoice      string   `json:"narration_voice,omitempty"`
-	NarrationSpeed      *float64 `json:"narration_speed,omitempty"`
-	VideoGenerateAudio  *bool    `json:"video_generate_audio,omitempty"`
+	NarrationVoice     string   `json:"narration_voice,omitempty"`
+	NarrationSpeed     *float64 `json:"narration_speed,omitempty"`
+	VideoGenerateAudio *bool    `json:"video_generate_audio,omitempty"`
 
 	// 后端覆盖（可选，空 = 继承全局）
-	VideoBackend         string            `json:"video_backend,omitempty"`
-	VideoProviderI2V     string            `json:"video_provider_i2v,omitempty"`
-	VideoProviderR2V     string            `json:"video_provider_r2v,omitempty"`
-	ImageProviderT2I     string            `json:"image_provider_t2i,omitempty"`
-	ImageProviderI2I     string            `json:"image_provider_i2i,omitempty"`
-	DefaultImageBackend  string            `json:"default_image_backend,omitempty"`
-	AudioBackend         string            `json:"audio_backend,omitempty"`
-	TextBackendSimple    string            `json:"text_backend_simple,omitempty"`
-	TextBackendComplex   string            `json:"text_backend_complex,omitempty"`
-	DefaultTextBackend   string            `json:"default_text_backend,omitempty"`
-	ModelSettings        map[string]map[string]string `json:"model_settings,omitempty"`
+	VideoBackend        string                       `json:"video_backend,omitempty"`
+	VideoProviderI2V    string                       `json:"video_provider_i2v,omitempty"`
+	VideoProviderR2V    string                       `json:"video_provider_r2v,omitempty"`
+	ImageProviderT2I    string                       `json:"image_provider_t2i,omitempty"`
+	ImageProviderI2I    string                       `json:"image_provider_i2i,omitempty"`
+	DefaultImageBackend string                       `json:"default_image_backend,omitempty"`
+	AudioBackend        string                       `json:"audio_backend,omitempty"`
+	TextBackendSimple   string                       `json:"text_backend_simple,omitempty"`
+	TextBackendComplex  string                       `json:"text_backend_complex,omitempty"`
+	DefaultTextBackend  string                       `json:"default_text_backend,omitempty"`
+	ModelSettings       map[string]map[string]string `json:"model_settings,omitempty"`
 
 	Overview *Overview `json:"overview,omitempty"`
 
-	CharacterRelations []map[string]any `json:"character_relations,omitempty"`
+	// 关系图是 {revision, edges[], suppressed_pairs[], node_positions{}} 结构，
+	// 节点身份直接用角色名，因此改名/删角色都要同步它。
+	CharacterRelations map[string]any `json:"character_relations,omitempty"`
 
 	Metadata ProjectMetadata `json:"metadata,omitempty"`
 
 	Episodes []EpisodeMeta `json:"episodes,omitempty"`
 
-	Characters map[string]*Character `json:"characters,omitempty"`
-	Scenes     map[string]*Scene     `json:"scenes,omitempty"`
-	Props      map[string]*Prop      `json:"props,omitempty"`
-	Products   map[string]*Product   `json:"products,omitempty"`
+	Characters AssetBucket `json:"characters,omitempty"`
+	Scenes     AssetBucket `json:"scenes,omitempty"`
+	Props      AssetBucket `json:"props,omitempty"`
+	Products   AssetBucket `json:"products,omitempty"`
 }
 
 // NewProjectFile 构造新项目的 project.json。
@@ -244,10 +187,10 @@ func NewProjectFile(title string, mode ContentMode, genMode GenerationMode) *Pro
 		AspectRatio:    "9:16",
 		Metadata:       ProjectMetadata{CreatedAt: now, UpdatedAt: now},
 		Episodes:       []EpisodeMeta{},
-		Characters:     map[string]*Character{},
-		Scenes:         map[string]*Scene{},
-		Props:          map[string]*Prop{},
-		Products:       map[string]*Product{},
+		Characters:     AssetBucket{},
+		Scenes:         AssetBucket{},
+		Props:          AssetBucket{},
+		Products:       AssetBucket{},
 	}
 }
 
@@ -256,79 +199,127 @@ func (p *ProjectFile) IsReferenceVideo() bool {
 	return p.GenerationMode == string(GenerationReferenceVideo)
 }
 
-// AssetBucket 返回指定资产类型的 map；未知类型返回 nil。
-func (p *ProjectFile) AssetBucket(kind AssetKind) any {
+// BucketRef 返回指定类型资产桶的指针，供写入路径就地改桶。
+func (p *ProjectFile) BucketRef(kind AssetKind) (*AssetBucket, bool) {
 	switch kind {
 	case AssetCharacter:
-		return p.Characters
+		return &p.Characters, true
 	case AssetScene:
-		return p.Scenes
+		return &p.Scenes, true
 	case AssetProp:
-		return p.Props
+		return &p.Props, true
 	case AssetProduct:
-		return p.Products
+		return &p.Products, true
 	}
-	return nil
+	return nil, false
 }
 
-// Validate 校验 project.json 的结构约束（对应 lib/data_validator 的核心部分）。
-func (p *ProjectFile) Validate() error {
+// ValidateErrors 收集 project.json 的全部结构问题。
+//
+// 写盘守卫用的是「不更坏」语义（见 service.ProjectStore.Update）：存量项目可能本就带
+// 着历史遗留问题，只要这次写入没有引入**新的**错误就不该拒绝，否则老项目的资产一改都写不回去。
+func (p *ProjectFile) ValidateErrors() []string {
+	var errs []string
+	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }
+
 	if p.Title == "" {
-		return fmt.Errorf("title is required")
+		add("title is required")
 	}
 	if !IsValidContentMode(p.ContentMode) {
-		return fmt.Errorf("content_mode must be one of narration/drama/ad, got %q", p.ContentMode)
+		add("content_mode must be one of narration/drama/ad, got %q", p.ContentMode)
 	}
 	if !IsValidGenerationMode(p.GenerationMode) {
-		return fmt.Errorf("generation_mode must be storyboard or reference_video, got %q", p.GenerationMode)
+		add("generation_mode must be storyboard or reference_video, got %q", p.GenerationMode)
 	}
 	if p.SourceKind != "" && p.SourceKind != "novel" && p.SourceKind != "screenplay" {
-		return fmt.Errorf("source_kind must be novel or screenplay, got %q", p.SourceKind)
+		add("source_kind must be novel or screenplay, got %q", p.SourceKind)
 	}
 	if strings.TrimSpace(p.Style) == "" {
-		return fmt.Errorf("style is required")
+		add("style is required")
 	}
 	if p.ContentMode == string(ContentAd) {
 		// ad 项目：时长必填、禁止 default_duration、禁止宫格、单集
 		if p.TargetDuration == nil || *p.TargetDuration <= 0 {
-			return fmt.Errorf("target_duration must be a positive integer for ad projects")
+			add("target_duration must be a positive integer for ad projects")
 		}
 		if p.DefaultDuration != nil {
-			return fmt.Errorf("default_duration is not allowed for ad projects")
+			add("default_duration is not allowed for ad projects")
 		}
 		if p.GridStoryboard {
-			return fmt.Errorf("grid_storyboard is not allowed for ad projects")
+			add("grid_storyboard is not allowed for ad projects")
 		}
 		if len(p.Episodes) != 1 || p.Episodes[0].Episode != 1 {
-			return fmt.Errorf("ad projects must have exactly one episode with episode=1")
+			add("ad projects must have exactly one episode with episode=1")
 		}
 	} else if p.TargetDuration != nil {
-		return fmt.Errorf("target_duration is only allowed for ad projects")
+		add("target_duration is only allowed for ad projects")
 	}
 	for _, ep := range p.Episodes {
 		if ep.ScriptFile == "" {
-			return fmt.Errorf("episode %d: script_file is required", ep.Episode)
+			add("episode %d: script_file is required", ep.Episode)
 		}
 	}
-	for name, c := range p.Characters {
-		if c == nil || strings.TrimSpace(c.Description) == "" {
-			return fmt.Errorf("character %q: description is required", name)
+	for _, kind := range AssetTypeOrder {
+		bucket, ok := p.BucketRef(kind)
+		if !ok || bucket == nil {
+			continue
+		}
+		for name, entry := range *bucket {
+			if entry == nil || strings.TrimSpace(entry.Description()) == "" {
+				add("%s %q: description is required", kind, name)
+			}
 		}
 	}
-	for name, s := range p.Scenes {
-		if s == nil || strings.TrimSpace(s.Description) == "" {
-			return fmt.Errorf("scene %q: description is required", name)
-		}
-	}
-	for name, pr := range p.Props {
-		if pr == nil || strings.TrimSpace(pr.Description) == "" {
-			return fmt.Errorf("prop %q: description is required", name)
-		}
-	}
-	for name, pd := range p.Products {
-		if pd == nil || strings.TrimSpace(pd.Description) == "" {
-			return fmt.Errorf("product %q: description is required", name)
-		}
+	return errs
+}
+
+// Validate 返回第一个结构问题，无问题时返回 nil。
+func (p *ProjectFile) Validate() error {
+	if errs := p.ValidateErrors(); len(errs) > 0 {
+		return errors.New(errs[0])
 	}
 	return nil
+}
+
+// Clone 深拷贝项目，供 dry_run 与「不更坏」比对在副本上试算。
+func (p *ProjectFile) Clone() *ProjectFile {
+	out := *p
+	if p.Episodes != nil {
+		out.Episodes = append([]EpisodeMeta(nil), p.Episodes...)
+	}
+	if v := cloneValue(p.Characters); v != nil {
+		out.Characters = v.(AssetBucket)
+	}
+	if v := cloneValue(p.Scenes); v != nil {
+		out.Scenes = v.(AssetBucket)
+	}
+	if v := cloneValue(p.Props); v != nil {
+		out.Props = v.(AssetBucket)
+	}
+	if v := cloneValue(p.Products); v != nil {
+		out.Products = v.(AssetBucket)
+	}
+	if v := cloneValue(p.CharacterRelations); v != nil {
+		out.CharacterRelations = v.(map[string]any)
+	}
+	if p.Overview != nil {
+		overview := *p.Overview
+		out.Overview = &overview
+	}
+	return &out
+}
+
+// NewErrors 返回 after 中不在 allow 里的错误，即本次写入新引入的问题。
+func NewErrors(after, allow []string) []string {
+	allowed := make(map[string]bool, len(allow))
+	for _, e := range allow {
+		allowed[e] = true
+	}
+	var out []string
+	for _, e := range after {
+		if !allowed[e] {
+			out = append(out, e)
+		}
+	}
+	return out
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/migrations"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -61,8 +62,15 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := gdb.AutoMigrate(repository.AutoMigrateTargets()...); err != nil {
+	res, err := db.Migrate(gdb, dialect, migrations.FS())
+	if err != nil {
 		return err
+	}
+	for _, v := range res.Stamped {
+		log.Info("migration stamped onto existing schema", "version", v)
+	}
+	for _, v := range res.Applied {
+		log.Info("migration applied", "version", v)
 	}
 
 	users := repository.NewUserRepository(gdb)
@@ -99,6 +107,7 @@ func run(log *slog.Logger) error {
 		Auth:    authSvc,
 		Agent:   agentRT,
 	}
+	rt.Assets = service.NewAssetService(rt.Store)
 
 	engine := app.New(rt)
 	srv := &http.Server{
@@ -152,4 +161,3 @@ func gormLogLevel(level string) logger.LogLevel {
 		return logger.Warn
 	}
 }
-

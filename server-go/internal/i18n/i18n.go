@@ -34,6 +34,29 @@ var bundles = map[Locale]map[string]string{
 		"invalid_request_body":   "请求体格式错误",
 		"feature_disabled":       "功能未开启：{feature}",
 		"validation_failed":      "参数校验失败",
+
+		"asset_invalid_name": "资产名不合法：{name}",
+		// 关闭声音过渡横幅时用的确认戳已过期：横幅渲染后声音又被更新过。
+		"asset_voice_notice_dismissed_at_stale": "声音已再次更新，请刷新后重新确认",
+		"asset_rename_file_conflict":            "改名目标文件已存在：{filename}",
+		"asset_rename_rejected":                 "资产改名未通过结构校验，未做任何改动：{name}",
+
+		"character_already_exists": "角色已存在：{name}",
+		"character_not_found":      "角色不存在：{name}",
+		"character_deleted":        "角色已删除：{name}",
+
+		// scene 用历史前缀 project_scene_*，与 Python 侧 _I18N_KEYS 一致，前端按此出文案。
+		"project_scene_already_exists": "场景已存在：{name}",
+		"project_scene_not_found":      "场景不存在：{name}",
+		"project_scene_deleted":        "场景已删除：{name}",
+
+		"prop_already_exists": "道具已存在：{name}",
+		"prop_not_found":      "道具不存在：{name}",
+		"prop_deleted":        "道具已删除：{name}",
+
+		"product_already_exists": "产品已存在：{name}",
+		"product_not_found":      "产品不存在：{name}",
+		"product_deleted":        "产品已删除：{name}",
 	},
 	EN: {
 		"internal_server_error":  "Internal server error",
@@ -48,6 +71,27 @@ var bundles = map[Locale]map[string]string{
 		"invalid_request_body":   "Invalid request body",
 		"feature_disabled":       "Feature disabled: {feature}",
 		"validation_failed":      "Validation failed",
+
+		"asset_invalid_name":                    "Invalid asset name: {name}",
+		"asset_voice_notice_dismissed_at_stale": "The voice changed again; reload and confirm.",
+		"asset_rename_file_conflict":            "Rename target already exists: {filename}",
+		"asset_rename_rejected":                 "Rename rejected by structure validation: {name}",
+
+		"character_already_exists": "Character already exists: {name}",
+		"character_not_found":      "Character not found: {name}",
+		"character_deleted":        "Character deleted: {name}",
+
+		"project_scene_already_exists": "Scene already exists: {name}",
+		"project_scene_not_found":      "Scene not found: {name}",
+		"project_scene_deleted":        "Scene deleted: {name}",
+
+		"prop_already_exists": "Prop already exists: {name}",
+		"prop_not_found":      "Prop not found: {name}",
+		"prop_deleted":        "Prop deleted: {name}",
+
+		"product_already_exists": "Product already exists: {name}",
+		"product_not_found":      "Product not found: {name}",
+		"product_deleted":        "Product deleted: {name}",
 	},
 	VI: {
 		"internal_server_error":  "Lỗi máy chủ nội bộ",
@@ -62,6 +106,27 @@ var bundles = map[Locale]map[string]string{
 		"invalid_request_body":   "Nội dung yêu cầu không hợp lệ",
 		"feature_disabled":       "Tính năng chưa bật: {feature}",
 		"validation_failed":      "Xác thực không thành công",
+
+		"asset_invalid_name":                    "Tên tài nguyên không hợp lệ: {name}",
+		"asset_voice_notice_dismissed_at_stale": "Giọng đã thay đổi lại; hãy tải lại và xác nhận.",
+		"asset_rename_file_conflict":            "Tên tệp đích đã tồn tại: {filename}",
+		"asset_rename_rejected":                 "Đổi tên bị từ chối bởi kiểm tra cấu trúc: {name}",
+
+		"character_already_exists": "Nhân vật đã tồn tại: {name}",
+		"character_not_found":      "Không tìm thấy nhân vật: {name}",
+		"character_deleted":        "Đã xóa nhân vật: {name}",
+
+		"project_scene_already_exists": "Cảnh đã tồn tại: {name}",
+		"project_scene_not_found":      "Không tìm thấy cảnh: {name}",
+		"project_scene_deleted":        "Đã xóa cảnh: {name}",
+
+		"prop_already_exists": "Đạo cụ đã tồn tại: {name}",
+		"prop_not_found":      "Không tìm thấy đạo cụ: {name}",
+		"prop_deleted":        "Đã xóa đạo cụ: {name}",
+
+		"product_already_exists": "Sản phẩm đã tồn tại: {name}",
+		"product_not_found":      "Không tìm thấy sản phẩm: {name}",
+		"product_deleted":        "Đã xóa sản phẩm: {name}",
 	},
 }
 

@@ -37,7 +37,7 @@ func (r *UserRepository) APIKeyUser(keyHash string) (*auth.User, bool) {
 	if err := r.db.Where("key_hash = ?", keyHash).First(&k).Error; err != nil {
 		return nil, false
 	}
-	if k.ExpiresAt != nil && k.ExpiresAt.Time.Before(time.Now()) {
+	if !k.ExpiresAt.IsZero() && k.ExpiresAt.Before(time.Now()) {
 		return nil, false
 	}
 	_ = r.db.Model(&APIKey{}).Where("id = ?", k.ID).

@@ -22,6 +22,7 @@ type Runtime struct {
 	DB      *gorm.DB
 	Dialect db.Dialect
 	Store   *service.ProjectStore
+	Assets  *service.AssetService
 	Hub     *service.EventHub
 	Auth    *auth.Service
 	Agent   *agent.Runtime
@@ -80,6 +81,8 @@ func registerProjects(v1 *gin.RouterGroup, rt *Runtime) {
 	authed.GET("/projects/:name", transport.GetProject(deps))
 	authed.PATCH("/projects/:name", transport.UpdateProject(deps))
 	authed.DELETE("/projects/:name", transport.DeleteProject(deps))
+
+	transport.RegisterAssets(authed, transport.AssetDeps{Assets: rt.Assets, Store: rt.Store})
 
 	// SSE 走 flexible 鉴权：EventSource 无法自定义 header，仅支持 ?token=。
 	sse := v1.Group("", rt.Auth.FlexibleMiddleware())

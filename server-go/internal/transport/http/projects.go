@@ -45,13 +45,13 @@ func ListProjects(d ProjectDeps) gin.HandlerFunc {
 
 // CreateProjectRequest 创建项目的请求体。
 type CreateProjectRequest struct {
-	Name            string `json:"name" binding:"required"`
-	Title           string `json:"title"`
-	ContentMode     string `json:"content_mode" binding:"required"`
-	GenerationMode  string `json:"generation_mode" binding:"required"`
-	Style           string `json:"style"`
-	AspectRatio     string `json:"aspect_ratio"`
-	GridStoryboard  bool   `json:"grid_storyboard"`
+	Name           string `json:"name" binding:"required"`
+	Title          string `json:"title"`
+	ContentMode    string `json:"content_mode" binding:"required"`
+	GenerationMode string `json:"generation_mode" binding:"required"`
+	Style          string `json:"style"`
+	AspectRatio    string `json:"aspect_ratio"`
+	GridStoryboard bool   `json:"grid_storyboard"`
 }
 
 // CreateProject 创建项目。
@@ -133,28 +133,35 @@ func UpdateProject(d ProjectDeps) gin.HandlerFunc {
 			}})
 			return
 		}
-		pf, err := d.Store.Get(name)
+		// 走 Update 而不是 Get+Save：写盘守卫是「不更坏」，存量项目自带历史遗留字段问题时
+		// 仍可改元数据，只要这次写入没有引入新的结构错误。
+		var updated *domain.ProjectFile
+		err := d.Store.Update(name, func(pf *domain.ProjectFile) error {
+			if req.Title != nil {
+				pf.Title = *req.Title
+			}
+			if req.Style != nil {
+				pf.Style = *req.Style
+			}
+			if req.AspectRatio != nil {
+				pf.AspectRatio = *req.AspectRatio
+			}
+			if req.Brief != nil {
+				pf.Brief = *req.Brief
+			}
+			updated = pf
+			return nil
+		})
 		if err != nil {
+			var invalid *service.ProjectInvalidError
+			if errors.As(err, &invalid) {
+				apperr.Abort(c, apperr.BadRequest("invalid_project", map[string]any{"reason": invalid.Error()}))
+				return
+			}
 			abortProjectErr(c, err)
 			return
 		}
-		if req.Title != nil {
-			pf.Title = *req.Title
-		}
-		if req.Style != nil {
-			pf.Style = *req.Style
-		}
-		if req.AspectRatio != nil {
-			pf.AspectRatio = *req.AspectRatio
-		}
-		if req.Brief != nil {
-			pf.Brief = *req.Brief
-		}
-		if err := d.Store.Save(name, pf); err != nil {
-			apperr.Abort(c, apperr.BadRequest("invalid_project", map[string]any{"reason": err.Error()}))
-			return
-		}
-		c.JSON(http.StatusOK, pf)
+		c.JSON(http.StatusOK, updated)
 	}
 }
 

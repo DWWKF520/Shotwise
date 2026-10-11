@@ -64,16 +64,16 @@ server-go/
 
 ## 4. 迁移阶段
 
-| 阶段 | 内容 | 完成判据 |
-|---|---|---|
-| **P0 骨架** | gin 装配、配置、日志、i18n、错误信封、健康检查、DB 连接与迁移执行器 | `go build ./...` 通过，`/health` 返回 200 |
-| **P1 数据层** | 53 表 GORM 模型 + 0001_init + repository；project.json / 剧集 JSON 读写与校验 | 能对既有 `projects/.shotwise.db` 读全表 |
-| **P2 领域与资产** | projects / characters / scenes / props / products / files / versions | 项目 CRUD + 资产 CRUD 冒烟通过 |
-| **P3 供应商与计费** | registry、resolver 四级解析、backend 接口、pricing、api_calls | 一次真实图片生成成功并正确记账 |
-| **P4 生成流水线** | 队列去重、双通道 worker、容量表、熔断、租约、resume、ffmpeg | 批量生成 + 取消 + 断点续传冒烟 |
-| **P5 智能体** | Eino ChatModelAgent + GuardedTool + 37 工具 + SSE entry 流 | 一条完整会话跑通（含 Skill 调用与 AskUserQuestion） |
-| **P6 长尾 router** | workflows(41) / memories(15) / creative_boards(16) / publishing / media_* | 端点覆盖对齐清单 |
-| **P7 切换** | 前端指向 Go 服务，Python 服务下线 | 前端全流程回归通过 |
+| 阶段 | 内容 | 完成判据 | 状态 |
+|---|---|---|---|
+| **P0 骨架** | gin 装配、配置、日志、i18n、错误信封、健康检查、DB 连接与迁移执行器 | `go build ./...` 通过，`/health` 返回 200 | 完成 |
+| **P1 数据层** | 53 表 GORM 模型 + 0001_init + repository；project.json / 剧集 JSON 读写与校验 | 能对既有 `projects/.shotwise.db` 读全表 | 完成（0001_init 基线 + 53 表模型 + 执行器；剧集 JSON 校验待随 P2 补） |
+| **P2 领域与资产** | projects / characters / scenes / props / products / files / versions | 项目 CRUD + 资产 CRUD 冒烟通过 | 进行中（项目 CRUD + 四类资产 16 端点含级联改名已通；files / versions / 全局 assets 库 / 剧集 JSON 校验未动） |
+| **P3 供应商与计费** | registry、resolver 四级解析、backend 接口、pricing、api_calls | 一次真实图片生成成功并正确记账 | 未开始 |
+| **P4 生成流水线** | 队列去重、双通道 worker、容量表、熔断、租约、resume、ffmpeg | 批量生成 + 取消 + 断点续传冒烟 | 未开始 |
+| **P5 智能体** | Eino ChatModelAgent + GuardedTool + 37 工具 + SSE entry 流 | 一条完整会话跑通（含 Skill 调用与 AskUserQuestion） | 起步（ReAct 循环与最小工具有骨架，policy/沙箱/事件日志未动） |
+| **P6 长尾 router** | workflows(41) / memories(15) / creative_boards(16) / publishing / media_* | 端点覆盖对齐清单 | 未开始 |
+| **P7 切换** | 前端指向 Go 服务，Python 服务下线 | 前端全流程回归通过 | 未开始 |
 
 ## 5. 不可回退的语义（必须先钉死）
 
