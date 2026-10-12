@@ -71,6 +71,13 @@ func Spec(kind AssetKind) (AssetSpec, bool) {
 	return s, ok
 }
 
+// IsGlobalLibraryKind 判断类型字符串是否可进全局资产库（assets 表）。
+// 库是单图列模型，多图列表型的 product 暂不进入。
+func IsGlobalLibraryKind(assetType string) bool {
+	spec, ok := Spec(AssetKind(assetType))
+	return ok && spec.InGlobalLibrary
+}
+
 // WritableStringFields 是 PATCH 可写的字符串字段集合（description + sheet + extra）。
 func (s AssetSpec) WritableStringFields() []string {
 	return append([]string{"description", s.SheetKey}, s.ExtraStringFields...)
