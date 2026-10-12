@@ -3,144 +3,73 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
-	"github.com/cloudwego/eino/schema"
-	jsonschema "github.com/eino-contrib/jsonschema"
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/shotwise/shotwise/internal/agent/policy"
 )
 
-// Kind 标识一次工具调用的访问性质，供 GuardedTool 的权限策略分派。
-type Kind int
-
-const (
-	KindRead  Kind = iota // 只读（Read/Glob/Grep/list_*）
-	KindWrite             // 写文件（Write/Edit/patch_*）
-	KindBash              // 执行命令（Bash）
-	KindAction            // 业务动作（generate_* 等，不需文件系统围栏）
-)
-
-// Invocation 是一次工具调用的上下文，交给 Guard 做权限裁决。
-type Invocation struct {
-	ToolName string
-	Kind     Kind
-	Args     json.RawMessage
+// GuardMiddleware 把 policy.ToolGuard 接入 Eino 的 middleware 链
+// （设计文档 03-agent-runtime-eino.md §12）：一个包裹点覆盖全部工具——
+// 业务工具、filesystem 注入的文件/Shell 工具、Subagent AgentTool。
+//
+// 语义对应：
+//   - Pre error → deny：错误信息以 is_error 信封回灌模型（对应 canUseTool deny）
+//   - Pre 返回改写 args → updated_input（对应 Bash env 剥离）
+//   - Post error → 工具回包被替换为失败信封（对应 PostToolUse 校验）
+type GuardMiddleware struct {
+	*adk.BaseChatModelAgentMiddleware
+	guard policy.ToolGuard
 }
 
-// Guard 承担原 Claude Agent SDK 的权限链（PreToolUse / canUseTool / 沙箱投影）。
-// Check 返回 error 即拒绝；返回的 error message 会原样回灌给模型作为工具失败反馈。
-type Guard interface {
-	Check(ctx context.Context, inv Invocation) error
+// NewGuardMiddleware 用给定围栏策略构造 middleware。
+func NewGuardMiddleware(guard policy.ToolGuard) *GuardMiddleware {
+	return &GuardMiddleware{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}, guard: guard}
 }
 
-// Tool 是一个可被模型调用的 Eino 工具。对应文档里 37 个进程内 MCP 工具的形态。
-type Tool interface {
-	Name() string
-	Kind() Kind
-	Info() *schema.ToolInfo
-	Run(ctx context.Context, args json.RawMessage) (json.RawMessage, error)
-}
-
-// GuardedTool 装饰任意 Tool，在 Run 前后调用 Guard 做权限/hook 裁决。
-// 这是文档 4.1 节 ★核心 的落点：替代 hooks + canUseTool。
-type GuardedTool struct {
-	inner Tool
-	guard Guard
-}
-
-// NewGuardedTool 包裹一个工具并绑定权限策略。
-func NewGuardedTool(inner Tool, guard Guard) *GuardedTool {
-	return &GuardedTool{inner: inner, guard: guard}
-}
-
-func (g *GuardedTool) Name() string         { return g.inner.Name() }
-func (g *GuardedTool) Kind() Kind           { return g.inner.Kind() }
-func (g *GuardedTool) Info() *schema.ToolInfo { return g.inner.Info() }
-
-func (g *GuardedTool) Run(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
-	if g.guard != nil {
-		if err := g.guard.Check(ctx, Invocation{ToolName: g.inner.Name(), Kind: g.inner.Kind(), Args: args}); err != nil {
-			// 拒绝信息以工具失败形式回灌模型，与 Python 侧 is_error 约定一致。
-			return denyResult(err.Error()), nil
+// WrapInvokableToolCall 实现 middleware：在真实工具执行前后调用 ToolGuard。
+func (m *GuardMiddleware) WrapInvokableToolCall(ctx context.Context, ep adk.InvokableToolCallEndpoint, tc *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
+	if m.guard == nil {
+		return ep, nil
+	}
+	return func(ctx context.Context, args string, opts ...tool.Option) (string, error) {
+		call := policy.ToolCall{Name: tc.Name, Args: json.RawMessage(args)}
+		rewritten, err := m.guard.Pre(ctx, call)
+		if err != nil {
+			// deny：错误信息以工具失败信封回灌模型，而非抛错中断轮次。
+			return denyEnvelope(err.Error()), nil
 		}
-	}
-	return g.inner.Run(ctx, args)
+		argIn := args
+		if rewritten != nil {
+			argIn = string(rewritten)
+		}
+		res, runErr := ep(ctx, argIn, opts...)
+		if perr := m.guard.Post(ctx, call, res); perr != nil {
+			return denyEnvelope(perr.Error()), nil
+		}
+		return res, runErr
+	}, nil
 }
 
-// ToolSet 聚合一组工具，并产出 BindTools 所需的 []*schema.ToolInfo。
-type ToolSet struct {
-	tools []Tool
-	byName map[string]Tool
+// denyEnvelope 生成与 Python 侧约定一致的工具失败回包：
+// {"content":[{"type":"text","text":<msg>}],"is_error":true}
+func denyEnvelope(msg string) string {
+	return toolEnvelope(msg, true)
 }
 
-// NewToolSet 构造空工具集。
-func NewToolSet() *ToolSet {
-	return &ToolSet{byName: map[string]Tool{}}
+// okEnvelope 生成工具成功回包（content 文本）。
+func okEnvelope(text string) string {
+	return toolEnvelope(text, false)
 }
 
-// Register 注册一个工具（自动包一层 GuardedTool，guard 为 nil 时仅透传）。
-func (ts *ToolSet) Register(t Tool, guard Guard) {
-	wrapped := NewGuardedTool(t, guard)
-	ts.tools = append(ts.tools, wrapped)
-	ts.byName[wrapped.Name()] = wrapped
-}
-
-// Get 按名取工具。
-func (ts *ToolSet) Get(name string) (Tool, bool) {
-	t, ok := ts.byName[name]
-	return t, ok
-}
-
-// Infos 返回所有工具的 schema（用于 model.BindTools）。
-func (ts *ToolSet) Infos() []*schema.ToolInfo {
-	out := make([]*schema.ToolInfo, 0, len(ts.tools))
-	for _, t := range ts.tools {
-		out = append(out, t.Info())
-	}
-	return out
-}
-
-// Run 按名执行工具；未知工具返回结构化错误。
-func (ts *ToolSet) Run(ctx context.Context, name string, args json.RawMessage) (json.RawMessage, error) {
-	t, ok := ts.byName[name]
-	if !ok {
-		return denyResult(fmt.Sprintf("unknown tool: %s", name)), nil
-	}
-	return t.Run(ctx, args)
-}
-
-// toolInfo 用 JSON Schema 构造 *schema.ToolInfo。
-func toolInfo(name, desc string, schemaObj any) *schema.ToolInfo {
-	js := toJSONSchema(schemaObj)
-	return &schema.ToolInfo{
-		Name:        name,
-		Desc:        desc,
-		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(js),
-	}
-}
-
-// toJSONSchema 把任意结构体转成 jsonschema.Schema。
-func toJSONSchema(v any) *jsonschema.Schema {
-	// Reflect 反射生成 schema；v 为 nil 表示无参数。
-	if v == nil {
-		return &jsonschema.Schema{Type: "object"}
-	}
-	return jsonschema.Reflect(v)
-}
-
-// denyResult 生成与 Python 侧 {"is_error":true,...} 一致的工具失败回包。
-func denyResult(msg string) json.RawMessage {
-	b, _ := json.Marshal(map[string]any{
-		"content": []map[string]any{{"type": "text", "text": msg}},
-		"is_error": true,
+func toolEnvelope(text string, isError bool) string {
+	b, err := json.Marshal(map[string]any{
+		"content":  []map[string]any{{"type": "text", "text": text}},
+		"is_error": isError,
 	})
-	return b
-}
-
-// okResult 生成工具成功回包（content 文本）。
-func okResult(text string) json.RawMessage {
-	b, _ := json.Marshal(map[string]any{
-		"content": []map[string]any{{"type": "text", "text": text}},
-		"is_error": false,
-	})
-	return b
+	if err != nil {
+		// 序列化失败时退化为纯文本，保证工具调用闭环不断。
+		return text
+	}
+	return string(b)
 }

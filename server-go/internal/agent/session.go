@@ -4,48 +4,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 )
 
-// Session 对应 Python 侧的 ManagedSession：单会话的运行态，持有序号化访问锁。
-// Eino 是纯 Go，不再需要 SessionActor 串行化子进程（ADR 0028 约束消失），
-// 但同一会话仍用一把锁防止并发轮次交错。
+// Session 对应 Python 侧的 ManagedSession：单会话的轻量运行态。
+// 权威历史在 event_log（设计文档 03-agent-runtime-eino.md §16），
+// 这里只保留身份与活跃度信息，供容量管理 / 巡检 / 驱逐使用。
 type Session struct {
 	ID         string
 	Project    string
-	mu         sync.Mutex
-	History    []*schema.Message
 	LastActive time.Time
 }
 
-// HistorySnapshot 复制当前历史，供引擎只读使用。
-func (s *Session) HistorySnapshot() []*schema.Message {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]*schema.Message, len(s.History))
-	copy(out, s.History)
-	return out
-}
-
-// Append 追加一条消息（如用户问题或 assistant 最终回复）。
-func (s *Session) Append(m *schema.Message) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.History = append(s.History, m)
-	s.LastActive = time.Now()
-}
-
-// AppendTail 批量追加「本轮新增」的消息（assistant / tool），用于会话持久化。
-func (s *Session) AppendTail(tail []*schema.Message) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.History = append(s.History, tail...)
-	s.LastActive = time.Now()
-}
-
-// SessionManager 对应 Python 侧的 SessionManager：容量 / 巡检 / 驱逐 / sdk_id 懒生成。
-// 这里 sdk_id 概念收敛为 session id（Go 侧自管，无需懒生成外部 id）。
+// SessionManager 对应 Python 侧的 SessionManager：容量 / 巡检 / 驱逐。
+// （sdk_id 懒生成等跨 SDK 续接机制在 Eino 下整体作废，见设计文档 §15.3。）
 type SessionManager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session

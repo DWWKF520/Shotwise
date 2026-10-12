@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
 )
@@ -104,7 +105,7 @@ func (s *ConfigService) GetAllSettings(ctx context.Context) (map[string]string, 
 // 同源：凭证字段非空覆盖 config 同名键）。
 func (s *ConfigService) ProviderConfig(ctx context.Context, providerID string) (map[string]string, error) {
 	if !IsCustomProvider(providerID) {
-		if _, ok := providerMetaFor(providerID); !ok {
+		if _, ok := provider.ProviderMetaFor(providerID); !ok {
 			return nil, fmt.Errorf("%w: %s", ErrUnknownProvider, providerID)
 		}
 	}
@@ -139,7 +140,7 @@ func (s *ConfigService) AllProviderConfigs(ctx context.Context) (map[string]map[
 		if out[providerID] == nil {
 			out[providerID] = map[string]string{}
 		}
-		overlayCredential(cred, out[providerID])
+		overlayCredential(&cred, out[providerID])
 	}
 	return out, nil
 }
@@ -147,7 +148,7 @@ func (s *ConfigService) AllProviderConfigs(ctx context.Context) (map[string]map[
 // ProviderEnabled 读预置供应商启用开关；未设置视为启用。未知 provider 同样报错——
 // 调用方（解析链）依赖它拦截「引用已下线供应商」的配置。
 func (s *ConfigService) ProviderEnabled(ctx context.Context, providerID string) (bool, error) {
-	if _, ok := providerMetaFor(providerID); !ok {
+	if _, ok := provider.ProviderMetaFor(providerID); !ok {
 		return false, fmt.Errorf("%w: %s", ErrUnknownProvider, providerID)
 	}
 	raw, err := s.GetSetting(ctx, providerEnabledKeyPrefix+providerID, "1")

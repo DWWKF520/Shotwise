@@ -26,7 +26,7 @@ func RegisterAgentRoutes(rg *gin.RouterGroup, rt *agent.Runtime) {
 			return
 		}
 
-		sessionID, evCh, err := rt.Query(c.Request.Context(), body.SessionID, body.Project, body.Message)
+		sessionID, evCh, unsub, err := rt.Query(c.Request.Context(), body.SessionID, body.Project, body.Message)
 		if err != nil {
 			abortInternal(c, "agent_start_failed", err.Error())
 			return
@@ -42,11 +42,20 @@ func RegisterAgentRoutes(rg *gin.RouterGroup, rt *agent.Runtime) {
 		c.Writer.Flush()
 
 		flusher := c.Writer
-		for ev := range evCh {
-			flusher.WriteString(ev.EncodeSSE())
-			flusher.Flush()
+		defer unsub()
+		for {
+			select {
+			case ev, ok := <-evCh:
+				if !ok {
+					return // loop 退出（bus 关闭）或已退订
+				}
+				flusher.WriteString(ev.EncodeSSE())
+				flusher.Flush()
+			case <-c.Request.Context().Done():
+				// 客户端断开：仅退订本连接；query 已入队，loop 由 Runtime 空闲策略收口。
+				return
+			}
 		}
-		// 客户端断开由 gin 的 Request.Context 取消传播到引擎 goroutine。
 	})
 
 	rg.GET("/agent/sessions", func(c *gin.Context) {

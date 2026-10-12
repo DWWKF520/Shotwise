@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/shotwise/shotwise/internal/agent"
+	"github.com/shotwise/shotwise/internal/agent/checkpoint"
 	"github.com/shotwise/shotwise/internal/app"
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
@@ -88,11 +89,16 @@ func run(log *slog.Logger) error {
 	}
 
 	// 智能体运行时：用 Eino 重建，取代 Claude Agent SDK 的子进程模型。
+	// checkpoint 落 SQL（agent_checkpoints 表）；事件日志 SQL Store 属后续增量，先用内存实现。
+	cpStore, err := checkpoint.NewSQLStore(gdb)
+	if err != nil {
+		return err
+	}
 	agentRT, err := agent.NewRuntime(context.Background(), agent.ModelConfig{
 		APIKey:  cfg.LLMAPIKey,
 		Model:   cfg.LLMModel,
 		BaseURL: cfg.LLMBaseURL,
-	}, cfg.DataDir, nil)
+	}, cfg.DataDir, cpStore, nil)
 	if err != nil {
 		return err
 	}
