@@ -53,10 +53,11 @@ type Task struct {
 func (Task) TableName() string { return "tasks" }
 
 // WorkerLease 对应 worker_lease 表。
+// lease_until 是 epoch 秒（FLOAT 列），不是时间戳文本：租约比较在 DB 内以数值进行。
 type WorkerLease struct {
 	Name       string          `gorm:"column:name;primaryKey"`
 	OwnerID    string          `gorm:"column:owner_id"`
-	LeaseUntil db.FlexibleTime `gorm:"column:lease_until"`
+	LeaseUntil float64         `gorm:"column:lease_until"`
 	UpdatedAt  db.FlexibleTime `gorm:"column:updated_at"`
 }
 
