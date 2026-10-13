@@ -55,6 +55,10 @@ func MakeThumbnail(ctx context.Context, src, out string, opts ...ThumbnailOption
 		"-y", out,
 	}
 	if err := Run(ctx, ThumbnailTimeout, args); err != nil {
+		// ffmpeg 失败前可能已写出半截文件，清掉避免调用方把损坏的缩略图当产物用。
+		if removeErr := os.Remove(out); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+			slog.Warn("清理缩略图失败", "path", out, "err", removeErr)
+		}
 		slog.Warn("提取视频缩略图失败", "path", src, "err", err)
 		return false
 	}

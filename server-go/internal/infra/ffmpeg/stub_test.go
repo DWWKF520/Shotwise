@@ -61,12 +61,15 @@ func runStub(mode string) int {
 	}
 }
 
-// runProbeStub 按 ffprobe 的探测种类作答：音频流确认返回流的类型集合、帧数探测
-// 按是否全量解码分别作答、时长探测返回容器时长；带上写文件开关时同时模拟抽帧产物。
+// runProbeStub 按 ffprobe 的探测种类作答：时长探测返回容器时长（先判，音频流确认
+// 也带 -select_streams a，两种调用都含该标记）、音频流确认返回流的类型集合、
+// 帧数探测按是否全量解码分别作答；带上写文件开关时同时模拟抽帧产物。
 func runProbeStub() int {
 	recordStubArgv()
 	joined := strings.Join(os.Args, " ")
 	switch {
+	case strings.Contains(joined, "format=duration"):
+		fmt.Print(envOrDefault(stubDurationEnv, "3.5"))
 	case strings.Contains(joined, "-select_streams a"):
 		fmt.Print(envOrDefault(stubStreamsEnv, "audio"))
 	case strings.Contains(joined, "-count_frames"):
@@ -253,9 +256,14 @@ func removeTools(t *testing.T) {
 	resetAvailabilityForTests()
 }
 
-// stubEnv 设置一组桩环境变量。
+// stubEnv 设置一组桩环境变量。未显式指定桩模式时补默认 echo 桩：
+// 桩二进制以本测试进程的副本充当 ffmpeg/ffprobe，若模式为空会退化成再跑一遍
+// 整套测试并挂死。
 func stubEnv(t *testing.T, env map[string]string) {
 	t.Helper()
+	if _, ok := env[stubModeEnv]; !ok {
+		t.Setenv(stubModeEnv, stubModeEcho)
+	}
 	for key, value := range env {
 		t.Setenv(key, value)
 	}

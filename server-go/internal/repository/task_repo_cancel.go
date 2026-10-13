@@ -377,7 +377,21 @@ func (r *TaskRepo) RequeueRunning(ctx context.Context, limit int) (int64, error)
 	return res.RowsAffected, res.Error
 }
 
-// ---- 执行期身份持久化 ----
+// RequeueTask 把单条 running 任务放回 queued（worker 池满 / 熔断回队）。
+//
+// 守卫 status='running'：外部已翻状态（取消 / 失败）时不覆盖。started_at 清空让下次 claim
+// 重新计时；与批量救援 RequeueRunning 相比不清 result / error（回队只发生在任务刚 claim、
+// 尚未写结果的窗口）。
+func (r *TaskRepo) RequeueTask(ctx context.Context, taskID string) (int64, error) {
+	res := r.db.WithContext(ctx).Model(&Task{}).
+		Where("task_id = ? AND status = ?", taskID, TaskStatusRunning).
+		Updates(map[string]any{
+			"status":     TaskStatusQueued,
+			"started_at": nil,
+			"updated_at": db.NewFlexibleTime(time.Now()),
+		})
+	return res.RowsAffected, res.Error
+}
 
 // PersistProviderJobID 单独事务持久化 provider_job_id（+提交端点），不带状态守卫
 // （worker 内调用，确定是 running）。endpoint 与 job_id 同一次 UPDATE 落地：

@@ -125,8 +125,9 @@ func TestRenderVideoRendersAndValidatesOutput(t *testing.T) {
 	if !strings.Contains(graph, "xfade=transition=fade:duration=0.500000:offset=2.500000") {
 		t.Errorf("filter graph = %s, want fade merging the two clips", graph)
 	}
-	if !strings.Contains(graph, "[outv][outa]") {
-		t.Errorf("filter graph = %s, want [outv]/[outa] outputs", graph)
+	// 整条时间线只有一组可渲染转场：该组直接改名到 [outv]/[outa]，不走组间 concat。
+	if !strings.Contains(graph, "[gv0_1]null[outv];[ga0_1]anull[outa]") {
+		t.Errorf("filter graph = %s, want the merged group mapped to [outv]/[outa]", graph)
 	}
 }
 

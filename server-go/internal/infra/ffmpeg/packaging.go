@@ -48,7 +48,9 @@ func BuildPackagingArgs(ffmpegPath string, clip PackagingClip, width, height int
 			Message: "packaging " + string(clip.Kind) + " duration must be positive",
 		}
 	}
+	// lavfi 的 s= 走 IMAGE_SIZE 语法（WxH），滤镜里的 crop/pad 走选项分隔符冒号。
 	size := strconv.Itoa(width) + "x" + strconv.Itoa(height)
+	canvas := strconv.Itoa(width) + ":" + strconv.Itoa(height)
 	duration := formatFloat(clip.DurationSeconds)
 	frameRate := formatFloat(fps)
 	if clip.Kind == PackagingCover {
@@ -58,11 +60,11 @@ func BuildPackagingArgs(ffmpegPath string, clip PackagingClip, width, height int
 				Message: "packaging cover source is unavailable: " + clip.SourcePath,
 			}
 		}
-		scale := "scale=" + strconv.Itoa(width) + ":" + strconv.Itoa(height) + ":force_original_aspect_ratio=decrease," +
-			"pad=" + size + ":(ow-iw)/2:(oh-ih)/2"
+		scale := "scale=" + canvas + ":force_original_aspect_ratio=decrease," +
+			"pad=" + canvas + ":(ow-iw)/2:(oh-ih)/2"
 		if clip.Fit != "contain" {
-			scale = "scale=" + strconv.Itoa(width) + ":" + strconv.Itoa(height) + ":force_original_aspect_ratio=increase," +
-				"crop=" + size
+			scale = "scale=" + canvas + ":force_original_aspect_ratio=increase," +
+				"crop=" + canvas
 		}
 		return []string{
 			ffmpegPath, "-y",

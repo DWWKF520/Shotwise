@@ -65,7 +65,7 @@ func TestBuildPackagingArgsCoverContainFitKeepsBars(t *testing.T) {
 		t.Fatalf("BuildPackagingArgs: %v", err)
 	}
 	scale := argValue(args, "-vf")
-	if !strings.Contains(scale, "force_original_aspect_ratio=decrease,pad=480x854:(ow-iw)/2:(oh-ih)/2") {
+	if !strings.Contains(scale, "force_original_aspect_ratio=decrease,pad=480:854:(ow-iw)/2:(oh-ih)/2") {
 		t.Errorf("scale = %q, want the contain fit to keep letterbox bars", scale)
 	}
 }

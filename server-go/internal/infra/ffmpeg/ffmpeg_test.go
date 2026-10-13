@@ -230,6 +230,7 @@ func TestRunTruncatesLongStderrTail(t *testing.T) {
 func TestRunParsesProgressFromStderr(t *testing.T) {
 	installStub(t)
 	stubEnv(t, map[string]string{
+		stubModeEnv:    stubModeEcho,
 		stubStderrEnv:  "frame= 10 time=00:00:00.40 speed=1x\nframe= 20 time=00:00:00.80\nframe= 25 time=00:00:01.00\n",
 		stubSleepMsEnv: "700",
 	})

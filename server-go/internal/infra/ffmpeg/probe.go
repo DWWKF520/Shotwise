@@ -30,7 +30,8 @@ func DurationSeconds(ctx context.Context, path string) (float64, bool) {
 }
 
 // AudioDuration 读取单个参考音频文件的时长（秒）：先确认容器里确有音频流，再取容器时长。
-// 任一环节失败（含 ffprobe 缺失）都返回 ok=false，调用方跳过总时长校验而不是当作超限。
+// 两次探测都限定 -select_streams a，全程失败（含 ffprobe 缺失）都返回 ok=false，
+// 调用方跳过总时长校验而不是当作超限。
 func AudioDuration(ctx context.Context, path string) (float64, bool) {
 	if !ProbeAvailable() {
 		return 0, false
@@ -46,7 +47,11 @@ func AudioDuration(ctx context.Context, path string) (float64, bool) {
 	if err != nil || !strings.Contains(string(stdout), "audio") {
 		return 0, false
 	}
-	return DurationSeconds(ctx, path)
+	var durationBytes []byte
+	if err := Run(ctx, MetadataTimeout, audioDurationProbeArgs(path), WithStdout(&durationBytes)); err != nil {
+		return 0, false
+	}
+	return parseSeconds(durationBytes)
 }
 
 // MultiTotalDuration 累加多段参考音频总时长（秒）。任一文件探测失败即整体 ok=false
@@ -112,6 +117,18 @@ func ProbeSize(ctx context.Context, path string) (int, int, bool) {
 func durationProbeArgs(path string) []string {
 	return []string{
 		"ffprobe", "-v", "error", "-protocol_whitelist", "file",
+		"-show_entries", "format=duration",
+		"-of", "csv=p=0",
+		path,
+	}
+}
+
+// audioDurationProbeArgs 是音频时长探测参数：-select_streams a 让这次调用的作用域
+// 从 argv 即可读出；format=duration 是容器级字段，不受流选择影响。
+func audioDurationProbeArgs(path string) []string {
+	return []string{
+		"ffprobe", "-v", "error", "-protocol_whitelist", "file",
+		"-select_streams", "a",
 		"-show_entries", "format=duration",
 		"-of", "csv=p=0",
 		path,

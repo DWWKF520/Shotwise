@@ -50,8 +50,8 @@ func TestOpenAIImageGenerateTextToImage(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{{"b64_json": pngB64()}},
 			"usage": map[string]any{
-				"input_tokens":         120,
-				"output_tokens":        800,
+				"input_tokens":          120,
+				"output_tokens":         800,
 				"input_tokens_details":  map[string]any{"text_tokens": 120},
 				"output_tokens_details": map[string]any{"image_tokens": 800},
 			},

@@ -116,7 +116,8 @@ func TestConcatSegmentsKeepsCutBoundariesBetweenXfadeGroups(t *testing.T) {
 	if !strings.Contains(graph, "xfade=transition=fade:duration=0.500000:offset=1.500000") {
 		t.Errorf("graph = %s, want xfade offset 1.5 inside the second group", graph)
 	}
-	if !strings.Contains(graph, "[v0][a0][gv0_1][ga0_1]concat=n=2:v=1:a=1[outv][outa]") {
+	// 组标签取分组序号（第二组即 gv1_1），与 Python 参考实现的 build_concat_filter 一致。
+	if !strings.Contains(graph, "[v0][a0][gv1_1][ga1_1]concat=n=2:v=1:a=1[outv][outa]") {
 		t.Errorf("graph = %s, want concat of the cut group and the merged group", graph)
 	}
 }

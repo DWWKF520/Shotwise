@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -224,14 +225,30 @@ type BackendEntry struct {
 	Registered bool
 }
 
+// JobIDPersister 把 submit 拿到的 provider_job_id（+提交端点）立即落库，供重启续跑定位远端 job。
+//
+// 由装配层注入：backend 层不依赖 queue / repository（分层契约 providers 不得反向依赖 service）。
+// 返回错误视为整笔提交失败（fail-fast，ADR 0007）——未持久化的 submit 无法续跑，宁可原地失败。
+type JobIDPersister func(ctx context.Context, taskID, jobID string, endpoint *string) error
+
+// APICallIDPersister 把记账行的 id 写回 task payload，供 resume 精准翻 pending 记账（幂等）。
+type APICallIDPersister func(ctx context.Context, taskID string, callID int64) error
+
 // BackendOptions 是构造内置 backend 的通用输入信封：简单族消费 Model / APIKey / BaseURL，
 // 专属族额外读 Extra 里声明的键（键名即构造参数名）。字段留空表示未配置，由后端自行兜底
 // （环境变量或 fail-loud）——与 Python 侧「仅非空才写入 kwargs」同义。
+//
+// PersistJobID / PersistAPICallID 是 submit 后落库的注入点：nil 表示非 worker 路径
+// （grid / 直生 / 测试），backend 据此跳过持久化，与 Python 侧 ProviderJobIdPersistenceMixin
+// 「task_id 为 None 则跳过」同义。
 type BackendOptions struct {
 	Model   string
 	APIKey  string
 	BaseURL string
 	Extra   map[string]string
+
+	PersistJobID     JobIDPersister
+	PersistAPICallID APICallIDPersister
 }
 
 // VideoBackendRegistration 一条视频 backend 注册记录：构造闭包 + 可选静态查询。

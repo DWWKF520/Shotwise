@@ -151,7 +151,7 @@ func TestCalculatePerImageOpenAITokenUsagePath(t *testing.T) {
 	if currency != "USD" {
 		t.Errorf("币种 = %q, 期望 USD", currency)
 	}
-	checkAmount(t, amount, (10_000*8+2_000*30+500*5+100*0)/1_000_000, "token 主路径")
+	checkAmount(t, amount, (10_000*8.0+2_000*30.0+500*5.0+100*0.0)/1_000_000, "token 主路径")
 
 	// 四个 token 全为 0 仍走 token 主路径（非 None 即算有 usage）。
 	amount, _ = mustCalculate(t, p, Params{
@@ -224,7 +224,7 @@ func TestCalculatePerSecondMatrixResolutionAudio(t *testing.T) {
 		{"已知档", IntPtr(8), "1080p", BoolPtr(true), 0.64},
 		{"大写分辨率归一", IntPtr(8), "1080P", BoolPtr(true), 0.64},
 		{"未知分辨率回落 1080p+有声", IntPtr(5), "UNKNOWN", BoolPtr(true), 0.40},
-		{"空分辨率落 1080p", IntPtr(8), "", BoolPtr(false), 0.40},
+		{"空分辨率落 1080p", IntPtr(8), "", BoolPtr(false), 0.64},
 		{"音频维度区分", IntPtr(8), "720p", BoolPtr(false), 0.40},
 		{"真实零秒保持 0", IntPtr(0), "1080p", BoolPtr(true), 0.0},
 		{"缺省时长按 8 秒", nil, "1080p", BoolPtr(true), 0.64},
