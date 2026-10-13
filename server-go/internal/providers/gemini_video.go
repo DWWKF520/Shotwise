@@ -22,8 +22,8 @@ import (
 // 自定义供应商包装、已下线型号都会走到未登记路径，那里同样不能把必然失败的请求发出去。
 // 兜底值复刻 Veo 全系现行约束：参考图路径与 1080p/4k 分辨率下只接受 8 秒。
 const (
-	geminiRequiredDurationSeconds       = 8
-	geminiDurationConstrainedResolution = "1080p"
+	geminiRequiredDurationSeconds         = 8
+	geminiDurationConstrainedResolution   = "1080p"
 	geminiDurationConstrainedResolution4K = "4k"
 
 	// geminiVideoPollIntervalSeconds / geminiVideoMaxWaitSeconds 与 Python 轮询参数一致
@@ -54,8 +54,8 @@ type geminiGeneratedVideo struct {
 
 // geminiOperationResponse 是 operation.response 的形状，兼容多种生成的视频承载位置。
 type geminiOperationResponse struct {
-	GeneratedVideos []geminiGeneratedVideo `json:"generatedVideos"`
-	Videos          []geminiVideoRef       `json:"videos"`
+	GeneratedVideos       []geminiGeneratedVideo `json:"generatedVideos"`
+	Videos                []geminiVideoRef       `json:"videos"`
 	GenerateVideoResponse *struct {
 		GeneratedSamples []geminiGeneratedVideo `json:"generatedSamples"`
 		Videos           []geminiVideoRef       `json:"videos"`

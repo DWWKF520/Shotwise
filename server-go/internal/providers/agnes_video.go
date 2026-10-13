@@ -60,9 +60,9 @@ const (
 	agnesVideoSubmitTimeoutSeconds = 300.0
 	agnesVideoPollHTTPTimeout      = 60 * time.Second
 
-	agnesVideoPollInterval        = 5 * time.Second
-	agnesVideoMinPollTimeout      = 900.0
-	agnesVideoPollTimeoutPerSec   = 60.0
+	agnesVideoPollInterval      = 5 * time.Second
+	agnesVideoMinPollTimeout    = 900.0
+	agnesVideoPollTimeoutPerSec = 60.0
 )
 
 // Agnes 视频请求的三种 mode。

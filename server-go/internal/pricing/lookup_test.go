@@ -8,24 +8,24 @@ import (
 // provider/模型，键与费率逐项取自 registry 声明。
 func testCatalog() MapCatalog {
 	veoStandard := map[MatrixKey]float64{
-		{Resolution: "720p", Audio: AudioOn}:  0.40,
-		{Resolution: "720p", Audio: AudioOff}: 0.20,
+		{Resolution: "720p", Audio: AudioOn}:   0.40,
+		{Resolution: "720p", Audio: AudioOff}:  0.20,
 		{Resolution: "1080p", Audio: AudioOn}:  0.40,
 		{Resolution: "1080p", Audio: AudioOff}: 0.20,
 		{Resolution: "4k", Audio: AudioOn}:     0.60,
 		{Resolution: "4k", Audio: AudioOff}:    0.40,
 	}
 	veoFast := map[MatrixKey]float64{
-		{Resolution: "720p", Audio: AudioOn}:  0.10,
-		{Resolution: "720p", Audio: AudioOff}: 0.08,
+		{Resolution: "720p", Audio: AudioOn}:   0.10,
+		{Resolution: "720p", Audio: AudioOff}:  0.08,
 		{Resolution: "1080p", Audio: AudioOn}:  0.12,
 		{Resolution: "1080p", Audio: AudioOff}: 0.10,
 		{Resolution: "4k", Audio: AudioOn}:     0.30,
 		{Resolution: "4k", Audio: AudioOff}:    0.25,
 	}
 	veoLite := map[MatrixKey]float64{
-		{Resolution: "720p", Audio: AudioOn}:  0.05,
-		{Resolution: "720p", Audio: AudioOff}: 0.03,
+		{Resolution: "720p", Audio: AudioOn}:   0.05,
+		{Resolution: "720p", Audio: AudioOff}:  0.03,
 		{Resolution: "1080p", Audio: AudioOn}:  0.08,
 		{Resolution: "1080p", Audio: AudioOff}: 0.05,
 	}
@@ -53,15 +53,15 @@ func testCatalog() MapCatalog {
 			},
 			map[string]map[QualitySizeKey]float64{
 				"gpt-image-2": {
-					{Quality: "low", Size: "1024x1024"}:      0.006,
-					{Quality: "low", Size: "1024x1792"}:      0.012,
-					{Quality: "low", Size: "1792x1024"}:      0.012,
-					{Quality: "medium", Size: "1024x1024"}:   0.053,
-					{Quality: "medium", Size: "1024x1792"}:   0.106,
-					{Quality: "medium", Size: "1792x1024"}:   0.106,
-					{Quality: "high", Size: "1024x1024"}:     0.211,
-					{Quality: "high", Size: "1024x1792"}:     0.317,
-					{Quality: "high", Size: "1792x1024"}:     0.317,
+					{Quality: "low", Size: "1024x1024"}:    0.006,
+					{Quality: "low", Size: "1024x1792"}:    0.012,
+					{Quality: "low", Size: "1792x1024"}:    0.012,
+					{Quality: "medium", Size: "1024x1024"}: 0.053,
+					{Quality: "medium", Size: "1024x1792"}: 0.106,
+					{Quality: "medium", Size: "1792x1024"}: 0.106,
+					{Quality: "high", Size: "1024x1024"}:   0.211,
+					{Quality: "high", Size: "1024x1792"}:   0.317,
+					{Quality: "high", Size: "1792x1024"}:   0.317,
 				},
 			},
 			"gpt-image-2", "USD",

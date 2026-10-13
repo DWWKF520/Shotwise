@@ -47,9 +47,9 @@ const (
 	// 轮询间隔：海螺视频生成通常数十秒至数分钟，10s 一次平衡时延与请求量。
 	minimaxVideoPollInterval = 10 * time.Second
 	// 轮询超时下界与每秒增量：max(900, duration*60)。
-	minimaxVideoMinPollTimeoutSeconds    = 900.0
-	minimaxVideoPollTimeoutPerSecond     = 60.0
-	minimaxVideoDefaultHTTPTimeout       = 60 * time.Second
+	minimaxVideoMinPollTimeoutSeconds = 900.0
+	minimaxVideoPollTimeoutPerSecond  = 60.0
+	minimaxVideoDefaultHTTPTimeout    = 60 * time.Second
 	// minimaxVideoV1DefaultResolution 缺 resolution 时的默认档（小写）。
 	minimaxVideoV1DefaultResolution = "768p"
 

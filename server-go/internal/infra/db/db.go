@@ -24,8 +24,8 @@ import (
 type Dialect string
 
 const (
-	SQLite    Dialect = "sqlite"
-	Postgres  Dialect = "postgres"
+	SQLite   Dialect = "sqlite"
+	Postgres Dialect = "postgres"
 )
 
 // Open 按 URL 打开连接。支持 sqlite://<path>、file:<path>、postgres://...、postgresql://...

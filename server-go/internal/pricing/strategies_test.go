@@ -31,10 +31,10 @@ func TestCalculatePerToken(t *testing.T) {
 	}, "m1", "USD")
 
 	cases := []struct {
-		name         string
-		model        string
-		input, out   int
-		want         float64
+		name       string
+		model      string
+		input, out int
+		want       float64
 	}{
 		{"已知模型", "m1", 1000, 500, (1000*0.50 + 500*3.00) / 1_000_000},
 		{"未知模型回落默认", "unknown", 1000, 500, (1000*0.50 + 500*3.00) / 1_000_000},
@@ -129,12 +129,12 @@ func openAIPricing() Pricing {
 		},
 		map[string]map[QualitySizeKey]float64{
 			"gpt-image-2": {
-				{Quality: "low", Size: "1024x1024"}:     0.006,
-				{Quality: "medium", Size: "1024x1024"}:  0.053,
-				{Quality: "medium", Size: "1024x1792"}:  0.106,
-				{Quality: "high", Size: "1024x1024"}:    0.211,
-				{Quality: "high", Size: "1024x1792"}:    0.317,
-				{Quality: "high", Size: "1792x1024"}:    0.317,
+				{Quality: "low", Size: "1024x1024"}:    0.006,
+				{Quality: "medium", Size: "1024x1024"}: 0.053,
+				{Quality: "medium", Size: "1024x1792"}: 0.106,
+				{Quality: "high", Size: "1024x1024"}:   0.211,
+				{Quality: "high", Size: "1024x1792"}:   0.317,
+				{Quality: "high", Size: "1792x1024"}:   0.317,
 			},
 		},
 		"gpt-image-2", "USD",
@@ -437,12 +437,12 @@ func TestCalculatePerTokenVideo(t *testing.T) {
 	}, "seedance", "CNY")
 
 	cases := []struct {
-		name     string
-		model    string
-		tier     string
-		audio    *bool
-		tokens   *int
-		want     float64
+		name   string
+		model  string
+		tier   string
+		audio  *bool
+		tokens *int
+		want   float64
 	}{
 		{"flex 无声", "seedance", "flex", BoolPtr(false), IntPtr(1_000_000), 4.00},
 		{"flex 有声", "seedance", "flex", BoolPtr(true), IntPtr(1_000_000), 8.00},
@@ -481,10 +481,10 @@ func TestCalculatePerCharacter(t *testing.T) {
 	p := NewPerCharacter(map[string]float64{"qwen3-tts-flash": 0.8}, "qwen3-tts-flash", "CNY")
 
 	cases := []struct {
-		name   string
-		model  string
-		chars  *int
-		want   float64
+		name  string
+		model string
+		chars *int
+		want  float64
 	}{
 		{"整万字符", "qwen3-tts-flash", IntPtr(10_000), 0.8},
 		{"部分字符", "qwen3-tts-flash", IntPtr(1500), 1500.0 / 10_000 * 0.8},

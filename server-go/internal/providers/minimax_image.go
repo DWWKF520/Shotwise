@@ -77,7 +77,9 @@ func minimaxTextBaseURL(configured string) string { return minimaxHost(configure
 func minimaxVideoBaseURL(configured string) string { return minimaxHost(configured) + minimaxV1Suffix }
 
 // minimaxVideoV2BaseURL 多模态视频端点 base：{host}/v2，供 H3 的 content[] 端点使用。
-func minimaxVideoV2BaseURL(configured string) string { return minimaxHost(configured) + minimaxV2Suffix }
+func minimaxVideoV2BaseURL(configured string) string {
+	return minimaxHost(configured) + minimaxV2Suffix
+}
 
 // minimaxHeaders Bearer 鉴权头。
 func minimaxHeaders(apiKey string) map[string]string {
@@ -180,12 +182,12 @@ func (b *minimaxImageBackend) Generate(
 ) (provider.ImageGenerationResult, error) {
 	width, height := b.resolveDimensions(req)
 	payload := map[string]any{
-		"model":            b.model,
-		"prompt":           req.Prompt,
-		"width":            width,
-		"height":           height,
-		"response_format":  "url",
-		"n":                1,
+		"model":           b.model,
+		"prompt":          req.Prompt,
+		"width":           width,
+		"height":          height,
+		"response_format": "url",
+		"n":               1,
 		// Shotwise 剧本 prompt 已是 LLM 精炼描述，关闭智能改写保留原意。
 		"prompt_optimizer": false,
 	}

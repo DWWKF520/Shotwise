@@ -14,34 +14,34 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 	"github.com/shotwise/shotwise/internal/apperr"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // 有效期常量，与 Python 侧一致。
 const (
-	TokenExpirySeconds          = 7 * 24 * 3600
-	DownloadTokenExpirySeconds  = 300
-	APIKeyPrefix                = "shotwise-"
+	TokenExpirySeconds         = 7 * 24 * 3600
+	DownloadTokenExpirySeconds = 300
+	APIKeyPrefix               = "shotwise-"
 )
 
 // User 是鉴权后的用户身份。查库失败一律降级为 user（fail-closed，不静默给 admin）。
 type User struct {
-	ID       string
-	Sub      string
-	Role     string
-	AuthVia  string // "jwt" | "apikey"
+	ID      string
+	Sub     string
+	Role    string
+	AuthVia string // "jwt" | "apikey"
 }
 
 func (u *User) IsAdmin() bool { return u.Role == "admin" }
 
 // Service 提供签发与校验。
 type Service struct {
-	secret    []byte
-	enabled   bool
-	username  string
-	passHash  []byte // bcrypt 摘要；为空表示未设置密码
-	lookup    UserLookup
+	secret   []byte
+	enabled  bool
+	username string
+	passHash []byte // bcrypt 摘要；为空表示未设置密码
+	lookup   UserLookup
 }
 
 // UserLookup 从库里解析 role。找不到就降级为 user。

@@ -9,13 +9,13 @@ import (
 type EventType string
 
 const (
-	EventDelta        EventType = "delta"         // 文本增量（assistant 流式输出）
-	EventToolUse      EventType = "tool_use"      // 模型决定调用某个工具
-	EventToolResult   EventType = "tool_result"   // 工具执行结果
-	EventStatus       EventType = "status"        // 运行态（running/done/error/cancelled）
-	EventUsage        EventType = "usage"         // token 用量
-	EventQuestion     EventType = "question"      // ask_user 挂起，等待用户回答（HITL）
-	EventTaskNotice   EventType = "task_notice"   // 后台任务完成通知注入会话
+	EventDelta      EventType = "delta"       // 文本增量（assistant 流式输出）
+	EventToolUse    EventType = "tool_use"    // 模型决定调用某个工具
+	EventToolResult EventType = "tool_result" // 工具执行结果
+	EventStatus     EventType = "status"      // 运行态（running/done/error/cancelled）
+	EventUsage      EventType = "usage"       // token 用量
+	EventQuestion   EventType = "question"    // ask_user 挂起，等待用户回答（HITL）
+	EventTaskNotice EventType = "task_notice" // 后台任务完成通知注入会话
 )
 
 // Event 是智能体运行时向外推送的最小事件单元。

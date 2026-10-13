@@ -8,9 +8,9 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/provider"
-	// 图片 backend 在装载期（init）把自己注册进 provider 的 backend registry，
-	// 本文件依赖它以拿到可执行的实现；providers 不反向依赖 service。
-	_ "github.com/shotwise/shotwise/internal/providers"
+	// 图片 backend 在装载期（init）把自己注册进 provider 的 backend registry，本文件
+	// 依赖它以拿到可执行的实现；providers 不反向依赖 service。
+	"github.com/shotwise/shotwise/internal/providers"
 	"gorm.io/gorm"
 )
 
@@ -111,11 +111,26 @@ func (g *ImageGenerator) Generate(ctx context.Context, p ImageGenerateParams) (p
 // buildImageBackend 按解析出的身份构造图片 backend。
 //
 // 内置供应商走 registry 规格（registry_backend 决定实现、APIModelName 决定下发的模型名）；
-// 自定义供应商的声明式 delegate 尚未落地，此处 fail loud 而不是拿内置实现兜底——拿错协议
-// 的 delegate 包装自定义供应商会静默发出形态错误的请求。
+// 自定义供应商按模型行的 endpoint/声明走声明式包装层工厂，endpoint 媒体类型与 lane 不符
+// 即 fail loud——拿错协议的 delegate 包装自定义供应商会静默发出形态错误的请求。
 func (g *ImageGenerator) buildImageBackend(ctx context.Context, selected config.ProviderModel) (provider.ImageBackend, error) {
 	if config.IsCustomProvider(selected.ProviderID) {
-		return nil, fmt.Errorf("custom provider image backend not wired yet: %s", selected.ProviderID)
+		input, err := config.LoadCustomBackendInput(ctx, g.db, selected.ProviderID, selected.ModelID)
+		if err != nil {
+			return nil, err
+		}
+		backend, err := providers.CreateCustomBackend(providers.CustomProviderConfig{
+			ProviderID: input.ProviderID,
+			BaseURL:    input.BaseURL,
+			APIKey:     input.APIKey,
+		}, selected.ModelID, input.Endpoint, input.EndpointDeclaration, input.CapabilityOverrides)
+		if err != nil {
+			return nil, err
+		}
+		if backend.MediaType != provider.MediaImage || backend.Image == nil {
+			return nil, fmt.Errorf("custom endpoint %q is not an image endpoint", input.Endpoint)
+		}
+		return backend.Image, nil
 	}
 	spec, ok := provider.ProviderSpecFor(selected.ProviderID, provider.MediaImage)
 	if !ok {

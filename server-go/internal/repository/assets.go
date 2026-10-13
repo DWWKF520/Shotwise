@@ -23,7 +23,9 @@ type GlobalAssetQuery struct {
 type GlobalAssetRepository struct{ gdb *gorm.DB }
 
 // NewGlobalAssetRepository 构造资产仓储。
-func NewGlobalAssetRepository(gdb *gorm.DB) *GlobalAssetRepository { return &GlobalAssetRepository{gdb: gdb} }
+func NewGlobalAssetRepository(gdb *gorm.DB) *GlobalAssetRepository {
+	return &GlobalAssetRepository{gdb: gdb}
+}
 
 // List 按条件列出资产，updated_at 倒序。
 func (r *GlobalAssetRepository) List(q GlobalAssetQuery) ([]Asset, error) {

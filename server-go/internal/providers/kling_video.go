@@ -24,10 +24,10 @@ import (
 const (
 	klingVideoDefaultModel = "kling-v2-5-turbo"
 
-	klingText2Video      = "text2video"
-	klingImage2Video     = "image2video"
-	klingMultiImage2Video = "multi-image2video"
-	klingModern          = "modern"
+	klingText2Video        = "text2video"
+	klingImage2Video       = "image2video"
+	klingMultiImage2Video  = "multi-image2video"
+	klingModern            = "modern"
 	klingModernRoutePrefix = "modern/"
 
 	// klingR2VMaxReferenceImages 多图主体（R2V）参考图上限；官方未明确列出，取保守值。
@@ -74,8 +74,8 @@ var klingDefaultVideoCaps = klingVideoModelCaps{
 var klingVideoCapsByModel = map[string]klingVideoModelCaps{
 	"kling-v2-5-turbo": klingDefaultVideoCaps,
 	"kling-v3": {
-		textToVideo:  true,
-		lastFrame:    true,
+		textToVideo:   true,
+		lastFrame:     true,
 		generateAudio: true,
 	},
 	"kling-v3-omni": {
@@ -657,7 +657,7 @@ func isKlingResumableSubpath(subpath string) bool {
 	return ok
 }
 
-// klingEscapeTaskID 按 Python quote(safe='') 口径百分号编码 task_id。
+// klingEscapeTaskID 按 Python quote(safe=”) 口径百分号编码 task_id。
 func klingEscapeTaskID(taskID string) string {
 	var b strings.Builder
 	for i := 0; i < len(taskID); i++ {

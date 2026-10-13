@@ -289,11 +289,11 @@ func v2VideoGenerationsCapabilitiesForModel(model string) provider.VideoCapabili
 
 // v2VideoGenerationsBackend 是流派 C 通用视频后端实例。
 type v2VideoGenerationsBackend struct {
-	model   string
-	root    string
-	apiKey  string
-	client  *httpc.Client
-	opts    provider.BackendOptions
+	model  string
+	root   string
+	apiKey string
+	client *httpc.Client
+	opts   provider.BackendOptions
 }
 
 // newV2VideoGenerationsBackend 按通用信封构造；api_key / base_url / model 均必填。

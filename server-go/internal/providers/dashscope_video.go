@@ -127,9 +127,9 @@ func buildDashscopeVideoProfiles() map[string]provider.VideoCapabilities {
 			caps.MaxReferenceImages = 9
 			return caps
 		}(),
-		"wan2.7-t2v": wan27t2v,
-		"wan2.7-i2v": wan27i2v,
-		"wan2.7-r2v": wan27r2v,
+		"wan2.7-t2v":          wan27t2v,
+		"wan2.7-i2v":          wan27i2v,
+		"wan2.7-r2v":          wan27r2v,
 		dashscopeWan3ModelKey: wan3,
 	}
 }

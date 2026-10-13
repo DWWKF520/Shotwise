@@ -50,10 +50,18 @@ func NewText(status int, key string, params map[string]any) *Error {
 	return &Error{Status: status, Code: key, Params: params, Object: false}
 }
 
-func BadRequest(code string, params map[string]any) *Error  { return New(http.StatusBadRequest, code, params) }
-func NotFound(code string, params map[string]any) *Error    { return New(http.StatusNotFound, code, params) }
-func Conflict(code string, params map[string]any) *Error    { return New(http.StatusConflict, code, params) }
-func Unavailable(code string, params map[string]any) *Error { return New(http.StatusServiceUnavailable, code, params) }
+func BadRequest(code string, params map[string]any) *Error {
+	return New(http.StatusBadRequest, code, params)
+}
+func NotFound(code string, params map[string]any) *Error {
+	return New(http.StatusNotFound, code, params)
+}
+func Conflict(code string, params map[string]any) *Error {
+	return New(http.StatusConflict, code, params)
+}
+func Unavailable(code string, params map[string]any) *Error {
+	return New(http.StatusServiceUnavailable, code, params)
+}
 
 // Internal 服务端错误。原始 error 只进日志，绝不回传客户端。
 func Internal(err error) *Error {

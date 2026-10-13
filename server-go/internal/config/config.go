@@ -31,7 +31,7 @@ type Config struct {
 	ListenHost string
 	ListenPort int
 
-	DataDir  string // 项目根目录，优先级见 ResolveDataDir
+	DataDir     string // 项目根目录，优先级见 ResolveDataDir
 	DatabaseURL string
 
 	AuthEnabled  bool

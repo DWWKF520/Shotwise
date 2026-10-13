@@ -120,16 +120,22 @@ type WorkerOption func(*Worker)
 func WithLeaseName(name string) WorkerOption { return func(w *Worker) { w.leaseName = name } }
 
 // WithCapacityTable 注入容量表。
-func WithCapacityTable(table *CapacityTable) WorkerOption { return func(w *Worker) { w.capacity = table } }
+func WithCapacityTable(table *CapacityTable) WorkerOption {
+	return func(w *Worker) { w.capacity = table }
+}
 
 // WithSlotTable 注入占用台账。
 func WithSlotTable(slots *SlotTable) WorkerOption { return func(w *Worker) { w.slots = slots } }
 
 // WithHealthTable 注入健康账。
-func WithHealthTable(health *ProviderHealthTable) WorkerOption { return func(w *Worker) { w.health = health } }
+func WithHealthTable(health *ProviderHealthTable) WorkerOption {
+	return func(w *Worker) { w.health = health }
+}
 
 // WithProviderExtractor 注入限流路由用的 provider 解析投影。
-func WithProviderExtractor(fn ProviderExtractor) WorkerOption { return func(w *Worker) { w.extractProvider = fn } }
+func WithProviderExtractor(fn ProviderExtractor) WorkerOption {
+	return func(w *Worker) { w.extractProvider = fn }
+}
 
 // WithMediaIndexer 注入 MediaAsset 登记器。
 func WithMediaIndexer(fn MediaIndexer) WorkerOption { return func(w *Worker) { w.indexMedia = fn } }
@@ -138,16 +144,24 @@ func WithMediaIndexer(fn MediaIndexer) WorkerOption { return func(w *Worker) { w
 func WithPreflight(fn Preflight) WorkerOption { return func(w *Worker) { w.preflight = fn } }
 
 // WithFailureEncoder 注入失败 code 编码器。
-func WithFailureEncoder(fn FailureEncoder) WorkerOption { return func(w *Worker) { w.encodeFailure = fn } }
+func WithFailureEncoder(fn FailureEncoder) WorkerOption {
+	return func(w *Worker) { w.encodeFailure = fn }
+}
 
 // WithTaskErrorEncoder 注入执行异常编码器。
-func WithTaskErrorEncoder(fn TaskErrorEncoder) WorkerOption { return func(w *Worker) { w.encodeTaskError = fn } }
+func WithTaskErrorEncoder(fn TaskErrorEncoder) WorkerOption {
+	return func(w *Worker) { w.encodeTaskError = fn }
+}
 
 // WithTransientClassifier 注入瞬态失败判定器。
-func WithTransientClassifier(fn TransientClassifier) WorkerOption { return func(w *Worker) { w.isTransient = fn } }
+func WithTransientClassifier(fn TransientClassifier) WorkerOption {
+	return func(w *Worker) { w.isTransient = fn }
+}
 
 // WithInterruptedSettler 注入中断记账收口器。
-func WithInterruptedSettler(s InterruptedSettler) WorkerOption { return func(w *Worker) { w.settler = s } }
+func WithInterruptedSettler(s InterruptedSettler) WorkerOption {
+	return func(w *Worker) { w.settler = s }
+}
 
 // NewWorker 构造 worker。executor 为必填——没有执行层的 worker 无法处理任何任务。
 func NewWorker(q *Queue, executor TaskExecutor, opts ...WorkerOption) *Worker {
@@ -644,8 +658,8 @@ type LaneObservability struct {
 
 // ObservabilitySnapshot 是只读诊断快照。
 type ObservabilitySnapshot struct {
-	Lanes  map[string]LaneObservability   `json:"lanes"`
-	Health map[string]LaneHealthSnapshot  `json:"health"`
+	Lanes  map[string]LaneObservability  `json:"lanes"`
+	Health map[string]LaneHealthSnapshot `json:"health"`
 }
 
 // ObservabilitySnapshot 返回每条泳道的占用 / 有效并发 / 健康态，键为 "provider:media"。

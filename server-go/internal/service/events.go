@@ -21,12 +21,12 @@ type Change struct {
 
 // ChangeBatch 是一次广播的增量。
 type ChangeBatch struct {
-	ProjectName string    `json:"project_name"`
-	BatchID     string    `json:"batch_id"`
-	Fingerprint string    `json:"fingerprint"`
-	GeneratedAt string    `json:"generated_at"`
-	Source      string    `json:"source"` // worker | webui | filesystem
-	Changes     []Change  `json:"changes"`
+	ProjectName string   `json:"project_name"`
+	BatchID     string   `json:"batch_id"`
+	Fingerprint string   `json:"fingerprint"`
+	GeneratedAt string   `json:"generated_at"`
+	Source      string   `json:"source"` // worker | webui | filesystem
+	Changes     []Change `json:"changes"`
 }
 
 // Snapshot 是订阅建立时的首帧。

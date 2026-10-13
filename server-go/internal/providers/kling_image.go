@@ -33,7 +33,7 @@ const (
 
 // klingImageRefLimits 各图像模型参考图上限（按 registry 键名）：o1 / v3-omni 均支持多图主体。
 var klingImageRefLimits = map[string]int{
-	"kling-image-o1":    10,
+	"kling-image-o1":      10,
 	"kling-v3-omni-image": 10,
 }
 

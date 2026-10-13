@@ -33,15 +33,15 @@ type customCapabilityField struct {
 
 // customCapabilityOverrideFields 是覆盖键 → 值类型，与 VideoCapabilities 字段一一对应。
 var customCapabilityOverrideFields = map[string]customCapabilityField{
-	"first_frame":                      {kind: customCapBool},
-	"last_frame":                       {kind: customCapBool},
-	"max_reference_images":             {kind: customCapInt},
-	"reference_audio_mode":             {kind: customCapAudioMode},
-	"max_reference_audio_count":        {kind: customCapInt},
+	"first_frame":                       {kind: customCapBool},
+	"last_frame":                        {kind: customCapBool},
+	"max_reference_images":              {kind: customCapInt},
+	"reference_audio_mode":              {kind: customCapAudioMode},
+	"max_reference_audio_count":         {kind: customCapInt},
 	"max_reference_audio_total_seconds": {kind: customCapFloatOptional, optional: true},
-	"reference_audio_per_image":        {kind: customCapBool},
-	"max_prompt_chars":                 {kind: customCapIntOptional, optional: true},
-	"first_frame_ratio_adaptive_only":  {kind: customCapBool},
+	"reference_audio_per_image":         {kind: customCapBool},
+	"max_prompt_chars":                  {kind: customCapIntOptional, optional: true},
+	"first_frame_ratio_adaptive_only":   {kind: customCapBool},
 }
 
 // customSystemVideoCapabilities 读 endpoint spec 得出系统对该模型视频能力的判定。

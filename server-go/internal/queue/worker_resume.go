@@ -175,11 +175,11 @@ func (w *Worker) dispatchResumeOrphans(ctx context.Context, resumable map[string
 
 // dispatchProviderBucket 跑同 provider 桶内的 resume 任务，用信号量精确卡并发。
 //
-// - cap <= 0：reload 一次兜底（DB 加载可能晚于首次孤儿扫描）后仍 <= 0 → fail-fast
-//   mark_failed[resume_unsupported_capacity_zero]，绝不进容量 0 的信号量死锁。
-// - 子任务由父 goroutine 同步预先以 PENDING 登记（避免异步调度尚未触发时 has_room 误判）；
-//   拿到信号量后 promote 成 INFLIGHT；finally release。
-// - 信号量容量在 dispatch 顶部读一次定型：reload 期间改的容量表不影响本批 dispatch 上限。
+//   - cap <= 0：reload 一次兜底（DB 加载可能晚于首次孤儿扫描）后仍 <= 0 → fail-fast
+//     mark_failed[resume_unsupported_capacity_zero]，绝不进容量 0 的信号量死锁。
+//   - 子任务由父 goroutine 同步预先以 PENDING 登记（避免异步调度尚未触发时 has_room 误判）；
+//     拿到信号量后 promote 成 INFLIGHT；finally release。
+//   - 信号量容量在 dispatch 顶部读一次定型：reload 期间改的容量表不影响本批 dispatch 上限。
 func (w *Worker) dispatchProviderBucket(ctx context.Context, providerID string, tasks []*repository.TaskData) {
 	cap := w.capacity.Get(providerID, provider.MediaVideo)
 	if cap <= 0 {

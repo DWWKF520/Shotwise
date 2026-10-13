@@ -106,17 +106,17 @@ func TestIsBashCommandWhitelisted(t *testing.T) {
 	}
 	denied := []string{
 		"", // 空
-		"python .claude/skills/evil/scripts/x.py; rm -rf /",            // ① 元字符
-		"ffmpeg -i a.mp4 b.mp4 && echo done",                           // ① 元字符
-		"ffmpeg -i ../secret.mp4 out.mp4",                              // ② `..` 路径段
-		`python .claude/skills/x/scripts/"../evil.py"`,                 // ② 剥引号后 `..`
-		"ffmpeg -i ..\\secret.mp4 out.mp4",                             // ② 反斜杠归一化后 `..`
-		"python script.py",                                             // ④ 非 skill 脚本
-		"python .claude/skills/x/scripts/evil.sh",                      // ④ 非 .py
-		"python",                                                       // ④ 缺脚本参数
-		"ls -la",                                                       // ③ 白名单外
-		"cat project.json",                                             // ③ 白名单外
-		"echo `whoami`",                                                // ① 反引号
+		"python .claude/skills/evil/scripts/x.py; rm -rf /", // ① 元字符
+		"ffmpeg -i a.mp4 b.mp4 && echo done",                // ① 元字符
+		"ffmpeg -i ../secret.mp4 out.mp4",                   // ② `..` 路径段
+		`python .claude/skills/x/scripts/"../evil.py"`,      // ② 剥引号后 `..`
+		"ffmpeg -i ..\\secret.mp4 out.mp4",                  // ② 反斜杠归一化后 `..`
+		"python script.py",                                  // ④ 非 skill 脚本
+		"python .claude/skills/x/scripts/evil.sh",           // ④ 非 .py
+		"python",           // ④ 缺脚本参数
+		"ls -la",           // ③ 白名单外
+		"cat project.json", // ③ 白名单外
+		"echo `whoami`",    // ① 反引号
 	}
 	for _, cmd := range allowed {
 		if !IsBashCommandWhitelisted(cmd) {

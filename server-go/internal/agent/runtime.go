@@ -43,16 +43,16 @@ func init() {
 type InboxKind string
 
 const (
-	InboxUserMessage      InboxKind = "user_message"       // 用户新输入
-	InboxTaskNotification InboxKind = "task_notification"  // 后台任务完成通知
-	InboxAnswer           InboxKind = "question_answer"    // HITL 恢复：用户对 ask_user 的回答
+	InboxUserMessage      InboxKind = "user_message"      // 用户新输入
+	InboxTaskNotification InboxKind = "task_notification" // 后台任务完成通知
+	InboxAnswer           InboxKind = "question_answer"   // HITL 恢复：用户对 ask_user 的回答
 )
 
 // InboxItem 是 TurnLoop 的收件箱 item（对应 Python SessionActor 的命令队列元素）。
 type InboxItem struct {
-	Kind         InboxKind
-	Text         string // InboxUserMessage / InboxTaskNotification 的正文
-	Answer       *AnswerPayload
+	Kind   InboxKind
+	Text   string // InboxUserMessage / InboxTaskNotification 的正文
+	Answer *AnswerPayload
 }
 
 // AnswerPayload 是用户对 ask_user 的回答（HITL 恢复参数）。
@@ -403,7 +403,7 @@ func (r *Runtime) newSessionLoop(sessionID, project string) *sessionLoop {
 		if len(state.UnhandledItems) > 0 {
 			for _, it := range state.UnhandledItems {
 				sl.adapter.appendSystemNotice(context.Background(), eventlog.SubtypeTaskNotification,
-					"unhandled inbox item: " + string(it.Kind))
+					"unhandled inbox item: "+string(it.Kind))
 			}
 		}
 		sl.bus.Close()

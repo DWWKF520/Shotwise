@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -72,6 +73,54 @@ func EndpointMediaType(endpoint string) (string, error) {
 		return "", fmt.Errorf("unknown endpoint: %q", endpoint)
 	}
 	return media, nil
+}
+
+// CustomBackendInput 是构造自定义供应商 backend 所需的全部 DB 侧输入。
+type CustomBackendInput struct {
+	ProviderID string
+	BaseURL    string
+	APIKey     string
+	Endpoint   string
+	// EndpointDeclaration / CapabilityOverrides 原样透传 JSON，空串 = 无声明（跟随系统判定）。
+	EndpointDeclaration string
+	CapabilityOverrides string
+}
+
+// LoadCustomBackendInput 按 provider_id（custom-<db_id>）与 model_id 读取 backend 工厂输入。
+// 模型行承载 endpoint 与声明，是构造的真正输入粒度，缺失即报错——执行期身份必须落库存在，
+// 不静默回退到供应商默认模型。
+func LoadCustomBackendInput(ctx context.Context, db *gorm.DB, providerID, modelID string) (*CustomBackendInput, error) {
+	dbID, err := ParseProviderID(providerID)
+	if err != nil {
+		return nil, err
+	}
+	var model repository.CustomProviderModel
+	err = db.WithContext(ctx).
+		Where("provider_id = ? AND model_id = ?", dbID, modelID).
+		First(&model).Error
+	if err != nil {
+		return nil, fmt.Errorf("custom model not found: %s/%s", providerID, modelID)
+	}
+	var prov repository.CustomProvider
+	if err := db.WithContext(ctx).First(&prov, dbID).Error; err != nil {
+		return nil, fmt.Errorf("custom provider not found: %s", providerID)
+	}
+	declaration := ""
+	if model.EndpointDeclaration != nil {
+		declaration = *model.EndpointDeclaration
+	}
+	overrides := ""
+	if model.CapabilityOverrides != nil {
+		overrides = *model.CapabilityOverrides
+	}
+	return &CustomBackendInput{
+		ProviderID:          providerID,
+		BaseURL:             prov.BaseURL,
+		APIKey:              prov.APIKey,
+		Endpoint:            model.Endpoint,
+		EndpointDeclaration: declaration,
+		CapabilityOverrides: overrides,
+	}, nil
 }
 
 // endpointVideoMaxReferenceImages 是 int 硬上限型 video endpoint 的参考图上限。其余 video

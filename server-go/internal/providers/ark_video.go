@@ -55,9 +55,9 @@ const arkReferenceAudioSupportedHint = ".mp3, .wav"
 
 // 模型族识别用子串：宽松族群判定供 service_tier 剔除与参考图能力复用。
 var (
-	arkSeedance2Substrings   = []string{"seedance-2-0", "seedance-2.0"}
-	arkSeedance25Substrings  = []string{"seedance-2-5", "seedance-2.5"}
-	arkNoFirstFrameSubstrings = []string{"seedance-1-0-lite-t2v", "seedance-1.0-lite-t2v"}
+	arkSeedance2Substrings      = []string{"seedance-2-0", "seedance-2.0"}
+	arkSeedance25Substrings     = []string{"seedance-2-5", "seedance-2.5"}
+	arkNoFirstFrameSubstrings   = []string{"seedance-1-0-lite-t2v", "seedance-1.0-lite-t2v"}
 	arkLastFrameAllowSubstrings = []string{
 		"seedance-1-5-pro",
 		"seedance-1.5-pro",

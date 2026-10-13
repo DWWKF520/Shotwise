@@ -144,7 +144,7 @@ func writeCapped(target string, reader io.Reader, max int64) error {
 		return err
 	}
 	n, err := io.Copy(f, io.LimitReader(reader, max+1))
-		closeErr := f.Close()
+	closeErr := f.Close()
 	if err == nil && n > max {
 		_ = os.Remove(target)
 		return ErrImageTooLarge

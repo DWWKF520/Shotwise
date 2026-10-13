@@ -254,7 +254,7 @@ func shellSafeName(k string) string {
 	return k
 }
 
-// shellSingleQuote POSIX 单引号包裹，内部单引号按 `'\''` 转义。
+// shellSingleQuote POSIX 单引号包裹，内部单引号按 `'\”` 转义。
 func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

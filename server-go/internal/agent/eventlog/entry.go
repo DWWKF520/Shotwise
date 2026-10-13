@@ -17,10 +17,10 @@ import (
 type EntryType string
 
 const (
-	EntryUser      EntryType = "user"
-	EntryAssistant EntryType = "assistant"
+	EntryUser       EntryType = "user"
+	EntryAssistant  EntryType = "assistant"
 	EntryToolResult EntryType = "tool_result"
-	EntrySystem    EntryType = "system"
+	EntrySystem     EntryType = "system"
 )
 
 // EntrySubtype 是 entry 的二级类型（subtype 契约）。
@@ -37,8 +37,8 @@ const (
 
 // Block 是 content[] 内的归一化内容块（对应 Python turn_schema 的 block 归一化）。
 type Block struct {
-	Type string          `json:"type"` // text / tool_use / tool_result / image
-	Text string          `json:"text,omitempty"`
+	Type string `json:"type"` // text / tool_use / tool_result / image
+	Text string `json:"text,omitempty"`
 	// tool_use 块的附属字段。
 	ID    string          `json:"id,omitempty"`
 	Name  string          `json:"name,omitempty"`
@@ -49,14 +49,14 @@ type Block struct {
 // parent_tool_use_id 采用 snake_case 单一形态写入；读侧三形态归一
 // （parent_tool_use_id / parentToolUseID / parentToolUseId）由消费方兼容。
 type Entry struct {
-	Seq             int64          `json:"seq"`
-	UUID            string         `json:"uuid"`
-	SessionID       string         `json:"session_id"`
-	Type            EntryType      `json:"type"`
-	Subtype         EntrySubtype   `json:"subtype,omitempty"`
-	Content         []Block        `json:"content,omitempty"`
-	Timestamp       time.Time      `json:"timestamp"`
-	ParentToolUseID string         `json:"parent_tool_use_id,omitempty"`
-	MessageID       string         `json:"message_id,omitempty"`
-	ToolUseID       string         `json:"tool_use_id,omitempty"`
+	Seq             int64        `json:"seq"`
+	UUID            string       `json:"uuid"`
+	SessionID       string       `json:"session_id"`
+	Type            EntryType    `json:"type"`
+	Subtype         EntrySubtype `json:"subtype,omitempty"`
+	Content         []Block      `json:"content,omitempty"`
+	Timestamp       time.Time    `json:"timestamp"`
+	ParentToolUseID string       `json:"parent_tool_use_id,omitempty"`
+	MessageID       string       `json:"message_id,omitempty"`
+	ToolUseID       string       `json:"tool_use_id,omitempty"`
 }

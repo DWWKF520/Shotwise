@@ -141,11 +141,11 @@ var customDeclarationHeaders = map[string]string{
 }
 
 var (
-	customSimpleNameRe       = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
-	customPathPlaceholderRe  = regexp.MustCompile(`\{[^{}]+\}`)
+	customSimpleNameRe          = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+	customPathPlaceholderRe     = regexp.MustCompile(`\{[^{}]+\}`)
 	customTemplatePlaceholderRe = regexp.MustCompile(`\{[A-Za-z][A-Za-z0-9_-]*\}`)
-	customJSONPointerTokenRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
-	customJSONPointerIndexRe = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
+	customJSONPointerTokenRe    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+	customJSONPointerIndexRe    = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
 )
 
 var customPollFields = customStringSet(
@@ -163,12 +163,12 @@ var customBodyTemplateInputs = customStringSet(
 var customPollPointerPlaceholders = customStringSet("job_id", "model")
 
 const (
-	customMaxTemplateDepth         = 32
-	customDefaultPollIntervalSecs  = 2.0
-	customDefaultPollTimeoutSecs   = 300.0
-	customMinPollIntervalSecs      = 0.05
-	customMaxPollIntervalSecs      = 60.0
-	customMaxPollTimeoutSecs       = 3600.0
+	customMaxTemplateDepth        = 32
+	customDefaultPollIntervalSecs = 2.0
+	customDefaultPollTimeoutSecs  = 300.0
+	customMinPollIntervalSecs     = 0.05
+	customMaxPollIntervalSecs     = 60.0
+	customMaxPollTimeoutSecs      = 3600.0
 )
 
 func customStringSet(items ...string) map[string]bool {
@@ -632,10 +632,10 @@ func ValidateCustomEndpointDeclaration(declaration *CustomEndpointDeclaration) e
 
 func customPollToMap(poll *CustomEndpointPoll) map[string]any {
 	out := map[string]any{
-		"path":            poll.Path,
-		"job_id":          poll.JobID,
-		"status":          poll.Status,
-		"done_value":      poll.DoneValue,
+		"path":             poll.Path,
+		"job_id":           poll.JobID,
+		"status":           poll.Status,
+		"done_value":       poll.DoneValue,
 		"interval_seconds": poll.IntervalSeconds,
 		"timeout_seconds":  poll.TimeoutSeconds,
 	}
