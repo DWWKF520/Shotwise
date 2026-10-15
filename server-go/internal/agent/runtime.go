@@ -228,6 +228,10 @@ type Runtime struct {
 	// assetQueue / assetProjects 为 generate_assets 的依赖（WithAssetGeneration 注入）。
 	assetQueue    AssetQueue
 	assetProjects AssetProjects
+	// videoCaps 为 get_video_capabilities 的能力解析器（WithVideoCapabilities 注入）。
+	videoCaps VideoCapabilityReader
+	// textGate 记录各项目最近一次文本清单签名，供 read_project_text 门禁使用。
+	textGate textFileGate
 
 	mu                sync.Mutex
 	active            map[string]*sessionLoop
@@ -733,6 +737,29 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 	}
 	tools = append(tools, askUser)
 	tools = append(tools, r.extraTools...)
+	listTextFiles, err := newListProjectTextFilesTool(project, r.projectRoot(project), &r.textGate)
+	if err != nil {
+		return nil, fmt.Errorf("agent: build list_project_text_files: %w", err)
+	}
+	readText, err := newReadProjectTextTool(project, r.projectRoot(project), &r.textGate)
+	if err != nil {
+		return nil, fmt.Errorf("agent: build read_project_text: %w", err)
+	}
+	tools = append(tools, listTextFiles, readText)
+	if r.assetProjects != nil {
+		pending, err := newListPendingAssetsTool(project, r.assetProjects)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build list_pending_assets: %w", err)
+		}
+		tools = append(tools, pending)
+	}
+	if r.videoCaps != nil && r.assetProjects != nil {
+		caps, err := newGetVideoCapabilitiesTool(project, r.videoCaps, r.assetProjects)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build get_video_capabilities: %w", err)
+		}
+		tools = append(tools, caps)
+	}
 	if r.assetWriter != nil && r.projectWriter != nil {
 		patch, err := newPatchProjectTool(project, r.assetWriter, r.projectWriter)
 		if err != nil {

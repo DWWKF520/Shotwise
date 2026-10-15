@@ -296,6 +296,116 @@ func awaitAssetTask(ctx context.Context, q AssetQueue, taskID string) (repositor
 	}
 }
 
+// WithAssetProjects 注入 list_pending_assets 的项目读取能力（不依赖队列，因此独立于 WithAssetGeneration）。
+func WithAssetProjects(projects AssetProjects) RuntimeOption {
+	return func(r *Runtime) {
+		r.assetProjects = projects
+	}
+}
+
+// assetEmoji 是 list_pending_assets 输出中的类型图标（与 Python 侧 _EMOJI 一致）。
+var assetEmoji = map[domain.AssetKind]string{
+	domain.AssetCharacter: "🧑", domain.AssetScene: "🏠", domain.AssetProp: "📦", domain.AssetProduct: "🛍️",
+}
+
+type listPendingAssetsIn struct {
+	Type string `json:"type,omitempty" jsonschema:"description=资产类型 character/scene/prop/product；省略则汇总所有类型"`
+}
+
+// newListPendingAssetsTool 列出无可用设计图的资产（只读，对应 Python list_pending_assets）。
+func newListPendingAssetsTool(project string, projects AssetProjects) (tool.InvokableTool, error) {
+	return toolutils.InferTool("list_pending_assets",
+		"列出项目内待生成设计图的角色/场景/道具/产品。type 省略则汇总所有类型。",
+		func(ctx context.Context, in listPendingAssetsIn) (string, error) {
+			kinds := assetTypeOrder
+			if in.Type != "" {
+				kind := domain.AssetKind(in.Type)
+				if _, ok := assetLabels[kind]; !ok {
+					return denyEnvelope(fmt.Sprintf("type 必须是 character/scene/prop/product 之一，收到 %q", in.Type)), nil
+				}
+				kinds = []domain.AssetKind{kind}
+			}
+			if projects == nil {
+				return denyEnvelope("asset projects not configured"), nil
+			}
+			pf, err := projects.Get(project)
+			if err != nil {
+				return denyEnvelope(err.Error()), nil
+			}
+			dir, err := projects.Dir(project)
+			if err != nil {
+				return denyEnvelope(err.Error()), nil
+			}
+			return okEnvelope(renderPendingAssets(project, kinds, pf, dir)), nil
+		})
+}
+
+func renderPendingAssets(project string, kinds []domain.AssetKind, pf *domain.ProjectFile, dir string) string {
+	var lines []string
+	total := 0
+	for _, kind := range kinds {
+		label := assetLabels[kind]
+		pending := pendingAssetNames(pf, dir, kind)
+		if len(pending) == 0 {
+			lines = append(lines, fmt.Sprintf("✅ 项目 '%s' 所有%s都已有设计图", project, label))
+			continue
+		}
+		total += len(pending)
+		lines = append(lines, fmt.Sprintf("\n📋 待生成的%s (%d 个):", label, len(pending)))
+		for _, p := range pending {
+			lines = append(lines, fmt.Sprintf("  %s %s — %s", assetEmoji[kind], p.name, previewText(p.desc, 60)))
+		}
+	}
+	if len(kinds) == len(assetTypeOrder) && total == 0 {
+		lines = append(lines, fmt.Sprintf("\n✅ 项目 '%s' 所有资产均已有设计图", project))
+	}
+	return strings.Join(lines, "\n")
+}
+
+type pendingAsset struct {
+	name string
+	desc string
+}
+
+// pendingAssetNames 返回指定类型中无可用设计图的条目（按名称排序）。
+func pendingAssetNames(pf *domain.ProjectFile, dir string, kind domain.AssetKind) []pendingAsset {
+	spec, ok := domain.Spec(kind)
+	if !ok {
+		return nil
+	}
+	bucket, ok := pf.BucketRef(kind)
+	if !ok || bucket == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(*bucket))
+	for k := range *bucket {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var out []pendingAsset
+	for _, key := range keys {
+		entry := (*bucket)[key]
+		if hasAvailableSheet(dir, entry, spec.SheetKey) {
+			continue
+		}
+		desc := ""
+		if entry != nil {
+			desc = entry.Description()
+		}
+		out = append(out, pendingAsset{name: key, desc: desc})
+	}
+	return out
+}
+
+// previewText 按字符（非字节）截断，超出时追加省略号。
+func previewText(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
 func dedupStrings(in []string) []string {
 	seen := map[string]bool{}
 	var out []string

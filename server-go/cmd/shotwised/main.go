@@ -104,7 +104,8 @@ func run(log *slog.Logger) error {
 		BaseURL: cfg.LLMBaseURL,
 	}, cfg.DataDir, cpStore, eventlog.NewSQLStore(gdb),
 		agent.WithIdleTimeout(cfg.AgentIdleTimeout),
-		agent.WithProjectWriters(assets, store))
+		agent.WithProjectWriters(assets, store), agent.WithAssetProjects(store),
+		agent.WithVideoCapabilities(config.NewResolver(gdb)))
 	if err != nil {
 		return err
 	}

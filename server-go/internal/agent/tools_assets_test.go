@@ -162,6 +162,34 @@ func TestGenerateAssetsValidatesArguments(t *testing.T) {
 	}
 }
 
+func TestListPendingAssetsReportsOnlyMissingSheets(t *testing.T) {
+	projects, _ := newAssetFixture(t)
+	tl, err := newListPendingAssetsTool("proj", projects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := tl.InvokableRun(context.Background(), `{"type":"character"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "阿明") || !strings.Contains(out, "空白") || strings.Contains(out, "小红") {
+		t.Fatalf("pending list wrong (小红 has sheet, must be excluded): %s", out)
+	}
+	if !strings.Contains(out, "少年，黑发") {
+		t.Fatalf("pending entry should carry description preview: %s", out)
+	}
+
+	out, _ = tl.InvokableRun(context.Background(), `{"type":"scene"}`)
+	if !strings.Contains(out, "所有场景都已有设计图") {
+		t.Fatalf("empty bucket should report all done: %s", out)
+	}
+
+	out, _ = tl.InvokableRun(context.Background(), `{"type":"weapon"}`)
+	if !strings.Contains(out, `"is_error":true`) {
+		t.Fatalf("invalid type must be denied: %s", out)
+	}
+}
+
 func TestDedupStrings(t *testing.T) {
 	got := dedupStrings([]string{"a", "b", "a", "c", "b"})
 	if strings.Join(got, ",") != "a,b,c" {

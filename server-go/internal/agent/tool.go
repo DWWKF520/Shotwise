@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 	"github.com/shotwise/shotwise/internal/agent/policy"
 )
 
@@ -55,6 +57,57 @@ func (m *GuardMiddleware) WrapInvokableToolCall(ctx context.Context, ep adk.Invo
 		}
 		return res, runErr
 	}, nil
+}
+
+// WrapEnhancedInvokableToolCall 对多模态工具（EnhancedInvokableTool）实现与 WrapInvokableToolCall 同语义的包裹：
+// 框架只把 InvokableTool 交给 WrapInvokableToolCall，不实现这里则多模态工具会绕过 ToolGuard。
+// deny 与执行失败都回灌为文本 is_error 信封的 ToolResult，结构与字符串工具一致。
+func (m *GuardMiddleware) WrapEnhancedInvokableToolCall(ctx context.Context, ep adk.EnhancedInvokableToolCallEndpoint, tc *adk.ToolContext) (adk.EnhancedInvokableToolCallEndpoint, error) {
+	if m.guard == nil {
+		return ep, nil
+	}
+	return func(ctx context.Context, arg *schema.ToolArgument, opts ...tool.Option) (*schema.ToolResult, error) {
+		args := ""
+		if arg != nil {
+			args = arg.Text
+		}
+		call := policy.ToolCall{Name: tc.Name, Args: json.RawMessage(args)}
+		rewritten, err := m.guard.Pre(ctx, call)
+		if err != nil {
+			return denyResult(err.Error()), nil
+		}
+		argIn := args
+		if rewritten != nil {
+			argIn = string(rewritten)
+		}
+		res, runErr := ep(ctx, &schema.ToolArgument{Text: argIn}, opts...)
+		if runErr != nil && !isControlFlow(runErr) {
+			return denyResult(runErr.Error()), nil
+		}
+		if perr := m.guard.Post(ctx, call, toolResultText(res)); perr != nil {
+			return denyResult(perr.Error()), nil
+		}
+		return res, runErr
+	}, nil
+}
+
+// denyResult 把失败信封封装为多模态结果的唯一文本部件。
+func denyResult(msg string) *schema.ToolResult {
+	return &schema.ToolResult{Parts: []schema.ToolOutputPart{{Type: schema.ToolPartTypeText, Text: denyEnvelope(msg)}}}
+}
+
+// toolResultText 拼接多模态结果中的文本部件，供 Post 校验使用（图片部件不参与文本校验）。
+func toolResultText(res *schema.ToolResult) string {
+	if res == nil {
+		return ""
+	}
+	var parts []string
+	for _, p := range res.Parts {
+		if p.Type == schema.ToolPartTypeText {
+			parts = append(parts, p.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // isControlFlow 判定错误是否为框架控制信号（HITL 中断、取消），这类错误必须原样上抛。
