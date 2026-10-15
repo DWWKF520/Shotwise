@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ProviderSecretKeys 是禁止出现在进程环境中的 provider 密钥键名。
@@ -54,6 +55,10 @@ type Config struct {
 	LLMModel   string
 	LLMAPIKey  string
 	LLMBaseURL string
+
+	// AgentIdleTimeout 是会话 loop 的空闲自动退出时长：超过该时长无新输入的
+	// TurnLoop 自行收口，历史留在事件日志里，下次提问重建 loop。
+	AgentIdleTimeout time.Duration
 }
 
 // Load 从环境读取配置。返回值不含任何 provider 密钥。
@@ -87,6 +92,14 @@ func Load() (*Config, error) {
 	cfg.LLMModel = envOr("LLM_MODEL", "gpt-4o-mini")
 	cfg.LLMAPIKey = os.Getenv("LLM_API_KEY")
 	cfg.LLMBaseURL = os.Getenv("LLM_BASE_URL")
+	idle, err := time.ParseDuration(envOr("AGENT_IDLE_TIMEOUT", "30m"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid AGENT_IDLE_TIMEOUT: %w", err)
+	}
+	if idle <= 0 {
+		return nil, fmt.Errorf("AGENT_IDLE_TIMEOUT must be positive, got %s", idle)
+	}
+	cfg.AgentIdleTimeout = idle
 	return cfg, nil
 }
 

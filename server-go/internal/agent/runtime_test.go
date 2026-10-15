@@ -78,7 +78,7 @@ func newTestRuntime(t *testing.T, m model.ToolCallingChatModel) *Runtime {
 		cpStore:           checkpoint.NewMemStore(),
 		evStore:           eventlog.NewMemStore(),
 		active:            map[string]*sessionLoop{},
-		pendingInterrupts: map[string]string{},
+		pendingInterrupts: map[string]*PendingQuestion{},
 		chatModelOverride: m,
 	}
 }
@@ -232,35 +232,45 @@ func TestRuntime_AskUserResume(t *testing.T) {
 	evs := drainEvents(t, ch)
 	unsub()
 
-	var interruptID string
+	var questionID string
 	for _, ev := range evs {
 		if ev.Type == EventQuestion {
-			var meta struct {
-				InterruptID string `json:"interrupt_id"`
-			}
-			if jsonErr := json.Unmarshal(ev.Meta, &meta); jsonErr == nil {
-				interruptID = meta.InterruptID
+			var payload questionPayload
+			if jsonErr := json.Unmarshal(ev.Raw, &payload); jsonErr == nil {
+				questionID = payload.QuestionID
 			}
 		}
 	}
-	if interruptID == "" {
-		t.Fatalf("no question event with interrupt_id; events=%+v", evs)
+	if questionID == "" {
+		t.Fatalf("no question event with question_id; events=%+v", evs)
 	}
-	r.mu.Lock()
-	pending := r.pendingInterrupts["s3"]
-	r.mu.Unlock()
-	if pending != interruptID {
-		t.Fatalf("pendingInterrupts = %q, want %q", pending, interruptID)
+	pending, ok := r.PendingQuestionOf("s3")
+	if !ok {
+		t.Fatal("PendingQuestionOf: no pending question registered")
+	}
+	if pending.ID != questionID {
+		t.Fatalf("pending question id = %q, want %q", pending.ID, questionID)
+	}
+	if len(pending.Questions) != 1 || pending.Questions[0].Question != "选哪个方案？" {
+		t.Fatalf("pending questions = %+v, want the asked question", pending.Questions)
+	}
+
+	// 旧 question_id（迟到的回答）不得恢复新一轮的 checkpoint。
+	if _, _, err := r.AnswerQuestion(ctx, "s3", "stale-question", map[string]string{questionID: "A"}); err == nil {
+		t.Fatal("AnswerQuestion with stale question_id: want error")
 	}
 
 	// 回答后从 checkpoint 恢复：ask_user 工具回吐答案，模型续跑出最终文本。
-	rch, runsub, err := r.Answer(ctx, "s3", AnswerPayload{Answers: []string{"A"}})
+	rch, runsub, err := r.AnswerQuestion(ctx, "s3", questionID, map[string]string{questionID: "A"})
 	if err != nil {
 		t.Fatalf("answer: %v", err)
 	}
 	defer runsub()
 	revs := drainEvents(t, rch)
 
+	if _, stillPending := r.PendingQuestionOf("s3"); stillPending {
+		t.Fatal("pending question not cleared after answer")
+	}
 	var resumed bool
 	for _, ev := range revs {
 		if ev.Type == EventDelta && ev.Text == "user chose A" {
@@ -276,5 +286,107 @@ func TestRuntime_AskUserResume(t *testing.T) {
 	m.mu.Unlock()
 	if calls != 2 {
 		t.Fatalf("model calls = %d, want 2", calls)
+	}
+}
+
+// --- 场景 4：事件日志冷读回放与 SSE 游标 ---
+
+func TestRuntime_StreamReplaysEntries(t *testing.T) {
+	m := &scriptedModel{script: []*schema.Message{textMsg("done")}}
+	r := newTestRuntime(t, m)
+	ctx := context.Background()
+	_, ch, unsub, err := r.Query(ctx, "s4", "proj", "hello")
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	drainEvents(t, ch)
+	unsub()
+
+	entries, err := r.Entries(ctx, "s4", -1)
+	if err != nil {
+		t.Fatalf("entries: %v", err)
+	}
+	if len(entries) < 2 {
+		t.Fatalf("entries = %d, want user + assistant", len(entries))
+	}
+	for i, e := range entries {
+		if e.Seq != int64(i+1) {
+			t.Fatalf("entries[%d].Seq = %d, want %d", i, e.Seq, i+1)
+		}
+	}
+
+	// 会话无活跃 loop：回放全部条目后给终态 status 并关闭流。
+	sch, sunsub, err := r.Stream(ctx, "s4", -1)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	defer sunsub()
+	evs := drainEvents(t, sch)
+	var entrySeqs []int64
+	var sawTerminal bool
+	for _, ev := range evs {
+		switch ev.Type {
+		case EventEntry:
+			if len(ev.Raw) == 0 {
+				t.Fatal("entry event carries no payload")
+			}
+			var e eventlog.Entry
+			if err := json.Unmarshal(ev.Raw, &e); err != nil {
+				t.Fatalf("entry payload is not an entry: %v", err)
+			}
+			entrySeqs = append(entrySeqs, e.Seq)
+		case EventStatus:
+			sawTerminal = true
+		}
+	}
+	if len(entrySeqs) != len(entries) {
+		t.Fatalf("replayed %d entries, want %d", len(entrySeqs), len(entries))
+	}
+	for i, seq := range entrySeqs {
+		if seq != int64(i+1) {
+			t.Fatalf("replayed seqs = %v, want ascending from 1", entrySeqs)
+		}
+	}
+	if !sawTerminal {
+		t.Fatalf("idle session stream produced no terminal status; events=%+v", evs)
+	}
+
+	// 游标续传：只回放游标之后的条目。
+	cut := entries[len(entries)-1].Seq
+	tch, tunsub, err := r.Stream(ctx, "s4", cut)
+	if err != nil {
+		t.Fatalf("stream after cursor: %v", err)
+	}
+	defer tunsub()
+	for _, ev := range drainEvents(t, tch) {
+		if ev.Type == EventEntry && ev.Seq <= cut {
+			t.Fatalf("entry seq %d <= cursor %d replayed", ev.Seq, cut)
+		}
+	}
+}
+
+// 直播流的事件必须带条目 seq：SSE 的 id 即续传游标。
+func TestRuntime_LiveEventsCarrySeq(t *testing.T) {
+	m := &scriptedModel{script: []*schema.Message{
+		toolCallMsg("call_1", "echo", `{"message":"hi"}`),
+		textMsg("final"),
+	}}
+	r := newTestRuntime(t, m)
+	_, ch, unsub, err := r.Query(context.Background(), "s5", "proj", "use echo")
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer unsub()
+	for _, ev := range drainEvents(t, ch) {
+		switch ev.Type {
+		case EventToolUse, EventToolResult:
+			if ev.Seq <= 0 {
+				t.Fatalf("%s event has no seq: %+v", ev.Type, ev)
+			}
+		case EventDelta:
+			if ev.Seq != 0 {
+				t.Fatalf("delta should carry no seq, got %d", ev.Seq)
+			}
+		}
 	}
 }

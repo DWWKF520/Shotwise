@@ -250,6 +250,33 @@ func (v *Versions) LatestCreatedAt(resourceType, resourceID string) (string, err
 	return createdAt, nil
 }
 
+// EnsureCurrentTracked 确保磁盘上已存在的当前产物至少有一条版本记录（对应 Python 侧同名方法）：
+// 再生成会把当前文件原地覆盖，未走过版本管理的历史内容（迁移遗留 / 外部放置）会因此不可回溯，
+// 故生成前先补快照。该资源已有版本（current_version > 0）时不动；currentFile 不存在时静默跳过。
+func (v *Versions) EnsureCurrentTracked(resourceType, resourceID, prompt, currentFile string, metadata map[string]any) (int, error) {
+	if _, err := os.Stat(currentFile); err != nil {
+		return 0, nil
+	}
+	tracked := false
+	if err := withVersionsLock(v.lockKey(), func() error {
+		data, err := v.load()
+		if err != nil {
+			return err
+		}
+		if rec := data[resourceType][resourceID]; rec != nil && rec.CurrentVersion > 0 {
+			tracked = true
+		}
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	if tracked {
+		return 0, nil
+	}
+	_, _, err := v.AddVersion(resourceType, resourceID, prompt, currentFile, metadata)
+	return 0, err
+}
+
 func (v *Versions) lockKey() string { return v.projectDir }
 
 func (v *Versions) load() (versionsData, error) {

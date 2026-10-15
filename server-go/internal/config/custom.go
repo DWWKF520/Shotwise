@@ -84,6 +84,9 @@ type CustomBackendInput struct {
 	// EndpointDeclaration / CapabilityOverrides 原样透传 JSON，空串 = 无声明（跟随系统判定）。
 	EndpointDeclaration string
 	CapabilityOverrides string
+	// SupportedDurations 是自定义模型在 DB 声明的可选视频时长（CSV，如 "5,10"）；
+	// 空串 = 未声明，由时长守卫 fail loud。
+	SupportedDurations string
 }
 
 // LoadCustomBackendInput 按 provider_id（custom-<db_id>）与 model_id 读取 backend 工厂输入。
@@ -113,6 +116,10 @@ func LoadCustomBackendInput(ctx context.Context, db *gorm.DB, providerID, modelI
 	if model.CapabilityOverrides != nil {
 		overrides = *model.CapabilityOverrides
 	}
+	durations := ""
+	if model.SupportedDurations != nil {
+		durations = *model.SupportedDurations
+	}
 	return &CustomBackendInput{
 		ProviderID:          providerID,
 		BaseURL:             prov.BaseURL,
@@ -120,6 +127,7 @@ func LoadCustomBackendInput(ctx context.Context, db *gorm.DB, providerID, modelI
 		Endpoint:            model.Endpoint,
 		EndpointDeclaration: declaration,
 		CapabilityOverrides: overrides,
+		SupportedDurations:  durations,
 	}, nil
 }
 

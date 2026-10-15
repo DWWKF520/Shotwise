@@ -3,6 +3,8 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // EventType 是 SSE 推送的事件种类，与 Python 侧 service.py 的 entry/stream 语义对齐。
@@ -16,6 +18,7 @@ const (
 	EventUsage      EventType = "usage"       // token 用量
 	EventQuestion   EventType = "question"    // ask_user 挂起，等待用户回答（HITL）
 	EventTaskNotice EventType = "task_notice" // 后台任务完成通知注入会话
+	EventEntry      EventType = "entry"       // 事件日志条目（冷读回放与断线续传）
 )
 
 // Event 是智能体运行时向外推送的最小事件单元。
@@ -32,17 +35,35 @@ type Event struct {
 	IsError bool `json:"is_error,omitempty"`
 	// Meta 承载结构化附加信息（如 tool 入参 JSON、usage 明细）。
 	Meta json.RawMessage `json:"meta,omitempty"`
+	// Raw 非空时作为 SSE data: 的载荷原样输出（entry 冷读回放：前端拿到的
+	// data 就是条目本身，而不是套一层信封）。
+	Raw json.RawMessage `json:"-"`
 }
 
-// EncodeSSE 把事件序列化成 SSE 帧：`data: <json>\n\n`。供 transport 层调用。
+// EncodeSSE 把事件序列化成 SSE 帧：`event: <type>` / `id: <seq>` / `data: <json>`。
+// id 仅在 Seq > 0 时输出——entry 派生事件带 seq，EventSource 的 Last-Event-ID
+// 即 seq 游标，重连据此续传（设计文档 §14.1）；delta 等无条目事件不带 id。
 func (e Event) EncodeSSE() string {
-	b, err := json.Marshal(e)
-	if err != nil {
-		// 序列化兜底：避免单条事件坏掉整个流。
-		b = []byte(fmt.Sprintf(`{"type":"error","text":%q}`, err.Error()))
+	data := e.Raw
+	if len(data) == 0 {
+		b, err := json.Marshal(e)
+		if err != nil {
+			// 序列化兜底：避免单条事件坏掉整个流。
+			b = []byte(fmt.Sprintf(`{"type":"error","text":%q}`, err.Error()))
+		}
+		data = b
 	}
-	return "data: " + string(b) + "\n\n"
+	var sb strings.Builder
+	sb.WriteString("event: ")
+	sb.WriteString(string(e.Type))
+	sb.WriteByte('\n')
+	if e.Seq > 0 {
+		sb.WriteString("id: ")
+		sb.WriteString(strconv.FormatInt(e.Seq, 10))
+		sb.WriteByte('\n')
+	}
+	sb.WriteString("data: ")
+	sb.Write(data)
+	sb.WriteString("\n\n")
+	return sb.String()
 }
-
-// encodeSSE 包内别名（保留旧调用点兼容）。
-func (e Event) encodeSSE() string { return e.EncodeSSE() }

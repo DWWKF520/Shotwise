@@ -33,9 +33,9 @@ type eventAdapter struct {
 	sessionID string
 	store     eventlog.Store
 	emit      func(Event)
-	// onInterrupted 在捕获业务中断（ask_user）时回调，把 interruptID 交给
-	// Runtime 登记待答问题（恢复时作为 ResumeParams.Targets 的 key）。
-	onInterrupted func(interruptID string)
+	// onInterrupted 在捕获业务中断（ask_user）时回调，把待决问题交给
+	// Runtime 登记（恢复时作为 ResumeParams.Targets 的 key）。
+	onInterrupted func(*PendingQuestion)
 }
 
 // assistantDraft 累积一轮 assistant 流式 chunk，轮末合并成整消息落库。
@@ -145,10 +145,13 @@ func (a *eventAdapter) flushAssistantDraft(ctx context.Context, draft *assistant
 			Type: "tool_use", ID: tc.ID, Name: tc.Function.Name,
 			Input: json.RawMessage(tc.Function.Arguments),
 		})
-		a.emit(Event{SessionID: a.sessionID, Type: EventToolUse, ToolName: tc.Function.Name,
+	}
+	// 先落库拿 seq，再广播：tool_use 事件带条目 seq，前端可据此续传/去重。
+	seq := a.appendOne(ctx, entry)
+	for _, tc := range msg.ToolCalls {
+		a.emit(Event{SessionID: a.sessionID, Seq: seq, Type: EventToolUse, ToolName: tc.Function.Name,
 			Meta: mustJSON(map[string]any{"arguments": tc.Function.Arguments})})
 	}
-	a.appendEntries(ctx, entry)
 }
 
 // handleToolMessage 处理 Role=tool 的完整消息事件：tool_result entry + 事件。
@@ -181,8 +184,8 @@ func (a *eventAdapter) handleToolMessage(ctx context.Context, mo *adk.TypedMessa
 		ToolUseID: msg.ToolCallID,
 	}
 	entry.Content = append(entry.Content, eventlog.Block{Type: "tool_result", Text: text})
-	a.appendEntries(ctx, entry)
-	a.emit(Event{SessionID: a.sessionID, Type: EventToolResult, ToolName: mo.ToolName,
+	seq := a.appendOne(ctx, entry)
+	a.emit(Event{SessionID: a.sessionID, Seq: seq, Type: EventToolResult, ToolName: mo.ToolName,
 		IsError: isErr, Text: text})
 }
 
@@ -197,8 +200,23 @@ func concatToolChunk(acc, chunk *schema.Message) *schema.Message {
 	return acc
 }
 
-// handleInterrupted 处理业务中断：question entry + question 事件 + interruptID 登记。
+// handleInterrupted 处理业务中断：question entry + question 事件 + 待决问题登记。
 func (a *eventAdapter) handleInterrupted(ctx context.Context, info *adk.InterruptInfo) {
+	var interruptID string
+	var questions []AskQuestion
+	for _, ic := range info.InterruptContexts {
+		if ic == nil {
+			continue
+		}
+		if interruptID == "" {
+			interruptID = ic.ID
+		}
+		// ask_user 挂起时 Info 即 AskUserInput；类型不符时只登记 ID，
+		// 问题结构退回事件日志里的原始 JSON。
+		if in, ok := ic.Info.(AskUserInput); ok {
+			questions = append(questions, in.Questions...)
+		}
+	}
 	entry := &eventlog.Entry{
 		UUID:      newEntryUUID(),
 		SessionID: a.sessionID,
@@ -206,24 +224,29 @@ func (a *eventAdapter) handleInterrupted(ctx context.Context, info *adk.Interrup
 		Subtype:   eventlog.SubtypeQuestion,
 		Timestamp: nowUTC(),
 	}
-	var interruptID string
-	first := true
 	for _, ic := range info.InterruptContexts {
-		if ic == nil {
-			continue
-		}
-		if first {
-			interruptID = ic.ID
+		if ic != nil {
 			entry.Content = append(entry.Content, eventlog.Block{Type: "text", Text: interruptPayloadText(ic.Info)})
-			first = false
 		}
 	}
+	seq := a.appendOne(ctx, entry)
 	if interruptID != "" && a.onInterrupted != nil {
-		a.onInterrupted(interruptID)
+		a.onInterrupted(&PendingQuestion{
+			SessionID: a.sessionID,
+			ID:        interruptID,
+			Seq:       seq,
+			Questions: questions,
+		})
 	}
-	a.appendEntries(ctx, entry)
-	a.emit(Event{SessionID: a.sessionID, Type: EventQuestion,
-		Meta: mustJSON(map[string]any{"interrupt_id": interruptID})})
+	a.emit(Event{SessionID: a.sessionID, Seq: seq, Type: EventQuestion,
+		Raw: mustJSON(questionPayload{SessionID: a.sessionID, QuestionID: interruptID, Questions: questions})})
+}
+
+// questionPayload 是 question 事件的 data 载荷（与 Python 侧 ask_user_question 事件同构）。
+type questionPayload struct {
+	SessionID  string        `json:"session_id"`
+	QuestionID string        `json:"question_id"`
+	Questions  []AskQuestion `json:"questions"`
 }
 
 // handleError 处理事件流错误：CancelError → interrupt / cancelled；其他 → 失败。
@@ -276,11 +299,22 @@ func (a *eventAdapter) appendSystemNotice(ctx context.Context, subtype eventlog.
 	})
 }
 
+// appendEntries 批量追加条目（忽略写失败：事件日志不可用时不阻断运行）。
 func (a *eventAdapter) appendEntries(ctx context.Context, entries ...*eventlog.Entry) {
-	if _, err := a.store.Append(ctx, entries); err != nil {
-		// 事件日志写失败不阻断运行；SSE 出口仍在。
+	if len(entries) == 0 {
 		return
 	}
+	_, _ = a.store.Append(ctx, entries)
+}
+
+// appendOne 追加条目并返回第一条的 seq（落库失败时 seq 为 0，事件不带 id）。
+func (a *eventAdapter) appendOne(ctx context.Context, entry *eventlog.Entry) int64 {
+	seqs, err := a.store.Append(ctx, []*eventlog.Entry{entry})
+	if err != nil || len(seqs) == 0 {
+		// 事件日志写失败不阻断运行；SSE 出口仍在。
+		return 0
+	}
+	return seqs[0]
 }
 
 func (a *eventAdapter) emitUsage(u *schema.TokenUsage) {

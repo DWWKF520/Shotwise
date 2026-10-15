@@ -21,6 +21,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/agent"
 	"github.com/shotwise/shotwise/internal/agent/checkpoint"
+	"github.com/shotwise/shotwise/internal/agent/eventlog"
 	"github.com/shotwise/shotwise/internal/app"
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
@@ -89,7 +90,8 @@ func run(log *slog.Logger) error {
 	}
 
 	// 智能体运行时：用 Eino 重建，取代 Claude Agent SDK 的子进程模型。
-	// checkpoint 落 SQL（agent_checkpoints 表）；事件日志 SQL Store 属后续增量，先用内存实现。
+	// checkpoint 与事件日志都落 SQL（agent_checkpoints / agent_session_event_log）：
+	// 前者供中断恢复，后者是权威 transcript，SSE 按 seq 游标续传依赖它。
 	cpStore, err := checkpoint.NewSQLStore(gdb)
 	if err != nil {
 		return err
@@ -98,7 +100,7 @@ func run(log *slog.Logger) error {
 		APIKey:  cfg.LLMAPIKey,
 		Model:   cfg.LLMModel,
 		BaseURL: cfg.LLMBaseURL,
-	}, cfg.DataDir, cpStore, nil)
+	}, cfg.DataDir, cpStore, eventlog.NewSQLStore(gdb), agent.WithIdleTimeout(cfg.AgentIdleTimeout))
 	if err != nil {
 		return err
 	}
@@ -141,6 +143,8 @@ func run(log *slog.Logger) error {
 	log.Info("shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	// 先停会话 loop，再停 HTTP：loop 收口时不再往已关的连接写事件。
+	agentRT.Close()
 	if err := srv.Shutdown(ctx); err != nil {
 		return err
 	}

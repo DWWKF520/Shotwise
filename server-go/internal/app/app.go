@@ -96,6 +96,10 @@ func registerAgent(v1 *gin.RouterGroup, rt *Runtime) {
 	}
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterAgentRoutes(authed, rt.Agent)
+
+	// entry SSE 走 flexible 鉴权：EventSource 无法自定义 header，仅支持 ?token=。
+	sse := v1.Group("", rt.Auth.FlexibleMiddleware())
+	transport.RegisterAgentStreamRoutes(sse, rt.Agent)
 }
 
 func notFound(c *gin.Context) {

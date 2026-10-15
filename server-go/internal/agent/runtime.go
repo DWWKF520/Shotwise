@@ -13,6 +13,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,9 +58,34 @@ type InboxItem struct {
 }
 
 // AnswerPayload 是用户对 ask_user 的回答（HITL 恢复参数）。
+// Answers 按 question_id 给出用户选择/输入文本，与 Python 侧 answers dict 同构。
 type AnswerPayload struct {
-	// Answers 按问题顺序给出用户选择/输入文本。
-	Answers []string `json:"answers"`
+	Answers map[string]string `json:"answers"`
+}
+
+// Text 把回答摊平成给模型看的文本（按 question_id 标注）。
+func (p AnswerPayload) Text() string {
+	ids := make([]string, 0, len(p.Answers))
+	for id := range p.Answers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, fmt.Sprintf("%s: %s", id, p.Answers[id]))
+	}
+	return strings.Join(parts, "\n")
+}
+
+// PendingQuestion 是待用户回答的问题快照：interruptID 是 Eino 侧的中断上下文
+// ID（恢复时作为 ResumeParams.Targets 的 key，对外即 question_id）。
+// Seq 是 question 条目在事件日志里的 seq——重连冷订阅时按它把问题补发回去，
+// 前端不必再从条目正文里反解。
+type PendingQuestion struct {
+	SessionID string        `json:"session_id"`
+	ID        string        `json:"question_id"`
+	Seq       int64         `json:"seq"`
+	Questions []AskQuestion `json:"questions"`
 }
 
 // AskQuestion 描述 ask_user 的单个问题。
@@ -180,7 +207,7 @@ type Runtime struct {
 
 	mu                sync.Mutex
 	active            map[string]*sessionLoop
-	pendingInterrupts map[string]string // session → 未答 question 的 interruptID
+	pendingInterrupts map[string]*PendingQuestion // session → 待答问题
 }
 
 // CheckPointStore 是 checkpoint 存储接口（兼容 adk.CheckPointStore）。
@@ -202,6 +229,11 @@ func WithSecretEnvKeys(keys []string) RuntimeOption {
 	return func(r *Runtime) { r.secretKeys = append([]string(nil), keys...) }
 }
 
+// WithChatModel 注入会话主模型，跳过 provider 链的惰性构造（测试替身 / 固定模型部署）。
+func WithChatModel(m model.ToolCallingChatModel) RuntimeOption {
+	return func(r *Runtime) { r.chatModelOverride = m }
+}
+
 // NewRuntime 构造运行时。cpStore / evStore 传 nil 时使用内存实现（演示用）。
 func NewRuntime(ctx context.Context, cfg ModelConfig, dataDir string, cpStore CheckPointStore, evStore eventlog.Store, opts ...RuntimeOption) (*Runtime, error) {
 	if cpStore == nil {
@@ -217,7 +249,7 @@ func NewRuntime(ctx context.Context, cfg ModelConfig, dataDir string, cpStore Ch
 		cpStore:           cpStore,
 		evStore:           evStore,
 		active:            map[string]*sessionLoop{},
-		pendingInterrupts: map[string]string{},
+		pendingInterrupts: map[string]*PendingQuestion{},
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -290,10 +322,10 @@ func (r *Runtime) Interrupt(_ context.Context, sessionID string) error {
 // 返回恢复轮的事件订阅：订阅在 Push 前建立，保证恢复事件不丢。
 func (r *Runtime) Answer(ctx context.Context, sessionID string, answer AnswerPayload) (<-chan Event, func(), error) {
 	r.mu.Lock()
-	interruptID, ok := r.pendingInterrupts[sessionID]
+	pending := r.pendingInterrupts[sessionID]
 	delete(r.pendingInterrupts, sessionID) // 消费即清除：重复 Answer 报无待决问题
 	r.mu.Unlock()
-	if !ok {
+	if pending == nil {
 		return nil, nil, fmt.Errorf("agent: session %s has no pending question", sessionID)
 	}
 	sess := r.sessions.Get(sessionID)
@@ -305,18 +337,171 @@ func (r *Runtime) Answer(ctx context.Context, sessionID string, answer AnswerPay
 	delete(r.active, sessionID) // 保险：Wait 清理竞态下重复注册
 	r.mu.Unlock()
 	sl := r.newSessionLoop(sessionID, sess.Project)
-	sl.interruptID = interruptID
+	sl.interruptID = pending.ID
 	sl.answer = &answer
 	r.mu.Lock()
 	r.active[sessionID] = sl
 	r.mu.Unlock()
 	ch, unsub := sl.bus.Subscribe()
-	sl.adapter.appendSystemNotice(ctx, eventlog.SubtypeQuestionAnswer, fmt.Sprintf("%v", answer.Answers))
+	sl.adapter.appendSystemNotice(ctx, eventlog.SubtypeQuestionAnswer, answer.Text())
 	if ok, _ := sl.loop.Push(InboxItem{Kind: InboxAnswer, Answer: &answer}); !ok {
 		unsub()
 		return nil, nil, fmt.Errorf("agent: session %s is shutting down", sessionID)
 	}
 	return ch, unsub, nil
+}
+
+// AnswerQuestion 按 question_id 回答待决问题（HTTP 入口）。question_id 必须与
+// 当前待答问题一致，避免旧标签页的迟到回答恢复新一轮的 checkpoint。
+func (r *Runtime) AnswerQuestion(ctx context.Context, sessionID, questionID string, answers map[string]string) (<-chan Event, func(), error) {
+	if len(answers) == 0 {
+		return nil, nil, fmt.Errorf("agent: answers are required")
+	}
+	r.mu.Lock()
+	pending := r.pendingInterrupts[sessionID]
+	r.mu.Unlock()
+	if pending == nil {
+		return nil, nil, fmt.Errorf("agent: session %s has no pending question", sessionID)
+	}
+	if pending.ID != questionID {
+		return nil, nil, fmt.Errorf("agent: question %s is not pending on session %s", questionID, sessionID)
+	}
+	return r.Answer(ctx, sessionID, AnswerPayload{Answers: answers})
+}
+
+// IsActive 报告会话当前是否有活跃的 TurnLoop（running 状态判定）。
+func (r *Runtime) IsActive(sessionID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.active[sessionID]
+	return ok
+}
+
+// PendingQuestionOf 返回会话当前待答的问题快照；没有待答问题时 ok=false。
+// 待决问题只存在于内存：进程重启后 checkpoint 仍在，但问题结构需从事件日志
+// 的 question 条目重建，重建随分支能力一并接入。
+func (r *Runtime) PendingQuestionOf(sessionID string) (PendingQuestion, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p := r.pendingInterrupts[sessionID]
+	if p == nil {
+		return PendingQuestion{}, false
+	}
+	return *p, true
+}
+
+// Entries 冷读会话事件日志（历史回放，afterSeq 为 seq 游标，-1 表示从头）。
+func (r *Runtime) Entries(ctx context.Context, sessionID string, afterSeq int64) ([]*eventlog.Entry, error) {
+	return r.evStore.List(ctx, sessionID, afterSeq)
+}
+
+// Stream 订阅会话事件流：先按 afterSeq 游标回放事件日志存量条目，再接直播。
+//
+// 订阅先于库读建立（无缝衔接）；重复投递的条目由 seq 门槛过滤——身份比对，
+// 不是内容比对。带 seq 的事件（entry / tool_use / tool_result / question）在
+// lastSeq 之下会被丢弃，delta 等无条目事件（seq=0）一律放行。
+// 会话当前无活跃 loop 时，回放完存量条目即产出终态 status 并关闭。
+func (r *Runtime) Stream(ctx context.Context, sessionID string, afterSeq int64) (<-chan Event, func(), error) {
+	r.mu.Lock()
+	sl := r.active[sessionID]
+	r.mu.Unlock()
+
+	var live <-chan Event
+	unsub := func() {}
+	if sl != nil {
+		ch, cancel := sl.bus.Subscribe()
+		live = ch
+		unsub = cancel
+	}
+
+	entries, err := r.evStore.List(ctx, sessionID, afterSeq)
+	if err != nil {
+		unsub()
+		return nil, nil, err
+	}
+
+	out := make(chan Event, len(entries)+64)
+	stop := make(chan struct{})
+	var once sync.Once
+	stopAll := func() {
+		once.Do(func() { close(stop); unsub() })
+	}
+
+	go func() {
+		defer close(out)
+		lastSeq := afterSeq
+		for _, e := range entries {
+			if e.Seq > lastSeq {
+				lastSeq = e.Seq
+			}
+			select {
+			case out <- Event{SessionID: sessionID, Seq: e.Seq, Type: EventEntry, Raw: mustJSON(e)}:
+			case <-stop:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+		// 存量条目之后补发未决问题：重连的订阅方要能继续答题，不必等下一次挂起。
+		if pending, ok := r.PendingQuestionOf(sessionID); ok {
+			select {
+			case out <- pendingQuestionEvent(sessionID, pending):
+			case <-stop:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+		if sl == nil {
+			// 非 running 会话：存量条目播完，未决问题补发后给终态即结束。
+			select {
+			case out <- Event{SessionID: sessionID, Type: EventStatus, Text: "idle"}:
+			case <-stop:
+			case <-ctx.Done():
+			}
+			return
+		}
+		for {
+			select {
+			case ev, ok := <-live:
+				if !ok {
+					return // loop 退出，bus 关闭
+				}
+				if ev.Seq > 0 {
+					if ev.Seq <= lastSeq {
+						continue // 库读与直播重复投递
+					}
+					lastSeq = ev.Seq
+				}
+				select {
+				case out <- ev:
+				case <-stop:
+					return
+				case <-ctx.Done():
+					return
+				}
+			case <-stop:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, stopAll, nil
+}
+
+// pendingQuestionEvent 把待决问题渲染成 question 事件（冷订阅补发用）。
+func pendingQuestionEvent(sessionID string, p PendingQuestion) Event {
+	return Event{
+		SessionID: sessionID,
+		Seq:       p.Seq,
+		Type:      EventQuestion,
+		Raw: mustJSON(questionPayload{
+			SessionID:  sessionID,
+			QuestionID: p.ID,
+			Questions:  p.Questions,
+		}),
+	}
 }
 
 // StopSession 显式停止一个会话（测试与运维入口）。
@@ -370,9 +555,9 @@ func (r *Runtime) newSessionLoop(sessionID, project string) *sessionLoop {
 		sessionID: sessionID,
 		store:     r.evStore,
 		emit:      sl.bus.Broadcast,
-		onInterrupted: func(interruptID string) {
+		onInterrupted: func(q *PendingQuestion) {
 			r.mu.Lock()
-			r.pendingInterrupts[sessionID] = interruptID
+			r.pendingInterrupts[sessionID] = q
 			r.mu.Unlock()
 		},
 	}
@@ -531,7 +716,7 @@ func newAskUserTool() (tool.InvokableTool, error) {
 		func(ctx context.Context, input AskUserInput, _ ...tool.Option) (string, error) {
 			if isResume, hasData, answer := compose.GetResumeContext[AnswerPayload](ctx); isResume && hasData {
 				// 恢复：把用户回答交回模型。
-				return okEnvelope("用户回答：" + joinTexts(answer.Answers)), nil
+				return okEnvelope("用户回答：" + answer.Text()), nil
 			}
 			// 挂起：问题结构（questions/options/multiSelect）原样透出到事件流。
 			return "", compose.Interrupt(ctx, input)
