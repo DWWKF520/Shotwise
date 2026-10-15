@@ -12,10 +12,12 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -33,6 +35,7 @@ import (
 	"github.com/shotwise/shotwise/internal/agent/policy"
 	"github.com/shotwise/shotwise/internal/agent/skills"
 	"github.com/shotwise/shotwise/internal/agent/subagents"
+	"github.com/shotwise/shotwise/internal/agent/workspace"
 )
 
 // 进入 checkpoint / 事件流的 Shotwise 自定义类型在此统一注册 gob 名。
@@ -60,6 +63,16 @@ type InboxItem struct {
 	Kind   InboxKind
 	Text   string // InboxUserMessage / InboxTaskNotification 的正文
 	Answer *AnswerPayload
+	// SkillHint 非空时表示用户显式触发该 skill（§17.5）：轮输入前缀明示，模型按名调用 skill 工具。
+	SkillHint string
+}
+
+// userTurnText 把 user_message 渲染为送入模型的文本（显式 skill 触发加前缀）。
+func userTurnText(it InboxItem) string {
+	if it.SkillHint == "" {
+		return it.Text
+	}
+	return fmt.Sprintf("[用户请求触发 skill: %s] %s", it.SkillHint, it.Text)
 }
 
 // AnswerPayload 是用户对 ask_user 的回答（HITL 恢复参数）。
@@ -209,6 +222,12 @@ type Runtime struct {
 	chatModelOverride model.ToolCallingChatModel
 	// extraTools 追加在 BuiltinTools 之后的扩展工具（测试 / 后续增量注入位）。
 	extraTools []tool.BaseTool
+	// assetWriter / projectWriter 为 patch_project 的写入依赖（WithProjectWriters 注入）。
+	assetWriter   AssetWriter
+	projectWriter ProjectWriter
+	// assetQueue / assetProjects 为 generate_assets 的依赖（WithAssetGeneration 注入）。
+	assetQueue    AssetQueue
+	assetProjects AssetProjects
 
 	mu                sync.Mutex
 	active            map[string]*sessionLoop
@@ -278,7 +297,30 @@ func (r *Runtime) chatModel(ctx context.Context) (model.ToolCallingChatModel, er
 // Query 提交一条用户消息（对应 Python client_factory.Query）。
 // 会话已有活跃 loop 时排队（非抢占）；否则新建 loop。返回 SSE 事件流与退订函数。
 func (r *Runtime) Query(ctx context.Context, sessionID, project, message string) (string, <-chan Event, func(), error) {
-	if message == "" {
+	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message})
+}
+
+// ErrSkillNotInvocable 表示显式触发的 skill 在项目中不存在或不可由用户触发。
+var ErrSkillNotInvocable = errors.New("agent: skill is not user-invocable in this project")
+
+// QueryWithSkill 提交一条用户消息并显式触发 skill（§17.5）。skill 为空时等价于 Query。
+func (r *Runtime) QueryWithSkill(ctx context.Context, sessionID, project, skill, message string) (string, <-chan Event, func(), error) {
+	if skill == "" {
+		return r.Query(ctx, sessionID, project, message)
+	}
+	entries, err := skills.ListUserInvocable(filepath.Join(r.dataDir, project, ".claude", "skills"))
+	if err != nil {
+		return sessionID, nil, nil, err
+	}
+	if !slices.ContainsFunc(entries, func(e skills.CatalogEntry) bool { return e.Name == skill }) {
+		return sessionID, nil, nil, fmt.Errorf("%w: %s", ErrSkillNotInvocable, skill)
+	}
+	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message, SkillHint: skill})
+}
+
+// submitQuery 把一条用户输入排入会话 loop（Query / QueryWithSkill 共用）。
+func (r *Runtime) submitQuery(ctx context.Context, sessionID, project string, item InboxItem) (string, <-chan Event, func(), error) {
+	if item.Text == "" {
 		return "", nil, nil, fmt.Errorf("agent: message is required")
 	}
 	if sessionID == "" {
@@ -291,8 +333,8 @@ func (r *Runtime) Query(ctx context.Context, sessionID, project, message string)
 		return sessionID, nil, nil, err
 	}
 	ch, unsub := sl.bus.Subscribe()
-	sl.adapter.appendUserEntries(ctx, message)
-	if ok, _ := sl.loop.Push(InboxItem{Kind: InboxUserMessage, Text: message}); !ok {
+	sl.adapter.appendUserEntries(ctx, item.Text)
+	if ok, _ := sl.loop.Push(item); !ok {
 		unsub()
 		return sessionID, nil, nil, fmt.Errorf("agent: session %s is shutting down", sessionID)
 	}
@@ -613,7 +655,7 @@ func (r *Runtime) genInput(sl *sessionLoop) func(context.Context, *adk.TurnLoop[
 		for _, it := range items {
 			switch it.Kind {
 			case InboxUserMessage:
-				msgs = append(msgs, schema.UserMessage(it.Text))
+				msgs = append(msgs, schema.UserMessage(userTurnText(it)))
 				consumed = append(consumed, it)
 			case InboxTaskNotification:
 				// 折叠为系统提示附在同轮（对应 Python _process_inbox）。
@@ -691,17 +733,41 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 	}
 	tools = append(tools, askUser)
 	tools = append(tools, r.extraTools...)
+	if r.assetWriter != nil && r.projectWriter != nil {
+		patch, err := newPatchProjectTool(project, r.assetWriter, r.projectWriter)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build patch_project: %w", err)
+		}
+		tools = append(tools, patch)
+	}
+	if r.assetQueue != nil && r.assetProjects != nil {
+		gen, err := newGenerateAssetsTool(project, r.assetQueue, r.assetProjects)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build generate_assets: %w", err)
+		}
+		tools = append(tools, gen)
+	}
 
 	guard := policy.NewAgentAccessPolicy(r.projectRoot(project), r.secretKeys)
 	guardMW := NewGuardMiddleware(guard)
 
+	// 文件系统中间件（§11.4）：根为项目目录；主代理启用全部工具。
+	allTools := make(map[string]bool, len(workspace.AllTools))
+	for _, n := range workspace.AllTools {
+		allTools[n] = true
+	}
+	fsMW, err := workspace.Middleware(ctx, r.projectRoot(project), r.secretKeys, allTools)
+	if err != nil {
+		return nil, fmt.Errorf("agent: filesystem middleware: %w", err)
+	}
+
 	// Skills / Subagent 源目录与项目 .claude 同构（§17）。
-	claudeDir := filepath.Join(r.dataDir, project, ".claude")
+	claudeDir := filepath.Join(r.projectRoot(project), ".claude")
 	skillsRoot := filepath.Join(claudeDir, "skills")
 	if err := skills.ValidateDir(skillsRoot); err != nil {
 		return nil, fmt.Errorf("agent: skills: %w", err)
 	}
-	skillBackend := skills.NewModeAwareBackend(skillsRoot, readContentMode(filepath.Join(r.dataDir, project, "project.json")))
+	skillBackend := skills.NewModeAwareBackend(skillsRoot, readContentMode(filepath.Join(r.projectRoot(project), "project.json")))
 	skillMW, err := skills.NewMiddleware(ctx, skillBackend)
 	if err != nil {
 		return nil, fmt.Errorf("agent: skill middleware: %w", err)
@@ -719,6 +785,9 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 		Model:    m,
 		Pool:     pool,
 		Handlers: []adk.ChatModelAgentMiddleware{guardMW},
+		Filesystem: func(enabled map[string]bool) (adk.ChatModelAgentMiddleware, error) {
+			return workspace.Middleware(ctx, r.projectRoot(project), r.secretKeys, enabled)
+		},
 		SkillBody: func(name string) (string, error) {
 			s, err := skillBackend.Get(ctx, name)
 			if err != nil {
@@ -749,6 +818,7 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 			// 围栏是硬失败设计（ADR 0025），文件工具在无围栏状态下不得上线：
 			// guard 必须先于 filesystem/skill middleware 接入（设计文档 §16）。
 			guardMW,
+			fsMW,
 			skillMW,
 		},
 	})
@@ -757,7 +827,7 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 // subagentNames 返回项目 subagent 名字集合（事件归属判定用）。定义加载失败时记录告警并返回空集，
 // 严格校验仍由 buildAgent 在每轮装配时执行。
 func (r *Runtime) subagentNames(project string) map[string]bool {
-	defs, err := subagents.LoadDir(filepath.Join(r.dataDir, project, ".claude", "agents"))
+	defs, err := subagents.LoadDir(filepath.Join(r.projectRoot(project), ".claude", "agents"))
 	if err != nil {
 		slog.Warn("subagent 定义加载失败", "project", project, "err", err)
 		return map[string]bool{}
@@ -784,9 +854,9 @@ func readContentMode(projectJSON string) string {
 	return p.ContentMode
 }
 
-// projectRoot 返回项目的绝对根目录（围栏双 base 的 raw 侧）。
+// projectRoot 返回项目的绝对根目录：文件围栏、文件系统工具与项目资源（project.json、.claude）共用此根。
 func (r *Runtime) projectRoot(project string) string {
-	return r.dataDir // v1：dataDir 即项目根；多项目隔离随 project 维度增强收敛
+	return filepath.Join(r.dataDir, project)
 }
 
 // newAskUserTool 构造 ask_user HITL 工具（设计文档 §13.1）。

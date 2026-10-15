@@ -147,6 +147,28 @@ func (a *AssetService) Create(project string, kind domain.AssetKind, rawName, de
 	return created, nil
 }
 
+// Upsert 按名 upsert 资产：不存在则 Create，存在则 Patch（字段白名单与类型校验复用）。
+// fields 里的 description 缺省时，新建条目会因缺描述在写盘守卫被拒。返回 created 表示是否新增。
+func (a *AssetService) Upsert(project string, kind domain.AssetKind, rawName string, fields map[string]any) (bool, error) {
+	description, _ := fields["description"].(string)
+	extras := make(map[string]any, len(fields))
+	for k, v := range fields {
+		if k != "description" {
+			extras[k] = v
+		}
+	}
+	_, err := a.Create(project, kind, rawName, description, extras)
+	if err == nil {
+		return true, nil
+	}
+	var exists *AssetExistsError
+	if !errors.As(err, &exists) {
+		return false, err
+	}
+	_, err = a.Patch(project, kind, exists.Name, fields)
+	return false, err
+}
+
 // Patch 按 spec 白名单更新条目字段。payload 里值为 nil 的字段跳过。
 func (a *AssetService) Patch(project string, kind domain.AssetKind, entryName string, payload map[string]any) (*domain.AssetEntry, error) {
 	spec, ok := domain.Spec(kind)

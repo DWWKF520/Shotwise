@@ -97,6 +97,13 @@ func (p *AgentAccessPolicy) Pre(_ context.Context, call ToolCall) (json.RawMessa
 	switch name {
 	case "bash":
 		return p.preBash(call.Args)
+	case "execute":
+		// filesystem 中间件的 execute 工具：只做白名单判定；密钥剥离由 Shell 执行器完成（不改写命令）。
+		cmd, ok := extractStringArg(call.Args, "command")
+		if !ok || !IsBashCommandWhitelisted(cmd) {
+			return nil, fmt.Errorf("access denied: command not allowed by bash whitelist (allowed: python .claude/skills/<skill>/scripts/<script>.py, ffmpeg, ffprobe)")
+		}
+		return nil, nil
 	}
 	if writeDispatchTools[name] {
 		pArg, ok := extractStringArg(call.Args, "file_path", "path", "notebook_path")

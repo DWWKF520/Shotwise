@@ -4,7 +4,8 @@
 // 迁移边界（fail loud，不静默降级）：
 //   - storyboard 已完整接线（prompt 归一化 + 参考直传 + 记账 + 版本 + result 契约）；
 //     剧本条目引用收集与 scene 资产写回依赖剧本域（get_storyboard_items），随剧本域迁移补齐。
-//   - design 任务（character/scene/prop/product）依赖资产条目写回与头像裁剪（infra/img 未建），暂未迁移。
+//   - design 任务的 scene / prop / product 已接线（tasks_design.go）；character 还需头像裁剪
+//     （infra/img 未建），暂未迁移，显式报错。
 //   - video / tts / grid / reference_video / image_edit / canvas_* 依赖各自的重执行链，暂未迁移。
 package service
 
@@ -46,6 +47,11 @@ func (d *TaskDispatcher) Execute(ctx context.Context, task *repository.TaskData)
 	switch task.TaskType {
 	case "storyboard":
 		return d.executeStoryboard(ctx, task)
+	case string(domain.AssetScene), string(domain.AssetProp), string(domain.AssetProduct):
+		return d.executeDesign(ctx, task, domain.AssetKind(task.TaskType))
+	case string(domain.AssetCharacter):
+		// 角色设计图还需头像裁剪（lib/character_avatar），依赖未迁移的 infra/img，fail loud。
+		return nil, fmt.Errorf("character design task is not migrated yet (avatar cropping pending)")
 	default:
 		return nil, fmt.Errorf("unsupported task_type: %s", task.TaskType)
 	}

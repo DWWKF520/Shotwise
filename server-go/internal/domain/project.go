@@ -145,6 +145,11 @@ type ProjectFile struct {
 	NarrationSpeed     *float64 `json:"narration_speed,omitempty"`
 	VideoGenerateAudio *bool    `json:"video_generate_audio,omitempty"`
 
+	// 分集规划覆盖项（null/缺省 = 工具内部默认）。
+	EpisodeTargetUnits  *int `json:"episode_target_units,omitempty"`
+	PlanningWindowChars *int `json:"planning_window_chars,omitempty"`
+	PlanningMaxEpisodes *int `json:"planning_max_episodes,omitempty"`
+
 	// 后端覆盖（可选，空 = 继承全局）
 	VideoBackend        string                       `json:"video_backend,omitempty"`
 	VideoProviderI2V    string                       `json:"video_provider_i2v,omitempty"`

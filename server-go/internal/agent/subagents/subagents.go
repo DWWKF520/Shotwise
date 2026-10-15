@@ -119,6 +119,8 @@ type Builder struct {
 	Pool map[string]tool.BaseTool
 	// Handlers 是子 agent 必须接入的 middleware 链（guard 等，§17.3：围栏不豁免）。
 	Handlers []adk.ChatModelAgentMiddleware
+	// Filesystem 按白名单启用的文件系统工具构造中间件（§11.4）；nil 时不挂文件工具。
+	Filesystem func(enabled map[string]bool) (adk.ChatModelAgentMiddleware, error)
 	// SkillBody 返回 skill 正文（装配期内联 skills 字段用）。
 	SkillBody func(name string) (string, error)
 }
@@ -129,8 +131,10 @@ func (b *Builder) Build(ctx context.Context, def Definition) (tool.BaseTool, err
 	if !ok {
 		return nil, fmt.Errorf("subagent %s: 未登记工具白名单", def.Name)
 	}
+	enabled := make(map[string]bool, len(names))
 	var tools []tool.BaseTool
 	for _, n := range names {
+		enabled[n] = true
 		if t, ok := b.Pool[n]; ok {
 			tools = append(tools, t)
 		}
@@ -138,6 +142,14 @@ func (b *Builder) Build(ctx context.Context, def Definition) (tool.BaseTool, err
 	instruction, err := b.withSkills(def)
 	if err != nil {
 		return nil, err
+	}
+	handlers := append([]adk.ChatModelAgentMiddleware(nil), b.Handlers...)
+	if b.Filesystem != nil {
+		fsMW, err := b.Filesystem(enabled)
+		if err != nil {
+			return nil, fmt.Errorf("subagent %s: filesystem: %w", def.Name, err)
+		}
+		handlers = append(handlers, fsMW)
 	}
 	sub, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:        def.Name,
@@ -147,7 +159,7 @@ func (b *Builder) Build(ctx context.Context, def Definition) (tool.BaseTool, err
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: tools},
 		},
-		Handlers: b.Handlers,
+		Handlers: handlers,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("subagent %s: %w", def.Name, err)

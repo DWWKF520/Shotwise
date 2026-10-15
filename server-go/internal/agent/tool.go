@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/shotwise/shotwise/internal/agent/policy"
 )
 
@@ -44,11 +46,24 @@ func (m *GuardMiddleware) WrapInvokableToolCall(ctx context.Context, ep adk.Invo
 			argIn = string(rewritten)
 		}
 		res, runErr := ep(ctx, argIn, opts...)
+		if runErr != nil && !isControlFlow(runErr) {
+			// 工具执行失败与 deny 一致回灌模型（is_error 信封），而非中断整轮。
+			return denyEnvelope(runErr.Error()), nil
+		}
 		if perr := m.guard.Post(ctx, call, res); perr != nil {
 			return denyEnvelope(perr.Error()), nil
 		}
 		return res, runErr
 	}, nil
+}
+
+// isControlFlow 判定错误是否为框架控制信号（HITL 中断、取消），这类错误必须原样上抛。
+func isControlFlow(err error) bool {
+	if _, ok := compose.IsInterruptRerunError(err); ok {
+		return true
+	}
+	var cancelErr *adk.CancelError
+	return errors.As(err, &cancelErr)
 }
 
 // denyEnvelope 生成与 Python 侧约定一致的工具失败回包：

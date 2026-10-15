@@ -96,11 +96,15 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	store := service.NewProjectStore(cfg.DataDir)
+	assets := service.NewAssetService(store)
 	agentRT, err := agent.NewRuntime(context.Background(), agent.ModelConfig{
 		APIKey:  cfg.LLMAPIKey,
 		Model:   cfg.LLMModel,
 		BaseURL: cfg.LLMBaseURL,
-	}, cfg.DataDir, cpStore, eventlog.NewSQLStore(gdb), agent.WithIdleTimeout(cfg.AgentIdleTimeout))
+	}, cfg.DataDir, cpStore, eventlog.NewSQLStore(gdb),
+		agent.WithIdleTimeout(cfg.AgentIdleTimeout),
+		agent.WithProjectWriters(assets, store))
 	if err != nil {
 		return err
 	}
@@ -110,12 +114,12 @@ func run(log *slog.Logger) error {
 		Log:     log,
 		DB:      gdb,
 		Dialect: dialect,
-		Store:   service.NewProjectStore(cfg.DataDir),
+		Store:   store,
 		Hub:     service.NewEventHub(),
 		Auth:    authSvc,
 		Agent:   agentRT,
+		Assets:  assets,
 	}
-	rt.Assets = service.NewAssetService(rt.Store)
 
 	engine := app.New(rt)
 	srv := &http.Server{

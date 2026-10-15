@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,9 +27,11 @@ func RegisterAgentRoutes(rg *gin.RouterGroup, rt *agent.Runtime) {
 			SessionID string `json:"session_id"`
 			Project   string `json:"project"`
 			Message   string `json:"message"`
+			// Skill 可选：显式触发的用户 skill 名（§17.5）。
+			Skill string `json:"skill"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			abortBadRequest(c, "invalid_body", "请求体必须是 {session_id?, project?, message}")
+			abortBadRequest(c, "invalid_body", "请求体必须是 {session_id?, project?, message, skill?}")
 			return
 		}
 		if body.Message == "" {
@@ -36,7 +39,11 @@ func RegisterAgentRoutes(rg *gin.RouterGroup, rt *agent.Runtime) {
 			return
 		}
 
-		sessionID, evCh, unsub, err := rt.Query(c.Request.Context(), body.SessionID, body.Project, body.Message)
+		sessionID, evCh, unsub, err := rt.QueryWithSkill(c.Request.Context(), body.SessionID, body.Project, body.Skill, body.Message)
+		if errors.Is(err, agent.ErrSkillNotInvocable) {
+			abortBadRequest(c, "skill_not_invocable", err.Error())
+			return
+		}
 		if err != nil {
 			abortInternal(c, "agent_start_failed", err.Error())
 			return
