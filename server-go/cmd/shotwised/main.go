@@ -25,9 +25,11 @@ import (
 	"github.com/shotwise/shotwise/internal/app"
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
+	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/textgen"
 	"github.com/shotwise/shotwise/migrations"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -105,7 +107,10 @@ func run(log *slog.Logger) error {
 	}, cfg.DataDir, cpStore, eventlog.NewSQLStore(gdb),
 		agent.WithIdleTimeout(cfg.AgentIdleTimeout),
 		agent.WithProjectWriters(assets, store), agent.WithAssetProjects(store),
-		agent.WithVideoCapabilities(config.NewResolver(gdb)))
+		agent.WithVideoCapabilities(config.NewResolver(gdb)),
+		agent.WithRelationAnalysis(func(ctx context.Context, pf *domain.ProjectFile) (agent.RelationTextGenerator, error) {
+			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
+		}, store))
 	if err != nil {
 		return err
 	}

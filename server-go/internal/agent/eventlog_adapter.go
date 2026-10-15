@@ -384,24 +384,62 @@ func (a *eventAdapter) emitUsage(u *schema.TokenUsage) {
 }
 
 // parseToolResultMessage 解析工具回包里的 is_error 信封与文本（与 Python 侧约定一致）。
+//
+// 多模态工具（EnhancedInvokableTool）的回包只落在 UserInputMultiContent 上：图片部件不进日志、
+// 不进 SSE（抽帧 base64 既不宜整段落库，也不该随事件流推给前端），只取文本部件。
+// 首个文本部件是信封时据其判定 is_error，并把信封替换为其中的正文。
 func parseToolResultMessage(msg *schema.Message) (isErr bool, text string) {
 	if msg == nil {
 		return false, ""
 	}
-	var probe struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"is_error"`
+	chunks := textChunks(msg)
+	if len(chunks) == 0 {
+		return false, ""
 	}
-	if err := json.Unmarshal([]byte(msg.Content), &probe); err == nil {
-		var sb strings.Builder
-		for _, c := range probe.Content {
-			sb.WriteString(c.Text)
+	if parsedErr, inner, ok := parseToolEnvelope(chunks[0]); ok {
+		isErr = parsedErr
+		chunks[0] = inner
+	}
+	return isErr, strings.Join(chunks, "\n")
+}
+
+// textChunks 取工具回包的文本块：普通工具在 Content，多模态工具在 UserInputMultiContent。
+func textChunks(msg *schema.Message) []string {
+	if msg.Content != "" {
+		return []string{msg.Content}
+	}
+	var chunks []string
+	for _, part := range msg.UserInputMultiContent {
+		if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
+			chunks = append(chunks, part.Text)
 		}
-		return probe.IsError, sb.String()
 	}
-	return false, msg.Content
+	return chunks
+}
+
+// parseToolEnvelope 尝试把文本解析为工具信封，返回其中的 is_error 与拼接后的正文。
+// 仅当文本是对象且带 content 数组时才认作信封——普通工具回包可能是任意 JSON，不能误吞。
+func parseToolEnvelope(raw string) (isErr bool, text string, ok bool) {
+	var probe map[string]any
+	if err := json.Unmarshal([]byte(raw), &probe); err != nil {
+		return false, "", false
+	}
+	list, found := probe["content"].([]any)
+	if !found {
+		return false, "", false
+	}
+	var sb strings.Builder
+	for _, item := range list {
+		m, isMap := item.(map[string]any)
+		if !isMap {
+			continue
+		}
+		if s, isStr := m["text"].(string); isStr {
+			sb.WriteString(s)
+		}
+	}
+	isErr, _ = probe["is_error"].(bool)
+	return isErr, sb.String(), true
 }
 
 // interruptPayloadText 把 ask_user 的中断信息转成可读文本入 entry。

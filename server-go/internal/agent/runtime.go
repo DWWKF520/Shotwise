@@ -230,6 +230,9 @@ type Runtime struct {
 	assetProjects AssetProjects
 	// videoCaps 为 get_video_capabilities 的能力解析器（WithVideoCapabilities 注入）。
 	videoCaps VideoCapabilityReader
+	// relationGenerator / relationProjects 为 analyze_character_relations 的依赖（WithRelationAnalysis 注入）。
+	relationGenerator RelationGeneratorFactory
+	relationProjects  RelationProjects
 	// textGate 记录各项目最近一次文本清单签名，供 read_project_text 门禁使用。
 	textGate textFileGate
 
@@ -759,6 +762,20 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 			return nil, fmt.Errorf("agent: build get_video_capabilities: %w", err)
 		}
 		tools = append(tools, caps)
+	}
+	if r.relationGenerator != nil && r.relationProjects != nil {
+		relations, err := newAnalyzeCharacterRelationsTool(project, r.relationGenerator, r.relationProjects)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build analyze_character_relations: %w", err)
+		}
+		tools = append(tools, relations)
+	}
+	if r.assetProjects != nil {
+		review, err := newInspectDirectorReviewTool(project, r.assetProjects)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build inspect_director_review: %w", err)
+		}
+		tools = append(tools, review)
 	}
 	if r.assetWriter != nil && r.projectWriter != nil {
 		patch, err := newPatchProjectTool(project, r.assetWriter, r.projectWriter)
