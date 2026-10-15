@@ -173,6 +173,10 @@ type ProjectFile struct {
 
 	Episodes []EpisodeMeta `json:"episodes,omitempty"`
 
+	// DeletedEpisodeScriptFiles 记录被显式删除的剧本文件路径：同名剧本被重新保存时解除抑制，
+	// 在此之前不让自动扫描把已删集数复活。
+	DeletedEpisodeScriptFiles []string `json:"deleted_episode_script_files,omitempty"`
+
 	Characters AssetBucket `json:"characters,omitempty"`
 	Scenes     AssetBucket `json:"scenes,omitempty"`
 	Props      AssetBucket `json:"props,omitempty"`
@@ -291,6 +295,9 @@ func (p *ProjectFile) Clone() *ProjectFile {
 	out := *p
 	if p.Episodes != nil {
 		out.Episodes = append([]EpisodeMeta(nil), p.Episodes...)
+	}
+	if p.DeletedEpisodeScriptFiles != nil {
+		out.DeletedEpisodeScriptFiles = append([]string(nil), p.DeletedEpisodeScriptFiles...)
 	}
 	if v := cloneValue(p.Characters); v != nil {
 		out.Characters = v.(AssetBucket)

@@ -233,6 +233,9 @@ type Runtime struct {
 	// relationGenerator / relationProjects 为 analyze_character_relations 的依赖（WithRelationAnalysis 注入）。
 	relationGenerator RelationGeneratorFactory
 	relationProjects  RelationProjects
+	// scriptStore / assetRenamer 为剧本编辑与级联改名工具的依赖（WithScriptEditing / WithAssetRename 注入）。
+	scriptStore  ScriptStore
+	assetRenamer AssetRenamer
 	// textGate 记录各项目最近一次文本清单签名，供 read_project_text 门禁使用。
 	textGate textFileGate
 
@@ -776,6 +779,32 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 			return nil, fmt.Errorf("agent: build inspect_director_review: %w", err)
 		}
 		tools = append(tools, review)
+	}
+	if r.scriptStore != nil {
+		builders := []struct {
+			name string
+			ctor func() (tool.InvokableTool, error)
+		}{
+			{"patch_episode_script", func() (tool.InvokableTool, error) { return newPatchEpisodeScriptTool(project, r.scriptStore) }},
+			{"insert_segment", func() (tool.InvokableTool, error) { return newInsertSegmentTool(project, r.scriptStore) }},
+			{"remove_segment", func() (tool.InvokableTool, error) { return newRemoveSegmentTool(project, r.scriptStore) }},
+			{"split_segment", func() (tool.InvokableTool, error) { return newSplitSegmentTool(project, r.scriptStore) }},
+			{"patch_episode_meta", func() (tool.InvokableTool, error) { return newPatchEpisodeMetaTool(project, r.scriptStore) }},
+		}
+		for _, b := range builders {
+			built, err := b.ctor()
+			if err != nil {
+				return nil, fmt.Errorf("agent: build %s: %w", b.name, err)
+			}
+			tools = append(tools, built)
+		}
+	}
+	if r.assetRenamer != nil {
+		rename, err := newRenameAssetTool(project, r.assetRenamer)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build rename_asset: %w", err)
+		}
+		tools = append(tools, rename)
 	}
 	if r.assetWriter != nil && r.projectWriter != nil {
 		patch, err := newPatchProjectTool(project, r.assetWriter, r.projectWriter)

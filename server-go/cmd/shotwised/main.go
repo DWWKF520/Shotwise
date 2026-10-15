@@ -110,7 +110,8 @@ func run(log *slog.Logger) error {
 		agent.WithVideoCapabilities(config.NewResolver(gdb)),
 		agent.WithRelationAnalysis(func(ctx context.Context, pf *domain.ProjectFile) (agent.RelationTextGenerator, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
-		}, store))
+		}, store),
+		agent.WithScriptEditing(store), agent.WithAssetRename(assets))
 	if err != nil {
 		return err
 	}
