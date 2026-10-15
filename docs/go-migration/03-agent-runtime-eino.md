@@ -196,7 +196,7 @@ entry 定型契约保留：`type`(user/assistant/tool_result/system) × `subtype
 
 ---
 
-以下 §9–§16 是上述分层的落地设计：每层用哪个 Eino API、接口长什么样、
+以下 §9–§17 是上述分层的落地设计：每层用哪个 Eino API、接口长什么样、
 语义对照是否成立。目标 Eino 版本 ≥ v0.9（Cancel / Retry / Failover / Enhanced middleware）。
 
 ## 9. 装配总设计
@@ -525,3 +525,199 @@ ModelFailoverConfig: &adk.ModelFailoverConfig[*schema.Message]{ // 通道间：c
 
 实施顺序上，§8 第 1 层的顺序调整为：guard middleware（§12）先于 filesystem/skill 接入——
 围栏是硬失败设计（ADR 0025），文件工具在无围栏状态下不得上线。
+
+## 17. Skills + Subagent 落地设计
+
+§11.3 / §11.5 给出的是装配位与取舍结论，本节展开到接口与数据流级别。
+素材事实：profile 侧现有 **9 个 skill**（`agent_runtime_profile/.claude/skills/`，
+其中 `manga-workflow` 是 variant-only：只有 `SKILL.drama.md` / `SKILL.narration.md` / `SKILL.ad.md`，
+无通用 `SKILL.md`）与 **6 个 subagent**（`agents/*.md`）。
+
+### 17.1 Skill Backend：mode 感知的文件系统实现
+
+`skill.NewBackendFromFilesystem` 只认裸 `SKILL.md`，两个缺口（变体、user-invocable）都堵在自研 Backend：
+
+```go
+// internal/agent/skills/backend.go
+type ModeAwareBackend struct {
+    skillsDir string        // <project>/.claude/skills（profile_manifest 已物化变体，见 §4.5）
+    mode      string        // content_mode，PrepareAgent 每轮装配时确定（§10.2）
+}
+
+// 实现 adk/middlewares/skill.Backend：
+func (b *ModeAwareBackend) List(ctx context.Context) ([]skill.FrontMatter, error)
+func (b *ModeAwareBackend) Get(ctx context.Context, name string) (skill.Skill, error)
+```
+
+变体解析复刻 Python `service.py::_resolve_skill_entry_file` 的契约：
+
+| 目录内容 | 解析结果 |
+|---|---|
+| `SKILL.md` | 通用 skill，任意 mode 可见 |
+| 仅 `SKILL.{drama,narration,ad}.md` | 变体 skill：`List()`/`Get()` 只暴露当前 mode 的变体；三 mode 齐全校验在装配期做，缺失即报错（fail loud，与 manifest 同一约束） |
+| 两者都有 | 报配置错误（互斥） |
+
+注意两点差异：
+
+1. **数据源是项目目录而非 profile 目录**。Python 的 `list_available_skills` 直扫 profile 侧，
+   那是因为 SDK 从项目 cwd 加载 skills 而 profile 侧变体未物化；Go 侧 Backend 读的是
+   manifest 同步后的项目 `.claude/skills/`，变体已被物化为 `SKILL.md`（物化逻辑 §4.5 已定），
+   Backend 理论上只该看到裸 `SKILL.md`。**Backend 仍保留变体识别**——防御 manifest 决策表
+   变体分支（保留用户改动）绕过物化的情况，也允许未来直挂 profile 目录测试。
+2. **`user-invocable` 不进 `skill.FrontMatter`**。Eino 的 FrontMatter 结构体只有
+   name/description/context/agent/model 五个字段，没有扩展 map。两层分离：
+
+   - **面向模型的渐进披露**：全部 skill 都进 `List()`（模型自主发现是主路径）；
+     `user-invocable: false` 的 skill 同样参与——它只是「前端不给用户按钮」，不是「模型不能调」
+     （现状语义即如此：`_resolve_skill_entry_file` 的 user-invocable 过滤只作用于 `/skills` 列表接口）。
+   - **面向用户的目录**：独立的 `SkillCatalog`（`internal/agent/skills/catalog.go`）扫描同一目录，
+     解析 frontmatter 的 `name` / `description` / `user-invocable`（保留 Python 宽松解析语义：
+     `false/no/0` 为否，其余为真；无 frontmatter 时 description 取正文首段），
+     作为 router `GET /api/v1/assistant/skills` 的数据源，`_SKILL_ICONS` 的 Go 常量表随迁。
+     变体间 user-invocable 不一致时跳过该 skill 并告警（与 Python 行为一致）。
+     i18n 交叉校验（`test_frontend_skill_i18n.py`）的 Go 对应测试在 `skills` 包单测里重写。
+
+### 17.2 skill middleware 配置与注入语义
+
+```go
+mw, _ := skill.NewMiddleware(ctx, &skill.Config{
+    Backend: modeAwareBackend,
+    CustomToolDescription: renderSkillCatalog,  // 9 skill 的 name+description 列表，中文（§11.1 SetLanguage）
+    BuildContent: buildSkillContent,            // 见下
+})
+```
+
+**`BuildContent` 钉死注入前缀**——Eino 默认把 SKILL.md 正文直接作为工具结果返回，
+`event_log` 的 skill_invocation 定型依赖 `"Base directory for this skill: <dir>"` 首行
+（§4.4 契约），因此：
+
+```go
+func buildSkillContent(ctx context.Context, s skill.Skill, rawArgs string) (string, error) {
+    return fmt.Sprintf("Base directory for this skill: %s\n\n%s", s.BaseDirectory, s.Content), nil
+}
+```
+
+**skill_invocation 定型路径变化**（对照 §14.1 转换表补一行）：
+
+| 现状（SDK） | Go（Eino） |
+|---|---|
+| Skill tool_use → 随后到达的**注入用户消息**，跨消息关联（FIFO 按 parent 分槽）定型为 `skill_invocation` system entry | skill 是普通 invokable 工具：`tool_use`（name=skill 工具名）+ `tool_result`（正文含 Base directory 前缀）。适配器见 `tool_use.name == skillToolName` 即写 `skill_invocation`（skill 名取 args、基目录取 result 首行），`tool_result` 照常落 tool_result entry |
+
+跨消息关联状态机（`SdkMessageNormalizer._pending_skills`）整体不需要移植——Eino 的内联模式把
+「加载」折叠成一次工具调用，定型是单事件的。`_parse_skill_name_from_injection` 的路径解析
+保留（`SKILL.md` 尾段剥离、反斜杠归一化），从 tool result 首行取名。
+
+**fork 模式不启用**：9 个 skill 的 frontmatter 均无 `context: fork*`，`AgentHub` / `ModelHub`
+传 nil。若未来需要，fork 的子 agent 走 §17.3 的同一装配函数。
+
+**scripts/ 与 references/ 的去向**：
+
+- `compose-video/scripts/compose_video.py` — skill 正文引导模型用 Bash 执行；
+  Windows 白名单第 ④ 步「python 入口必须是 `.claude/skills/<skill>/scripts/<script>.py`」
+  （§4.1）就是为它设计的，路径判定原样平移即可用。
+- `generate-video/references/veo_prompts.md` — 正文已引导模型按需 Read（渐进披露第二层），
+  filesystem middleware 的 `read_file` + guard 围栏覆盖，无新工作。
+- skill 正文中的 `mcp__shotwise__*` 工具名引用是 §7#2 prompt 重写项：Go 侧工具命名空间
+  没有 `mcp__shotwise__` 前缀（直接 `tool.InvokableTool`），9 个 SKILL.md 与 6 个 agent md
+  的工具名引用需系统性替换，这与 CLAUDE.*.md 的改写同批完成。
+
+### 17.3 Subagent loader：`.claude/agents/*.md` → AgentTool
+
+```go
+// internal/agent/subagents/loader.go
+type Definition struct {
+    Name        string   // frontmatter name（工具名，如 "generate-assets"）
+    Description string   // frontmatter description（进工具描述，供模型路由）
+    Skills      []string // frontmatter skills（可缺省，仅 create-episode-script 用到）
+    Instruction string   // 正文
+}
+
+func LoadDir(dir string) ([]Definition, error)  // 装配期一次性解析 + frontmatter 校验
+```
+
+每个 definition 构造一个受限 `adk.ChatModelAgent`，再 `adk.NewAgentTool` 包成工具：
+
+```go
+func (b *Builder) Build(def Definition) (tool.BaseTool, error) {
+    sub, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+        Name:        def.Name,
+        Description: def.Description,
+        Instruction: def.Instruction + b.skillsAppendix(def.Skills), // 见下
+        Model:       b.model,            // 与主 agent 同一模型（现状无独立子模型配置）
+        ToolsConfig: b.toolset.For(def.Name),  // 按名受限的工具子集
+    })
+    if err != nil { return nil, err }
+    return adk.NewAgentTool(ctx, sub), nil
+}
+```
+
+三个关键决策：
+
+1. **`NewAgentTool` 而非 `SetSubAgents`**（§11.5 结论的依据落在这里）：6 个 agent md 全部是
+   「主 agent 在 dispatch prompt 里点名调用 + 传任务清单 + 收结构化摘要」的 Task 工具契约
+   （`generate-assets.md` 明确「输入：主 agent 在 dispatch prompt 中提供」「输出：DONE / PARTIAL …」），
+   是显式派发不是 LLM 自主 transfer。AgentTool 的「fresh task description、隔离上下文、
+   返回摘要」语义与之逐条对齐；`SetSubAgents` 的自主路由反而会引入模型误派发。
+2. **`skills:` frontmatter 字段的处理**：`create-episode-script.md` 声明了 `skills: [generate-script]`。
+   Eino 无等价机制，采用**装载期内联**：`skillsAppendix` 把所引 SKILL.md 正文（按当前 mode 的变体）
+   直接拼进子 agent Instruction——子 agent 本来就按 skill 指引干活，内联比给子 agent
+   再挂 skill middleware（又要一套 Backend 实例）简单且行为确定。内联发生在装配期（PrepareAgent），
+   SKILL.md 内容变化下一轮生效，与 manifest 物化节奏一致。
+3. **工具子集按名收敛**：现状 6 个 agent 的工具面靠 prompt 约定（「不做主 agent 未要求的操作」），
+   Go 侧把约定变机制——`toolset.For(name)` 返回白名单：
+
+   | subagent | 工具面 |
+   |---|---|
+   | `analyze-assets` | `patch_project`、`generate_assets`、Read/Glob（filesystem） |
+   | `create-episode-script` | `generate_episode_script`、Read（filesystem） |
+   | `normalize-drama-script` | `normalize_drama_script`、Read/Write/Edit（filesystem） |
+   | `split-narration-segments` | `split_narration_segments`、Read/Write/Edit |
+   | `split-reference-video-units` | `split_reference_video_units`、Read/Write/Edit |
+   | `generate-assets` | `generate_*` 全系 + Read（filesystem） + Bash（走 §4.1 白名单） |
+
+   白名单在 `subagents` 包以显式表声明（单一真相源），漏配的工具直接不注册——
+   子 agent 的 `canUseTool` 缺口由「工具不在列表里」兜住，比 deny 更强。
+
+**围栏不豁免**（§11.5 已定）：子 agent 与主 agent 走同一 ToolsNode → guard middleware 链。
+实现上 AgentTool 内部再起一套 ChatModelAgent，其 `Handlers` 由同一个 `Builder` 注入同一条
+middleware 链（guard / filesystem / skill 各自新实例、共享同一 `policy`）；
+`EmitInternalEvents: true`（主 agent 的 ToolsConfig，§11.1）保证子 agent 事件透传。
+
+### 17.4 Subagent 事件与 event_log 锚定
+
+现状的 subagent 子时间线来自 SDK 的 jsonl 侧车（`subagents/agent-{id}` subpath，
+`sdk_transcript_adapter.read_subagent_timelines` 按 Task tool_use id 锚定归组）——**整套作废**。
+Eino 路径下子 agent 消息直接出现在父事件流里（`AgentEvent.AgentName` 区分）：
+
+| 项 | 来源 |
+|---|---|
+| 子 agent 消息归属 | `event.AgentName != "shotwise-director"` 的 MessageOutput 事件 |
+| `parent_tool_use_id` | 事件链上携带的父 tool call id（AgentTool 调用的 tool_use id），适配器直接取，不再从 jsonl 反查 |
+| 并行交错 | 现状 Python 侧按 parent 上下文分槽等待（`_pending_turn_failures` 的注释）；Go 侧同一会话内 AgentTool 调用本身可并行（ToolsNode 并发执行 tool calls），适配器按 `parent_tool_use_id` 分桶累积、轮末统一落库，天然无交错错配 |
+| `read_subagent_timelines` / `list_subagents_from_store` | 删除；event_log 已是权威 transcript，子时间线就是 `parent_tool_use_id != null` 的 entries 查询 |
+
+前端 SSE 消费侧（`tool_use` / `tool_result` / `delta` 事件带 parent 标记）契约不变。
+
+### 17.5 显式用户触发（`/skill-name`）
+
+现状：前端把 `/generate-video` 翻译成引用该 skill 的用户消息入会话，靠模型读 skill 描述自主命中。
+Go 侧保留同一路径，但可以收紧一步：`InboxItem` 增加 `SkillHint *string`，
+`buildTurnMessages`（§10.2）把 hint 渲染为
+
+```text
+[用户请求触发 skill: generate-video] <用户消息原文>
+```
+
+前缀加粗明示，配合 §17.1 的 CustomToolDescription（skill 目录已在 system prompt 里），
+命中是确定的。不实现「服务端强制注入 SKILL.md 正文」——那会绕过渐进披露并把长文
+塞进无关联的轮次；hint + 渐进披露与现状语义等价。
+
+### 17.6 验证清单
+
+- [ ] `ModeAwareBackend`：三 mode 齐全校验、互斥校验、变体 List 过滤（单测：目录夹具覆盖 5 种组合）
+- [ ] `SkillCatalog`：user-invocable 解析（true/false/no/0/缺省）、变体间不一致跳过、icon 表
+- [ ] `BuildContent` 前缀 + event 适配器 `skill_invocation` 定型（含 `SKILL.md` 尾段剥离）
+- [ ] subagent loader：frontmatter 解析（含 `skills:`）、工具白名单表、`skillsAppendix` 内联
+- [ ] `EmitInternalEvents` 下 `parent_tool_use_id` 传递（单测钉死，§12.1 同款）
+- [ ] 白名单 ④ 步路径判定对 `compose-video/scripts/compose_video.py` 的放行（§4.1 回归）
+- [ ] i18n 交叉校验 Go 版（`dashboard:skill_name_<id>` 三语 key 对齐 SkillCatalog）

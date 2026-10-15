@@ -21,9 +21,11 @@ import (
 //
 // 转换表（§14.1）：
 //
-//	assistant 流式 chunk                → delta（chunk.Content 直透）+ 累积
-//	轮末 assistant 整消息               → assistant entry + 每 ToolCall 一条 tool_use
+//	assistant 流式 chunk                → delta（chunk.Content 直透）+ 本条消息合并后落库
+//	assistant 整消息                    → assistant entry + 每 ToolCall 一条 tool_use
 //	tool 消息事件                       → tool_result entry + tool_result 事件
+//	skill tool 的 tool_result           → 额外一条 system/skill_invocation entry（§17.2）
+//	subagent 内部事件                   → entry 带 parent_tool_use_id（§17.4）
 //	guard deny（CustomizedOutput）      → system entry + tool_result(is_error)
 //	Action.Interrupted                  → entry(subtype=question) + question 事件
 //	Err = *adk.CancelError              → entry(subtype=interrupt) + status=cancelled
@@ -36,19 +38,19 @@ type eventAdapter struct {
 	// onInterrupted 在捕获业务中断（ask_user）时回调，把待决问题交给
 	// Runtime 登记（恢复时作为 ResumeParams.Targets 的 key）。
 	onInterrupted func(*PendingQuestion)
-}
-
-// assistantDraft 累积一轮 assistant 流式 chunk，轮末合并成整消息落库。
-// Eino 的流式 chunk 语义与 Claude SDK 不同：分片合并交给 schema.ConcatMessages。
-type assistantDraft struct {
-	chunks []*schema.Message
+	// skillTool 是 skill 中间件的工具名：其 tool_result 额外定型为 skill_invocation 条目。
+	skillTool string
+	// subagents 是 subagent（AgentTool）名字集合：其内部事件归属到对应的 AgentTool 调用。
+	subagents map[string]bool
+	// pendingCalls 是 subagent 名 → 已发出、尚未返回的 AgentTool 调用 tool_use id（FIFO）。
+	// 子 agent 的事件先于父 tool_result 到达，据此解析 parent_tool_use_id。
+	pendingCalls map[string][]string
 }
 
 // consume 消费一个 TurnLoop 轮的事件流；返回值即 TurnLoop OnAgentEvents 的返回值。
 // 约定：错误（含 CancelError）在此转换为 entry + status 事件后返回 nil——
 // 错误已上报给调用方，不应终止 TurnLoop 生命周期（Stop / interrupt 由 Runtime 显式控制）。
 func (a *eventAdapter) consume(ctx context.Context, events *adk.AsyncIterator[*adk.AgentEvent]) error {
-	draft := &assistantDraft{}
 	for {
 		ev, ok := events.Next()
 		if !ok {
@@ -70,26 +72,34 @@ func (a *eventAdapter) consume(ctx context.Context, events *adk.AsyncIterator[*a
 			continue
 		}
 		mo := ev.Output.MessageOutput
+		parent := a.parentFor(ev.AgentName)
 		switch mo.Role {
 		case schema.Assistant:
-			a.handleAssistantChunk(ctx, draft, mo)
+			a.handleAssistantMessage(ctx, mo, parent)
 		case schema.Tool:
-			// tool 消息意味着上一个 assistant 迭代（发出 tool_calls）已结束：
-			// 在此处 flush，避免跨迭代 concat 把 tool_call 消息与最终消息混成一条。
-			a.flushAssistantDraft(ctx, draft)
-			a.handleToolMessage(ctx, mo)
+			a.handleToolMessage(ctx, mo, parent)
 		default:
 			// user / system 消息不由事件流产生（输入侧由 Runtime 落库），忽略。
 		}
 	}
-	// 轮末：合并 assistant 整消息落库。
-	a.flushAssistantDraft(ctx, draft)
 	return nil
 }
 
-// handleAssistantChunk 处理 assistant 消息输出：流式时逐 chunk 直透 delta 并累积；
-// 非流式（Generate 路径）时整消息直落 draft。
-func (a *eventAdapter) handleAssistantChunk(_ context.Context, draft *assistantDraft, mo *adk.TypedMessageVariant[*schema.Message]) {
+// parentFor 返回子 agent 事件所归属的 AgentTool 调用 id；主 agent 事件返回空。
+func (a *eventAdapter) parentFor(agentName string) string {
+	if !a.subagents[agentName] {
+		return ""
+	}
+	if ids := a.pendingCalls[agentName]; len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
+}
+
+// handleAssistantMessage 处理一条 assistant 消息事件：流式时逐 chunk 直透 delta，
+// 读尽后把本条消息合并为整消息落库。每个事件即一条完整消息，不跨事件合并。
+func (a *eventAdapter) handleAssistantMessage(ctx context.Context, mo *adk.TypedMessageVariant[*schema.Message], parent string) {
+	var chunks []*schema.Message
 	if mo.IsStreaming {
 		if mo.MessageStream == nil {
 			return
@@ -103,7 +113,7 @@ func (a *eventAdapter) handleAssistantChunk(_ context.Context, draft *assistantD
 			if chunk == nil {
 				continue
 			}
-			draft.chunks = append(draft.chunks, chunk)
+			chunks = append(chunks, chunk)
 			if chunk.Content != "" {
 				a.emit(Event{SessionID: a.sessionID, Type: EventDelta, Text: chunk.Content})
 			}
@@ -111,31 +121,28 @@ func (a *eventAdapter) handleAssistantChunk(_ context.Context, draft *assistantD
 				a.emitUsage(chunk.ResponseMeta.Usage)
 			}
 		}
-		return
+	} else if mo.Message != nil {
+		chunks = append(chunks, mo.Message)
 	}
-	if mo.Message != nil {
-		draft.chunks = append(draft.chunks, mo.Message)
-	}
+	a.flushAssistant(ctx, chunks, parent)
 }
 
-// flushAssistantDraft 合并当前累积的 assistant chunk 成整消息落库（含 tool_use 事件），
-// 并清空草稿以便下一个迭代重新累积。
-func (a *eventAdapter) flushAssistantDraft(ctx context.Context, draft *assistantDraft) {
-	if len(draft.chunks) == 0 {
+// flushAssistant 合并一条消息的 chunk 成整消息落库（含 tool_use 事件）。
+func (a *eventAdapter) flushAssistant(ctx context.Context, chunks []*schema.Message, parent string) {
+	if len(chunks) == 0 {
 		return
 	}
-	chunks := draft.chunks
-	draft.chunks = nil
 	msg, err := schema.ConcatMessages(chunks)
 	if err != nil || msg == nil {
 		return
 	}
 	entry := &eventlog.Entry{
-		UUID:      newEntryUUID(),
-		SessionID: a.sessionID,
-		Type:      eventlog.EntryAssistant,
-		Timestamp: nowUTC(),
-		MessageID: messageID(msg),
+		UUID:            newEntryUUID(),
+		SessionID:       a.sessionID,
+		Type:            eventlog.EntryAssistant,
+		Timestamp:       nowUTC(),
+		MessageID:       messageID(msg),
+		ParentToolUseID: parent,
 	}
 	if msg.Content != "" {
 		entry.Content = append(entry.Content, eventlog.Block{Type: "text", Text: msg.Content})
@@ -145,6 +152,10 @@ func (a *eventAdapter) flushAssistantDraft(ctx context.Context, draft *assistant
 			Type: "tool_use", ID: tc.ID, Name: tc.Function.Name,
 			Input: json.RawMessage(tc.Function.Arguments),
 		})
+		// 登记 AgentTool 调用：其子 agent 事件据此归属到该 tool_use id。
+		if a.subagents[tc.Function.Name] {
+			a.pendingCalls[tc.Function.Name] = append(a.pendingCalls[tc.Function.Name], tc.ID)
+		}
 	}
 	// 先落库拿 seq，再广播：tool_use 事件带条目 seq，前端可据此续传/去重。
 	seq := a.appendOne(ctx, entry)
@@ -155,7 +166,7 @@ func (a *eventAdapter) flushAssistantDraft(ctx context.Context, draft *assistant
 }
 
 // handleToolMessage 处理 Role=tool 的完整消息事件：tool_result entry + 事件。
-func (a *eventAdapter) handleToolMessage(ctx context.Context, mo *adk.TypedMessageVariant[*schema.Message]) {
+func (a *eventAdapter) handleToolMessage(ctx context.Context, mo *adk.TypedMessageVariant[*schema.Message], parent string) {
 	msg := mo.Message
 	if msg == nil && !mo.IsStreaming {
 		return
@@ -174,19 +185,65 @@ func (a *eventAdapter) handleToolMessage(ctx context.Context, mo *adk.TypedMessa
 	if msg == nil {
 		return
 	}
+	// AgentTool 调用返回：出队对应的 pending 调用。
+	if a.subagents[mo.ToolName] {
+		if ids := a.pendingCalls[mo.ToolName]; len(ids) > 0 {
+			a.pendingCalls[mo.ToolName] = ids[1:]
+		}
+	}
 	isErr, text := parseToolResultMessage(msg)
 	entry := &eventlog.Entry{
-		UUID:      newEntryUUID(),
-		SessionID: a.sessionID,
-		Type:      eventlog.EntryToolResult,
-		Timestamp: nowUTC(),
-		MessageID: messageID(msg),
-		ToolUseID: msg.ToolCallID,
+		UUID:            newEntryUUID(),
+		SessionID:       a.sessionID,
+		Type:            eventlog.EntryToolResult,
+		Timestamp:       nowUTC(),
+		MessageID:       messageID(msg),
+		ToolUseID:       msg.ToolCallID,
+		ParentToolUseID: parent,
 	}
 	entry.Content = append(entry.Content, eventlog.Block{Type: "tool_result", Text: text})
 	seq := a.appendOne(ctx, entry)
 	a.emit(Event{SessionID: a.sessionID, Seq: seq, Type: EventToolResult, ToolName: mo.ToolName,
 		IsError: isErr, Text: text})
+
+	if a.skillTool != "" && mo.ToolName == a.skillTool {
+		if name := parseSkillName(text); name != "" {
+			a.appendEntries(ctx, &eventlog.Entry{
+				UUID:            newEntryUUID(),
+				SessionID:       a.sessionID,
+				Type:            eventlog.EntrySystem,
+				Subtype:         eventlog.SubtypeSkillInvocation,
+				Content:         []eventlog.Block{{Type: "text", Text: name}},
+				Timestamp:       nowUTC(),
+				ParentToolUseID: parent,
+				ToolUseID:       msg.ToolCallID,
+			})
+		}
+	}
+}
+
+// parseSkillName 从 skill 注入正文首行的基目录路径提取 skill 名（与 Python _parse_skill_name_from_injection 同语义）。
+// 注入正文全文不进日志，只记名字。
+func parseSkillName(text string) string {
+	const prefix = "Base directory for this skill:"
+	firstLine := strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
+	if !strings.HasPrefix(firstLine, prefix) {
+		return ""
+	}
+	path := strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(firstLine[len(prefix):]), "\\", "/"), "/")
+	var segments []string
+	for _, s := range strings.Split(path, "/") {
+		if s != "" {
+			segments = append(segments, s)
+		}
+	}
+	if n := len(segments); n > 0 && strings.EqualFold(segments[n-1], "SKILL.md") {
+		segments = segments[:n-1]
+	}
+	if len(segments) == 0 {
+		return ""
+	}
+	return segments[len(segments)-1]
 }
 
 func concatToolChunk(acc, chunk *schema.Message) *schema.Message {

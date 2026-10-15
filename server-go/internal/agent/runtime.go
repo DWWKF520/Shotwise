@@ -13,6 +13,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -28,6 +31,8 @@ import (
 	"github.com/shotwise/shotwise/internal/agent/checkpoint"
 	"github.com/shotwise/shotwise/internal/agent/eventlog"
 	"github.com/shotwise/shotwise/internal/agent/policy"
+	"github.com/shotwise/shotwise/internal/agent/skills"
+	"github.com/shotwise/shotwise/internal/agent/subagents"
 )
 
 // 进入 checkpoint / 事件流的 Shotwise 自定义类型在此统一注册 gob 名。
@@ -552,9 +557,12 @@ func (r *Runtime) ensureLoop(sessionID, project string) (*sessionLoop, error) {
 func (r *Runtime) newSessionLoop(sessionID, project string) *sessionLoop {
 	sl := &sessionLoop{sessionID: sessionID, project: project, bus: newEventBus()}
 	sl.adapter = &eventAdapter{
-		sessionID: sessionID,
-		store:     r.evStore,
-		emit:      sl.bus.Broadcast,
+		sessionID:    sessionID,
+		store:        r.evStore,
+		emit:         sl.bus.Broadcast,
+		skillTool:    skills.SkillToolName,
+		subagents:    r.subagentNames(project),
+		pendingCalls: map[string][]string{},
 		onInterrupted: func(q *PendingQuestion) {
 			r.mu.Lock()
 			r.pendingInterrupts[sessionID] = q
@@ -685,6 +693,46 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 	tools = append(tools, r.extraTools...)
 
 	guard := policy.NewAgentAccessPolicy(r.projectRoot(project), r.secretKeys)
+	guardMW := NewGuardMiddleware(guard)
+
+	// Skills / Subagent 源目录与项目 .claude 同构（§17）。
+	claudeDir := filepath.Join(r.dataDir, project, ".claude")
+	skillsRoot := filepath.Join(claudeDir, "skills")
+	if err := skills.ValidateDir(skillsRoot); err != nil {
+		return nil, fmt.Errorf("agent: skills: %w", err)
+	}
+	skillBackend := skills.NewModeAwareBackend(skillsRoot, readContentMode(filepath.Join(r.dataDir, project, "project.json")))
+	skillMW, err := skills.NewMiddleware(ctx, skillBackend)
+	if err != nil {
+		return nil, fmt.Errorf("agent: skill middleware: %w", err)
+	}
+
+	defs, err := subagents.LoadDir(filepath.Join(claudeDir, "agents"))
+	if err != nil {
+		return nil, fmt.Errorf("agent: subagents: %w", err)
+	}
+	pool, err := subagents.ToolPool(ctx, tools)
+	if err != nil {
+		return nil, fmt.Errorf("agent: subagent tool pool: %w", err)
+	}
+	subBuilder := &subagents.Builder{
+		Model:    m,
+		Pool:     pool,
+		Handlers: []adk.ChatModelAgentMiddleware{guardMW},
+		SkillBody: func(name string) (string, error) {
+			s, err := skillBackend.Get(ctx, name)
+			if err != nil {
+				return "", err
+			}
+			return s.Content, nil
+		},
+	}
+	subTools, _, err := subBuilder.BuildAll(ctx, defs)
+	if err != nil {
+		return nil, fmt.Errorf("agent: build subagents: %w", err)
+	}
+	tools = append(tools, subTools...)
+
 	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:        "shotwise-director",
 		Description: "Shotwise AI 导演助手：辅助短剧/说书/广告的脚本、分镜与资产生成。",
@@ -700,9 +748,40 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 		Handlers: []adk.ChatModelAgentMiddleware{
 			// 围栏是硬失败设计（ADR 0025），文件工具在无围栏状态下不得上线：
 			// guard 必须先于 filesystem/skill middleware 接入（设计文档 §16）。
-			NewGuardMiddleware(guard),
+			guardMW,
+			skillMW,
 		},
 	})
+}
+
+// subagentNames 返回项目 subagent 名字集合（事件归属判定用）。定义加载失败时记录告警并返回空集，
+// 严格校验仍由 buildAgent 在每轮装配时执行。
+func (r *Runtime) subagentNames(project string) map[string]bool {
+	defs, err := subagents.LoadDir(filepath.Join(r.dataDir, project, ".claude", "agents"))
+	if err != nil {
+		slog.Warn("subagent 定义加载失败", "project", project, "err", err)
+		return map[string]bool{}
+	}
+	names := make(map[string]bool, len(defs))
+	for _, d := range defs {
+		names[d.Name] = true
+	}
+	return names
+}
+
+// readContentMode 读取 project.json 的 content_mode；缺失或非法时返回空（只暴露通用 skill）。
+func readContentMode(projectJSON string) string {
+	raw, err := os.ReadFile(projectJSON)
+	if err != nil {
+		return ""
+	}
+	var p struct {
+		ContentMode string `json:"content_mode"`
+	}
+	if json.Unmarshal(raw, &p) != nil || !skills.IsValidMode(p.ContentMode) {
+		return ""
+	}
+	return p.ContentMode
 }
 
 // projectRoot 返回项目的绝对根目录（围栏双 base 的 raw 侧）。
