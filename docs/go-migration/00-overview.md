@@ -11,7 +11,7 @@
 | HTTP 端点 | 约 343 个（45 个 router 文件 + 资产工厂 4 类型 × 4 端点） |
 | DB 表 | 53 张业务表（Alembic 78 个迁移，3 个 merge 点） |
 | 供应商 backend | 视频 11 个类 / 图片 9 个类 / 音频 2 个类 + 自定义供应商声明式端点 |
-| 智能体工具 | 进程内 MCP 37 个（31 对外 + 5 内部 + 1 复用） |
+| 智能体工具 | 进程内 MCP 37 个（32 对外 + 5 内部） |
 | Skill / Subagent | 11 个 Skill（含 1 个 content_mode 变体）/ 6 个 Subagent |
 
 ## 2. 三个已定决策
@@ -70,8 +70,8 @@ server-go/
 | **P1 数据层** | 53 表 GORM 模型 + 0001_init + repository；project.json / 剧集 JSON 读写与校验 | 能对既有 `projects/.shotwise.db` 读全表 | 完成（0001_init 基线 + 53 表模型 + 执行器；剧集 JSON 校验待随 P2 补） |
 | **P2 领域与资产** | projects / characters / scenes / props / products / files / versions | 项目 CRUD + 资产 CRUD 冒烟通过 | 进行中（项目 CRUD + 四类资产 16 端点含级联改名已通；files / versions / 全局 assets 库 / 剧集 JSON 校验未动） |
 | **P3 供应商与计费** | registry、resolver 四级解析、backend 接口、pricing、api_calls | 一次真实图片生成成功并正确记账 | 完成（内置 10 家 + 自定义声明式包装层 backend 全量注册；ImageGenerator 记账括号闭环、自定义供应商图片路线已通；文本后端已补最小实现 `internal/textgen`（gemini-aistudio 单家 + 分层解析，其余 provider 直接报错不回退）；design / video / tts 执行链随后续阶段补） |
-| **P4 生成流水线** | 队列去重、双通道 worker、容量表、熔断、租约、resume、ffmpeg | 批量生成 + 取消 + 断点续传冒烟 | 进行中（queue 全套单测绿：去重 / 容量 / 熔断 / 租约 / 取消 / 孤儿 resume 分桶；ffmpeg 执行器就绪；TaskDispatcher（TaskExecutor 实现）已提供 storyboard 路径，worker 装配进 cmd 与端到端冒烟待接线） |
-| **P5 智能体** | Eino ChatModelAgent + GuardedTool + 37 工具 + SSE entry 流 | 一条完整会话跑通（含 Skill 调用与 AskUserQuestion） | 进行中（会话面已闭环：TurnLoop 驱动、guard middleware + AgentAccessPolicy（含 EnhancedInvokableToolCall 包裹）、ask_user HITL（checkpoint 落 SQL + 按 question_id 回答续跑）、事件日志落 `agent_session_event_log` 且 SSE `id: seq` + `Last-Event-ID` 续传、`entries` / `entries/stream` / `interrupt` / `questions/{id}/answer` 端点已接；37 工具清单已实现 14 个对外工具（list_project_text_files / read_project_text / list_pending_assets / generate_assets / patch_project / get_video_capabilities / analyze_character_relations / inspect_director_review / patch_episode_script / insert_segment / remove_segment / split_segment / patch_episode_meta / rename_asset），其余 17 个对外工具与 5 个内部 timeline 工具未实现；剧本写盘统一入口（锁 + 结构不更坏 + metadata 重算 + 分集镜像）与结构校验器已就位；skills / subagents / filesystem+沙箱 已装配；双模型通道未动，尚无 Skill 调用） |
+| **P4 生成流水线** | 队列去重、双通道 worker、容量表、熔断、租约、resume、ffmpeg | 批量生成 + 取消 + 断点续传冒烟 | 进行中（queue 全套单测绿：去重 / 容量 / 熔断 / 租约 / 取消 / 孤儿 resume 分桶；ffmpeg 执行器就绪；TaskDispatcher（TaskExecutor 实现）已提供 storyboard / design(scene,prop,product) / tts / image_edit / grid 路径，worker 装配进 cmd 与端到端冒烟待接线） |
+| **P5 智能体** | Eino ChatModelAgent + GuardedTool + 37 工具 + SSE entry 流 | 一条完整会话跑通（含 Skill 调用与 AskUserQuestion） | 进行中（会话面已闭环：TurnLoop 驱动、guard middleware + AgentAccessPolicy（含 EnhancedInvokableToolCall 包裹）、ask_user HITL（checkpoint 落 SQL + 按 question_id 回答续跑）、事件日志落 `agent_session_event_log` 且 SSE `id: seq` + `Last-Event-ID` 续传、`entries` / `entries/stream` / `interrupt` / `questions/{id}/answer` 端点已接；37 工具清单已实现 18 个对外工具（list_project_text_files / read_project_text / list_pending_assets / generate_assets / generate_storyboards / edit_images / generate_grid / generate_narration_audio / patch_project / get_video_capabilities / analyze_character_relations / inspect_director_review / patch_episode_script / insert_segment / remove_segment / split_segment / patch_episode_meta / rename_asset），其余 14 个对外工具（视频生成 4 个 / 剧本生成类 7 个 / 参考稿 2 个 / 记忆 1 个）与 5 个内部 timeline 工具未实现；剧本写盘统一入口（锁 + 结构不更坏 + metadata 重算 + 分集镜像）与结构校验器已就位；skills / subagents / filesystem+沙箱 已装配；双模型通道未动，尚无 Skill 调用；生成完成的项目变更事件（含 asset_fingerprints）与 `resolve_resolution` 的 legacy / 自定义供应商两级来源尚未迁移） |
 | **P6 长尾 router** | workflows(41) / memories(15) / creative_boards(16) / publishing / media_* | 端点覆盖对齐清单 | 未开始 |
 | **P7 切换** | 前端指向 Go 服务，Python 服务下线 | 前端全流程回归通过 | 未开始 |
 

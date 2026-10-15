@@ -88,6 +88,13 @@ type Overview struct {
 	GeneratedAt  string `json:"generated_at,omitempty"`
 }
 
+// 分集账本状态：planned（已规划未消费）/ consumed（已有下游产物）/ stale（源文或账本变动后需重做）。
+const (
+	LedgerStatusPlanned  = "planned"
+	LedgerStatusConsumed = "consumed"
+	LedgerStatusStale    = "stale"
+)
+
 // EpisodeMeta 是 project.json.episodes 的一项。
 type EpisodeMeta struct {
 	Episode        int          `json:"episode"`
@@ -111,6 +118,12 @@ type SourceRange struct {
 type Outline struct {
 	StoryBeats        []string `json:"story_beats,omitempty"`
 	NextEpisodeTeaser string   `json:"next_episode_teaser,omitempty"`
+}
+
+// PlanningCursor 标记下一批分集规划的起点（归一化坐标系字符偏移）。
+type PlanningCursor struct {
+	SourceFile string `json:"source_file"`
+	Offset     int    `json:"offset"`
 }
 
 // ProjectMetadata 是 project.json.metadata。
@@ -172,6 +185,12 @@ type ProjectFile struct {
 	Metadata ProjectMetadata `json:"metadata,omitempty"`
 
 	Episodes []EpisodeMeta `json:"episodes,omitempty"`
+
+	// PlanningCursor 是下一批分集规划起点；nil 表示尚未规划或已被重置清空。
+	PlanningCursor *PlanningCursor `json:"planning_cursor,omitempty"`
+	// SourceFingerprints 记录已参与规划的源文内容指纹（源文相对路径 → 归一化文本 sha256）：
+	// 账本坐标绑定具体源文内容，指纹是「原文未变」的证据；全量重置时随之清空。
+	SourceFingerprints map[string]string `json:"source_fingerprints,omitempty"`
 
 	// DeletedEpisodeScriptFiles 记录被显式删除的剧本文件路径：同名剧本被重新保存时解除抑制，
 	// 在此之前不让自动扫描把已删集数复活。
@@ -298,6 +317,17 @@ func (p *ProjectFile) Clone() *ProjectFile {
 	}
 	if p.DeletedEpisodeScriptFiles != nil {
 		out.DeletedEpisodeScriptFiles = append([]string(nil), p.DeletedEpisodeScriptFiles...)
+	}
+	if p.PlanningCursor != nil {
+		cursor := *p.PlanningCursor
+		out.PlanningCursor = &cursor
+	}
+	if p.SourceFingerprints != nil {
+		fingerprints := make(map[string]string, len(p.SourceFingerprints))
+		for key, value := range p.SourceFingerprints {
+			fingerprints[key] = value
+		}
+		out.SourceFingerprints = fingerprints
 	}
 	if v := cloneValue(p.Characters); v != nil {
 		out.Characters = v.(AssetBucket)

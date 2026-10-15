@@ -411,6 +411,28 @@ func (r *Resolver) VideoBackend(ctx context.Context, project *domain.ProjectFile
 	return r.resolveLayered(ctx, project, videoDefaultLayeredKeys)
 }
 
+// ResolveResolution 解析项目生效的图像/视频分辨率档（对应 Python resolve_resolution）。
+//
+// 优先级：project.json 的 model_settings["provider/model"].resolution。空串表示调用时不传
+// SDK resolution 参数，由调用方按各自保底档处理。
+//
+// 迁移边界（不静默降级、也不臆造数据）：Python 侧还有两级来源——legacy 字段
+// video_model_settings[model].resolution、以及自定义供应商模型行声明的默认分辨率。
+// Go 侧 project.json 域结构未保留该 legacy 字段、custom_provider_model 亦无 resolution 列，
+// 两级待对应字段迁移后补齐；当前只落 model_settings 一级。
+func (r *Resolver) ResolveResolution(
+	ctx context.Context, project *domain.ProjectFile, providerID, modelID string,
+) (string, error) {
+	if project == nil || providerID == "" || modelID == "" {
+		return "", nil
+	}
+	settings := project.ModelSettings[providerID+"/"+modelID]
+	if settings == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(settings["resolution"]), nil
+}
+
 // resolveLayered 是「默认 + 能力桶」四级解析骨架：项目桶 > 项目默认 > 全局桶 > 全局默认 >
 // 自动推断。媒体类型无关，各层键位由 layeredKeys 声明。
 //

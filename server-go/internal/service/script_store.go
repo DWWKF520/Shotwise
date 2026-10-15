@@ -146,6 +146,21 @@ func guardNoWorse(before, after map[string]any) error {
 	return &ScriptStructureValidationError{Errors: afterErrors}
 }
 
+// ResolveEpisodeFromScript 从剧本解析集号（对应 Python ProjectManager.resolve_episode_from_script）。
+//
+// 优先取剧本顶层 episode 字段（真相源），回退到文件名隐含集号；两者都无时报错。
+func ResolveEpisodeFromScript(script map[string]any, scriptFilename string) (int, error) {
+	if episode, ok := scriptEpisodeNumber(script); ok {
+		return episode, nil
+	}
+	if match := scriptEpisodePattern.FindStringSubmatch(scriptFilename); match != nil {
+		if episode, err := strconv.Atoi(match[1]); err == nil {
+			return episode, nil
+		}
+	}
+	return 0, fmt.Errorf("无法确定集号：剧本缺少 episode 字段且文件名 %s 不含 episodeN 模式", scriptFilename)
+}
+
 // requireFilenameEpisodeConsistency 校验剧本内 episode 字段与文件名隐含集号一致。
 // 文件名不含集号模式或剧本内无 episode 整数时静默放行（兼容旧数据）。
 func requireFilenameEpisodeConsistency(script map[string]any, scriptFilename string) error {

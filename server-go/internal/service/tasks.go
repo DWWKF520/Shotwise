@@ -6,7 +6,8 @@
 //     剧本条目引用收集与 scene 资产写回依赖剧本域（get_storyboard_items），随剧本域迁移补齐。
 //   - design 任务的 scene / prop / product 已接线（tasks_design.go）；character 还需头像裁剪
 //     （infra/img 未建），暂未迁移，显式报错。
-//   - video / tts / grid / reference_video / image_edit / canvas_* 依赖各自的重执行链，暂未迁移。
+//   - tts 已接线（tasks_tts.go）；image_edit 已接线（tasks_image_edit.go）；grid 已接线（tasks_grid.go）。
+//   - video / reference_video / canvas_* 依赖各自的重执行链，暂未迁移。
 package service
 
 import (
@@ -29,6 +30,7 @@ import (
 type TaskDispatcher struct {
 	store  *ProjectStore
 	images *ImageGenerator
+	audio  *AudioGenerator
 }
 
 // 编译期契约：派发器可直接作为 worker 的执行层注入（queue.NewWorker 的 TaskExecutor 形参）。
@@ -52,6 +54,12 @@ func (d *TaskDispatcher) Execute(ctx context.Context, task *repository.TaskData)
 	case string(domain.AssetCharacter):
 		// 角色设计图还需头像裁剪（lib/character_avatar），依赖未迁移的 infra/img，fail loud。
 		return nil, fmt.Errorf("character design task is not migrated yet (avatar cropping pending)")
+	case "tts":
+		return d.executeTTS(ctx, task)
+	case "image_edit":
+		return d.executeImageEdit(ctx, task)
+	case "grid":
+		return d.executeGrid(ctx, task)
 	default:
 		return nil, fmt.Errorf("unsupported task_type: %s", task.TaskType)
 	}
@@ -212,15 +220,26 @@ func aspectRatioFor(project *domain.ProjectFile, resourceType string) string {
 	return "16:9"
 }
 
-// normalizeStoryboardPrompt 归一化分镜图 prompt：字符串非空校验 + 统一反向提示词尾巴；
-// 结构化对象转 YAML（Style/Scene/Composition/Avoid 键序）后再追加尾巴（尾巴幂等）。
+// normalizeStoryboardPrompt 归一化分镜图 prompt：正文组装 + 统一反向提示词尾巴（尾巴幂等）。
 func normalizeStoryboardPrompt(raw any, style string) (string, error) {
+	body, err := BuildImagePromptBody(raw, style)
+	if err != nil {
+		return "", err
+	}
+	return appendImageNegativeTail(body), nil
+}
+
+// BuildImagePromptBody 返回不含风格前缀、不含反向尾巴的提示词正文。
+//
+// 结构化对象转 YAML（Style/Scene/Composition/Avoid 键序）；纯字符串原样返回。工具层与
+// worker 层共用这一份正文组装，避免入队时与执行时的提示词口径分叉。
+func BuildImagePromptBody(raw any, style string) (string, error) {
 	switch p := raw.(type) {
 	case string:
 		if strings.TrimSpace(p) == "" {
 			return "", fmt.Errorf("prompt must not be empty")
 		}
-		return appendImageNegativeTail(p), nil
+		return p, nil
 	case map[string]any:
 		scene, _ := p["scene"].(string)
 		if strings.TrimSpace(scene) == "" {
@@ -233,10 +252,37 @@ func normalizeStoryboardPrompt(raw any, style string) (string, error) {
 			"lighting":  stringOr(composition["lighting"], ""),
 			"ambiance":  stringOr(composition["ambiance"], ""),
 		}
-		return appendImageNegativeTail(imagePromptToYAML(normalized, style)), nil
+		return imagePromptToYAML(normalized, style), nil
 	default:
 		return "", fmt.Errorf("prompt must be a string or object")
 	}
+}
+
+// BuildImagePromptText 按 Python sdk_tools/enqueue_storyboards.py::_build_prompt 的口径组装入队提示词：
+// 结构化 prompt 的 style 已写进 YAML 的 Style 字段，故不再重复加 "Style:" 前缀；非结构化（纯字符串）
+// prompt 不含 Style，前缀补上。反向尾巴由执行层追加，此处不加。
+func BuildImagePromptText(raw any, style, styleDescription string) (string, error) {
+	structured := false
+	if m, ok := raw.(map[string]any); ok {
+		_, structured = m["scene"]
+	}
+	var parts []string
+	normalizedStyle := normalizeStylePrefix(style)
+	if normalizedStyle != "" && !structured {
+		parts = append(parts, "Style: "+normalizedStyle)
+	}
+	if strings.TrimSpace(styleDescription) != "" {
+		parts = append(parts, "Visual style: "+strings.TrimSpace(styleDescription))
+	}
+	prefix := ""
+	if len(parts) > 0 {
+		prefix = strings.Join(parts, "\n") + "\n\n"
+	}
+	body, err := BuildImagePromptBody(raw, normalizedStyle)
+	if err != nil {
+		return "", err
+	}
+	return prefix + body, nil
 }
 
 // promptYAMLScalar 输出单个 YAML 纯量：取值安全（无结构歧义字符）时保持明文，

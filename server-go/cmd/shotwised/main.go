@@ -112,6 +112,11 @@ func run(log *slog.Logger) error {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}, store),
 		agent.WithScriptEditing(store), agent.WithAssetRename(assets))
+	// 生成类工具（generate_storyboards / generate_narration_audio / edit_images / generate_grid）依赖
+	// GenerationQueue 与 worker：队伍装配完成后在此补
+	// agent.WithGenerationTools(q, store)、agent.WithImageEditTools(q, store, config.NewResolver(gdb)) 与
+	// agent.WithGridTools(q, store, config.NewResolver(gdb), service.NewGridService(store))
+	// （见 docs/go-migration 的 P4 待接线项）。
 	if err != nil {
 		return err
 	}

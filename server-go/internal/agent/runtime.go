@@ -36,6 +36,7 @@ import (
 	"github.com/shotwise/shotwise/internal/agent/skills"
 	"github.com/shotwise/shotwise/internal/agent/subagents"
 	"github.com/shotwise/shotwise/internal/agent/workspace"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // 进入 checkpoint / 事件流的 Shotwise 自定义类型在此统一注册 gob 名。
@@ -236,6 +237,20 @@ type Runtime struct {
 	// scriptStore / assetRenamer 为剧本编辑与级联改名工具的依赖（WithScriptEditing / WithAssetRename 注入）。
 	scriptStore  ScriptStore
 	assetRenamer AssetRenamer
+	// generationQueue / generationProjects 为生成类工具（分镜图 / 旁白配音）的依赖。
+	generationQueue    AssetQueue
+	generationProjects GenerationProjects
+	// imageEditQueue / imageEditProjects / imageEditCaps 为 edit_images 的依赖（WithImageEditTools 注入）。
+	imageEditQueue    AssetQueue
+	imageEditProjects GenerationProjects
+	imageEditCaps     ImageEditCapabilityReader
+	// gridQueue / gridProjects / gridCaps / gridSplitter 为 generate_grid 的依赖（WithGridTools 注入）。
+	gridQueue    AssetQueue
+	gridProjects GenerationProjects
+	gridCaps     service.ImageCapabilityResolver
+	gridSplitter GridSplitter
+	// episodeStore 为分集规划工具的依赖（WithEpisodePlanning 注入）。
+	episodeStore service.EpisodeStore
 	// textGate 记录各项目最近一次文本清单签名，供 read_project_text 门禁使用。
 	textGate textFileGate
 
@@ -805,6 +820,47 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 			return nil, fmt.Errorf("agent: build rename_asset: %w", err)
 		}
 		tools = append(tools, rename)
+	}
+	if r.generationQueue != nil && r.generationProjects != nil {
+		generators := []struct {
+			name string
+			ctor func() (tool.InvokableTool, error)
+		}{
+			{"generate_storyboards", func() (tool.InvokableTool, error) {
+				return newGenerateStoryboardsTool(project, r.generationQueue, r.generationProjects)
+			}},
+			{"generate_narration_audio", func() (tool.InvokableTool, error) {
+				return newGenerateNarrationAudioTool(project, r.generationQueue, r.generationProjects)
+			}},
+		}
+		for _, g := range generators {
+			built, err := g.ctor()
+			if err != nil {
+				return nil, fmt.Errorf("agent: build %s: %w", g.name, err)
+			}
+			tools = append(tools, built)
+		}
+	}
+	if r.imageEditQueue != nil && r.imageEditProjects != nil && r.imageEditCaps != nil {
+		edit, err := newEditImagesTool(project, r.imageEditQueue, r.imageEditProjects, r.imageEditCaps)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build edit_images: %w", err)
+		}
+		tools = append(tools, edit)
+	}
+	if r.gridQueue != nil && r.gridProjects != nil && r.gridCaps != nil {
+		grid, err := newGenerateGridTool(project, r.gridQueue, r.gridProjects, r.gridCaps, r.gridSplitter)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build generate_grid: %w", err)
+		}
+		tools = append(tools, grid)
+	}
+	if r.episodeStore != nil {
+		reset, err := newResetEpisodePlanningTool(project, r.episodeStore)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build reset_episode_planning: %w", err)
+		}
+		tools = append(tools, reset)
 	}
 	if r.assetWriter != nil && r.projectWriter != nil {
 		patch, err := newPatchProjectTool(project, r.assetWriter, r.projectWriter)
