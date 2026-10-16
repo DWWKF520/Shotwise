@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -319,6 +320,9 @@ func (s *ProjectStore) readScriptByFilename(project, filename string) (map[strin
 }
 
 // loadScriptOrNew 读剧本供锁内改；不存在时按空对象起步（新剧本创建走同一条写盘路径）。
+//
+// 读后就地跑时长收编迁移（对应 Python _read_script_unlocked 被锁定链复用）：迁移结果随
+// 调用方的正常写盘落盘，与外部读路径（ReadScriptJSON）「谁先跑谁定终局」。
 func (s *ProjectStore) loadScriptOrNew(dir, filename string) (map[string]any, error) {
 	target, err := fs.SafeJoin(filepath.Join(dir, "scripts"), false, filename)
 	if err != nil {
@@ -331,7 +335,31 @@ func (s *ProjectStore) loadScriptOrNew(dir, filename string) (map[string]any, er
 	if script == nil {
 		script = map[string]any{}
 	}
+	migrateScriptInPlace(script, target)
 	return script, nil
+}
+
+// readScriptMigrated 裸读剧本并就地跑存量迁移，返回 (剧本, 是否发生迁移)。
+func readScriptMigrated(path string) (map[string]any, bool, error) {
+	var script map[string]any
+	if err := fs.ReadJSON(path, &script); err != nil {
+		return nil, false, err
+	}
+	if script == nil {
+		script = map[string]any{}
+	}
+	migrated := migrateScriptInPlace(script, path)
+	return script, migrated, nil
+}
+
+// migrateScriptInPlace 就地跑剧集脚本的时长收编迁移并记日志；返回是否发生迁移。
+func migrateScriptInPlace(script map[string]any, path string) bool {
+	migrated, warnings := MigrateScriptUnitDurations(script)
+	for _, message := range warnings {
+		slog.Warn("剧本时长收编迁移",
+			"file", filepath.Base(path), "key", message.Key, "params", message.Params)
+	}
+	return migrated
 }
 
 // readScriptOrNone 裸读剧本 JSON 取「改前」快照；文件不存在或损坏时返回 nil（按严格校验处理）。

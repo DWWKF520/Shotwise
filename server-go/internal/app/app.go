@@ -59,6 +59,7 @@ func New(rt *Runtime) *gin.Engine {
 	registerCreativeContext(v1, rt)
 	registerPublishing(v1, rt)
 	registerMediaAssets(v1, rt)
+	registerScriptReview(v1, rt)
 	registerAgent(v1, rt)
 
 	return r
@@ -129,6 +130,15 @@ func registerMemories(v1 *gin.RouterGroup, rt *Runtime) {
 	transport.RegisterMemories(authed, transport.MemoryDeps{
 		Store:    rt.Store,
 		Memories: service.NewMemoryService(rt.DB),
+	})
+}
+
+// registerScriptReview step1→step2 web 审核 gate 路由（对应 Python 侧无 feature gate 的挂载）。
+func registerScriptReview(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterScriptReview(authed, transport.ScriptReviewDeps{
+		Store:   rt.Store,
+		Reviews: service.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
 	})
 }
 

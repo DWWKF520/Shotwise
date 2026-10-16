@@ -91,6 +91,16 @@ var bundles = map[Locale]map[string]string{
 		"memory_candidate_resolved":  "记忆候选已处理",
 		"memory_scope_required":      "指定项目时必须同时指定记忆作用域",
 		"memory_import_invalid":      "记忆导入数据无效",
+
+		// step1→step2 审核门文案与 Python 侧 lib/i18n/*/errors.py 逐条对齐。
+		"script_review_not_applicable":                "该集不适用 step1 审核确认（该模式无结构化 step1 中间态）",
+		"script_review_no_step1":                      "尚无 step1 结构化中间态可确认，请先完成预处理",
+		"script_review_quarantined":                   "本集 step1 有违约产物待处置，请让智能体修复并晋升后再确认",
+		"script_review_conflict":                      "step1 内容在编辑期间已被其他编辑方修改，本次保存未覆盖；请刷新查看最新内容，合并后再保存",
+		"script_review_invalid_content":               "step1 中间态结构校验失败：{details}",
+		"script_review_quarantine_unreadable":         "隔离草稿文件已损坏或格式不符，无法读取，请让智能体重新拆分该集",
+		"script_review_quarantine_schema_unsupported": "隔离草稿使用了不支持的 schema 版本 {version}，请先升级应用后再继续",
+		"episode_not_found":                           "第 {episode} 集不存在或尚无剧本文件",
 	},
 	EN: {
 		"internal_server_error":  "Internal server error",
@@ -158,6 +168,16 @@ var bundles = map[Locale]map[string]string{
 		"memory_candidate_resolved":  "Memory candidate has already been resolved",
 		"memory_scope_required":      "A memory scope is required when filtering by project",
 		"memory_import_invalid":      "Invalid memory import payload",
+
+		"script_review_not_applicable": "Step 1 review does not apply to this episode (this mode has no structured Step 1 intermediate)",
+		"script_review_no_step1":       "No Step 1 structured draft to confirm yet; please finish preprocessing first",
+		"script_review_quarantined":    "This episode has a rejected Step 1 draft awaiting repair; let the agent fix and promote it before confirming",
+		"script_review_conflict": "The Step 1 draft was modified by another editor while you were editing; your save was not applied. " +
+			"Refresh to see the latest content, merge your changes, then save again",
+		"script_review_invalid_content":               "Step 1 draft structure validation failed: {details}",
+		"script_review_quarantine_unreadable":         "The quarantined draft file is corrupted or malformed and can't be read; ask the agent to re-split this episode",
+		"script_review_quarantine_schema_unsupported": "This quarantined draft uses unsupported schema version {version}; upgrade the application before continuing",
+		"episode_not_found":                           "Episode {episode} not found or has no script file yet",
 	},
 	VI: {
 		"internal_server_error":  "Lỗi máy chủ nội bộ",
@@ -225,6 +245,16 @@ var bundles = map[Locale]map[string]string{
 		"memory_candidate_resolved":  "Ứng viên bộ nhớ đã được xử lý",
 		"memory_scope_required":      "Khi lọc theo dự án phải chỉ định phạm vi bộ nhớ",
 		"memory_import_invalid":      "Dữ liệu nhập bộ nhớ không hợp lệ",
+
+		"script_review_not_applicable": "Tập này không áp dụng xác nhận Step 1 (chế độ này không có bản trung gian Step 1 có cấu trúc)",
+		"script_review_no_step1":       "Chưa có bản nháp có cấu trúc Step 1 để xác nhận; vui lòng hoàn tất tiền xử lý trước",
+		"script_review_quarantined":    "Tập này có bản nháp Step 1 vi phạm đang chờ xử lý; hãy để tác nhân sửa và thăng cấp trước khi xác nhận",
+		"script_review_conflict": "Bản nháp Step 1 đã bị người chỉnh sửa khác thay đổi trong lúc bạn đang chỉnh sửa; lần lưu này chưa được áp dụng. " +
+			"Hãy tải lại để xem nội dung mới nhất, hợp nhất thay đổi của bạn rồi lưu lại",
+		"script_review_invalid_content":               "Xác thực cấu trúc bản nháp Step 1 thất bại: {details}",
+		"script_review_quarantine_unreadable":         "Tệp bản nháp bị cách ly đã hỏng hoặc sai định dạng, không thể đọc được; hãy để tác nhân chia lại tập này",
+		"script_review_quarantine_schema_unsupported": "Bản nháp bị cách ly sử dụng phiên bản schema {version} không được hỗ trợ; hãy nâng cấp ứng dụng trước khi tiếp tục",
+		"episode_not_found":                           "Không tìm thấy tập {episode} hoặc tập chưa có tệp kịch bản",
 	},
 }
 

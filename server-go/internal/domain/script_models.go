@@ -56,6 +56,12 @@ var scriptItemFallbackDurations = map[string]int{"segments": 4, "scenes": 8, "sh
 // referenceUnitDurationRange 是参考生视频 unit 时长的结构合理性区间（秒）。
 var referenceUnitDurationRange = [2]int{1, 300}
 
+// ReferenceUnitDurationRange 返回参考生视频 unit 时长的结构合理性区间（秒），
+// 供 service 层的时长收编迁移器与校验器共用同一真相源。
+func ReferenceUnitDurationRange() (int, int) {
+	return referenceUnitDurationRange[0], referenceUnitDurationRange[1]
+}
+
 // ValidateScriptStructure 校验剧本 dict 的结构是否良构，返回错误消息列表（空列表 = 合法）。
 //
 // 错误消息格式与 Python 侧对齐：字段路径用 "." 连接（含数组下标），形如

@@ -207,7 +207,13 @@ func (s *ProjectStore) ScriptsDir(name string) (string, error) {
 	return filepath.Join(dir, "scripts"), nil
 }
 
-// ReadScriptJSON 按文件名读取剧本，文件名必须是单段（防穿越）。
+// ReadScriptJSON 按文件名读取剧本（含存量迁移，迁移结果在剧本锁内回写落盘），
+// 文件名必须是单段（防穿越）。
+//
+// 对应 Python ProjectManager.load_script：先无锁读一次——绝大多数剧本早已完成收编，
+// 这条路径不取锁、不建锁文件；发生了迁移才进剧本锁，锁内重读一次再回写，读-改-写
+// 不给并发写者留覆盖窗口。不走 writeScript：迁移只是格式收编，不应刷新
+// metadata.updated_at、不触发 project.json 同步。
 func (s *ProjectStore) ReadScriptJSON(name, filename string) (map[string]any, error) {
 	if filepath.Base(filename) != filename {
 		return nil, &fs.PathTraversalError{Msg: "invalid script file name"}
@@ -216,7 +222,28 @@ func (s *ProjectStore) ReadScriptJSON(name, filename string) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	return s.readJSONObject(filepath.Join(dir, filename))
+	path := filepath.Join(dir, filename)
+	script, migrated, err := readScriptMigrated(path)
+	if err != nil {
+		return nil, err
+	}
+	if !migrated {
+		return script, nil
+	}
+	err = s.WithScriptLock(name, filename, func(_, _ string) error {
+		script, migrated, err = readScriptMigrated(path)
+		if err != nil {
+			return err
+		}
+		if migrated {
+			return fs.WriteJSONAtomic(path, script)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return script, nil
 }
 
 // WriteScriptJSON 原子写回剧本。

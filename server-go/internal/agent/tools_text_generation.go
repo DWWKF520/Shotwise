@@ -32,6 +32,8 @@ type TextGenerationProjects interface {
 	Get(name string) (*domain.ProjectFile, error)
 	Dir(name string) (string, error)
 	SaveScript(project, scriptFilename string, script map[string]any) error
+	// Update 供 step1 存量迁移在项目锁内平移 / 失效审阅确认记录（service.ScriptGenStore 要求）。
+	Update(name string, mutate func(*domain.ProjectFile) error) error
 }
 
 // WithTextGenerationTools 注入剧本生成类工具的依赖；未注入时不注册这组工具。

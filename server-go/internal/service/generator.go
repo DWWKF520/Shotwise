@@ -20,6 +20,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/provider"
@@ -290,12 +291,22 @@ func (g *VideoGenerator) Generate(
 
 	// 能力闸门先于记账括号：违约直接失败，不扣费、不留 failed ApiCall 行。
 	caps := provider.ResolveVideoCapabilities(backend, serviceTier, p.Resolution)
+	// 总时长校验需要读音频元数据，只能在这层（拿得到文件路径）探测好再传给纯函数的
+	// GateVideoRequest；探测失败（ffprobe 不可用等）按 nil 传入，由其按既有降级口径跳过
+	// 该项校验，不阻断请求。仅当 caps 声明了总时长约束才探测——未声明该约束的后端
+	// 不必为每个请求多付一轮 ffprobe 子进程开销。
+	var referenceAudioTotalSeconds *float64
+	if len(p.ReferenceAudioFiles) > 0 && caps.MaxReferenceAudioTotalSeconds != nil {
+		if total, ok := ffmpeg.MultiTotalDuration(ctx, p.ReferenceAudioFiles); ok {
+			referenceAudioTotalSeconds = &total
+		}
+	}
 	if err := provider.GateVideoRequest(&caps, backend.Name(), backend.Model(), provider.VideoGateInput{
-		Prompt:              &p.Prompt,
-		EndImage:            p.EndImage != "",
-		ReferenceImages:     p.ReferenceImages,
-		ReferenceAudioFiles: p.ReferenceAudioFiles,
-		// 参考音频总时长探测（ffprobe）随参考音频编排迁移补齐；nil 按既定降级口径跳过该单项校验。
+		Prompt:                     &p.Prompt,
+		EndImage:                   p.EndImage != "",
+		ReferenceImages:            p.ReferenceImages,
+		ReferenceAudioFiles:        p.ReferenceAudioFiles,
+		ReferenceAudioTotalSeconds: referenceAudioTotalSeconds,
 	}); err != nil {
 		return VideoGenerateResult{}, err
 	}

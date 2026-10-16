@@ -26,6 +26,8 @@ type ScriptGenStore interface {
 	Get(name string) (*domain.ProjectFile, error)
 	Dir(name string) (string, error)
 	SaveScript(project, scriptFilename string, script map[string]any) error
+	// Update 供 step1 存量迁移在项目锁内平移 / 失效审阅确认记录（*ProjectStore 的同名方法）。
+	Update(name string, mutate func(*domain.ProjectFile) error) error
 }
 
 // ScriptGenerator 是剧本生成器。

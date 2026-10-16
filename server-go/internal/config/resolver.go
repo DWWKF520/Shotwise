@@ -310,6 +310,51 @@ func NewResolver(db *gorm.DB) *Resolver {
 	return &Resolver{db: db, svc: NewConfigService(db)}
 }
 
+// ProjectVideoBackendIDs 返回 project.json 自报的视频模型身份：按 generation_mode 定桶取桶键，
+// 缺则取项目默认键（对应 Python project_video_backend_ids）。
+//
+// 纯读 project.json、不查 DB，供 caps 解析失败（DB / migration 故障等）时的降级路径复用：
+// 桶键与默认键都在同一个明文文件里，降级只该丢掉 DB 那部分，不该顺带把桶口径也降成项目
+// 默认层——否则配了 video_provider_r2v 的参考视频项目会拿 video_backend 的档位收编剧本。
+// 层内取值口径与 resolveLayered 的项目层一致（含裸 provider 覆盖）。
+func ProjectVideoBackendIDs(project *domain.ProjectFile) (ProviderModel, bool) {
+	if project == nil {
+		return ProviderModel{}, false
+	}
+	keys := videoLayeredKeys(provider.VideoBucketForGenerationMode(project.GenerationMode))
+	for _, key := range []string{keys.projectBucketKey, keys.projectDefaultKey} {
+		if key == "" {
+			continue
+		}
+		if selected, ok := parseProjectProvider(projectProviderValue(project, key), provider.MediaVideo); ok {
+			return selected, true
+		}
+	}
+	return ProviderModel{}, false
+}
+
+// ResolveRawSupportedDurations 返回收窄前的时长全集：caps → registry 两级解析（对应 Python
+// resolve_raw_supported_durations）。
+//
+// 两级都取不到时返回 nil，表示「该项目尚未配置可解析的视频型号」。caps 是自定义供应商
+// （custom- 前缀）唯一的档位来源——registry 只收录内建供应商，能拿到 caps 的调用方都应先解析
+// caps 再调本函数，不带 caps 调用对这类项目恒为 nil。caps 为 nil 或无档位时退回 registry 级
+// 解析：项目自报身份按 generation_mode 定桶取（ProjectVideoBackendIDs），不直取项目默认层。
+//
+// 返回值不含「分辨率↔时长」「参考图↔时长」联动约束，收窄在 service 侧
+// EffectiveReferenceDurations。
+func ResolveRawSupportedDurations(project *domain.ProjectFile, caps *VideoCapabilityView) []int {
+	if caps != nil && len(caps.SupportedDurations) > 0 {
+		return append([]int(nil), caps.SupportedDurations...)
+	}
+	if ids, ok := ProjectVideoBackendIDs(project); ok {
+		if info, ok := provider.ModelInfoFor(ids.ProviderID, ids.ModelID); ok && len(info.SupportedDurations) > 0 {
+			return append([]int(nil), info.SupportedDurations...)
+		}
+	}
+	return nil
+}
+
 // ResolveImageBackend 解析图片任务应使用的身份。
 //
 // 优先级：payload > 项目桶（image_provider_<cap>）> 项目默认（default_image_backend）>

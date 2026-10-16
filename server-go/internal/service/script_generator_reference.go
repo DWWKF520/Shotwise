@@ -213,10 +213,48 @@ func (g *ScriptGenerator) loadReferenceStep1(episode int, supportedDurations []i
 		}
 		return nil, fmt.Errorf("未找到 Step 1 中间文件: %s；generation_mode=reference_video 期望该文件，请先完成 video_unit 拆分", step1JSON)
 	}
-	root, err := readJSONObjectFile(step1JSON)
-	if err != nil {
-		return nil, fmt.Errorf("step1_reference_units.json 解析失败: %w", err)
+
+	// 与 Web 端保存 / 确认共享同一把 per-path 锁：迁移的读改写与它们相互互斥。
+	var root map[string]any
+	var migratedProject *domain.ProjectFile
+	var migrationWarnings []MigrationWarning
+	migrateErr := Step1WriteLock(g.dir, episode, func(step1Path string) error {
+		// 顺序不变量：审阅 gate 的判定在更早的 step2 工具入口完成，迁移在其后运行且可能
+		// 改写时长。先记下迁移前的放行状态，供迁移后判断放行依据是否已失效。放行状态与
+		// 草稿在同一临界区内读取，两者才描述同一时刻——锁外读则并发的保存/确认会让它
+		// 描述另一份草稿的审阅结果。
+		gatePassedBefore := !GateBlocksStep2(g.dir, g.pf, episode)
+		content, err := readJSONObjectFile(step1Path)
+		if err != nil {
+			return fmt.Errorf("step1_reference_units.json 解析失败: %w", err)
+		}
+		// 存量草稿的 per-shot 时长一次性收编到 unit 级并回写落盘（二次加载不再触发）。
+		// 此处持有模型档位，收编结果直接取档，与下方的枚举校验对齐。
+		migratedProject, migrationWarnings, err = MigrateStep1DraftInPlace(
+			g.store, g.projectName, content, episode, supportedDurations,
+		)
+		if err != nil {
+			return err
+		}
+		root = content
+		if !gatePassedBefore {
+			return nil
+		}
+		// 迁移带 warnings 说明 clamp 改写了实际秒数，那是内容变更、审阅确认随之失效。而
+		// gate 放行据的是改写前的状态：不在此处补判，生成就会拿着用户从未过目的秒数走完
+		// 付费的 step2，落盘之后才在下次加载被拦下。
+		if len(migrationWarnings) > 0 && migratedProject != nil &&
+			GateBlocksStep2(g.dir, migratedProject, episode) {
+			return fmt.Errorf("第 %d 集 step1 时长已按当前模型档位收编改写（%s），"+
+				"改写后的内容尚未经审阅确认，step2 生成已中止；请在 Web 端审阅确认本集 step1 后重新生成",
+				episode, renderMigrationWarnings(migrationWarnings))
+		}
+		return nil
+	})
+	if migrateErr != nil {
+		return nil, migrateErr
 	}
+
 	rawUnits, ok := root["units"].([]any)
 	if !ok || len(rawUnits) == 0 {
 		return nil, fmt.Errorf("step1_reference_units.json units 为空")
