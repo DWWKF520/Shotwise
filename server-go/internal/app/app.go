@@ -53,11 +53,32 @@ func New(rt *Runtime) *gin.Engine {
 	registerProjects(v1, rt)
 	registerMemories(v1, rt)
 	registerMediaAssembly(v1, rt)
+	registerJianyingAssembly(v1, rt)
+	registerMediaRendering(v1, rt)
 	registerCreativeBoards(v1, rt)
+	registerCreativeContext(v1, rt)
 	registerPublishing(v1, rt)
+	registerMediaAssets(v1, rt)
 	registerAgent(v1, rt)
 
 	return r
+}
+
+// registerMediaAssets 项目媒体库路由（受 media_library 开关约束）。
+func registerMediaAssets(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	gated := authed.Group("", transport.RequireFeature("media_library"))
+	transport.RegisterMediaAssets(gated, transport.MediaAssetsDeps{Store: rt.Store})
+}
+
+// registerCreativeContext 创建上下文解析路由（受 context_agent 开关约束）。
+func registerCreativeContext(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	gated := authed.Group("", transport.RequireFeature("context_agent"))
+	transport.RegisterCreativeContext(gated, transport.CreativeContextDeps{
+		Context: service.NewCreativeContextService(rt.DB, rt.Store),
+		Store:   rt.Store,
+	})
 }
 
 // registerPublishing 发布账号与发布任务路由。
@@ -83,6 +104,22 @@ func registerMediaAssembly(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterMediaAssembly(authed, transport.MediaAssemblyDeps{
 		Plans: service.NewMediaAssemblyService(rt.DB),
+	})
+}
+
+// registerMediaRendering 渲染任务路由（对应 Python 侧无 feature gate 的挂载）。
+func registerMediaRendering(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterMediaRendering(authed, transport.MediaRenderingDeps{
+		Renders: service.NewMediaRenderingService(rt.DB, rt.Store),
+	})
+}
+
+// registerJianyingAssembly 剪映草稿导出路由（对应 Python 侧无 feature gate 的挂载）。
+func registerJianyingAssembly(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterJianyingAssembly(authed, transport.JianyingAssemblyDeps{
+		Exports: service.NewJianyingExportService(rt.DB, rt.Store),
 	})
 }
 
