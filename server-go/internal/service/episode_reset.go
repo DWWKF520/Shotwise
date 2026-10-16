@@ -404,6 +404,9 @@ type EpisodeStore interface {
 // ResetEpisodePlanning 重置分集规划账本。
 //
 // 返回 (结果, 需确认, error)：需确认非 nil 时未发生任何写入。from_episode=1 全量、>1 部分。
+//
+// 迁移边界：Python 侧在原始 dict 上操作，故账本被写坏成非列表等极端损坏形状时全量重置仍能
+// 执行成功；Go 侧经域结构体读项目，这类形状在加载期即被拒，需先手工修复 project.json。
 func ResetEpisodePlanning(
 	store EpisodeStore, projectName string, fromEpisode int, confirmConsumed bool,
 ) (*EpisodeResetResult, *ResetConfirmationRequired, error) {

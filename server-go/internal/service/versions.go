@@ -277,6 +277,47 @@ func (v *Versions) EnsureCurrentTracked(resourceType, resourceID, prompt, curren
 	return 0, err
 }
 
+// UpdateVersionMetadata 为既有版本记录补写元数据键（覆盖同名键），返回是否命中。
+//
+// 供生成 finalize 在版本入库后回填只有 finalize 阶段才确定的元数据（如参考单元产物的来源
+// 签名）。目标记录不存在时返回 false 不报错：档案补写是 best-effort。
+func (v *Versions) UpdateVersionMetadata(
+	resourceType, resourceID string, version int, metadata map[string]any,
+) (bool, error) {
+	if _, err := resourcePatternFor(resourceType); err != nil {
+		return false, fmt.Errorf("不支持的资源类型: %s", resourceType)
+	}
+	found := false
+	err := withVersionsLock(v.lockKey(), func() error {
+		data, err := v.load()
+		if err != nil {
+			return err
+		}
+		rec := data[resourceType][resourceID]
+		if rec == nil {
+			return nil
+		}
+		for i := range rec.Versions {
+			if rec.Versions[i].Version != version {
+				continue
+			}
+			if rec.Versions[i].Extra == nil {
+				rec.Versions[i].Extra = map[string]any{}
+			}
+			for k, value := range metadata {
+				rec.Versions[i].Extra[k] = value
+			}
+			found = true
+			return v.save(data)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return found, nil
+}
+
 func (v *Versions) lockKey() string { return v.projectDir }
 
 func (v *Versions) load() (versionsData, error) {

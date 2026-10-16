@@ -27,6 +27,8 @@ import (
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
+	"github.com/shotwise/shotwise/internal/pricing"
+	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/textgen"
@@ -100,6 +102,43 @@ func run(log *slog.Logger) error {
 	}
 	store := service.NewProjectStore(cfg.DataDir)
 	assets := service.NewAssetService(store)
+
+	// 生成队列与 worker：所有生成类工具（资产 / 分镜 / 配音 / 图片编辑 / 宫格 / 视频 / 分集规划）
+	// 与任务 API 都依赖它。ledger 走内置定价目录（pricing.BuiltinCatalog），无目录时结算无法
+	// 在真实调用上完成。worker 的执行层是 TaskDispatcher（按 task_type 路由到各生成路径）。
+	ledger := service.NewLedger(gdb, pricing.NewCalculator(pricing.BuiltinCatalog()))
+	images := service.NewImageGenerator(gdb, ledger)
+	audioGen := service.NewAudioGenerator(gdb, ledger)
+	videos := service.NewVideoGenerator(gdb, ledger)
+	dispatcher := service.NewTaskDispatcher(store, images)
+	dispatcher.SetAudioGenerator(audioGen)
+	dispatcher.SetVideoGenerator(videos)
+	// 项目变更事件的订阅总线：worker 终态经它广播给前端，须先于 queue 构造。
+	hub := service.NewEventHub()
+	q := queue.NewQueue(gdb,
+		queue.WithProjectLoader(store),
+		// 生成完成的终态广播：只发成功事件，带受影响文件的指纹供前端 cache-bust。
+		queue.WithTerminalEmitter(service.NewTerminalEmitter(hub, store, gdb)))
+	worker := queue.NewWorker(q, dispatcher,
+		// 中断记账收口：启动时翻残留 pending 行为失败，取消时翻该任务的 pending 行。
+		queue.WithInterruptedSettler(service.NewLedgerSettler(ledger)),
+		// 失败编码走结构化 "[code] {params}"，读侧据此渲染多语言文案。
+		queue.WithFailureEncoder(service.EncodeTaskFailure),
+		queue.WithTaskErrorEncoder(service.EncodeTaskError),
+		// 健康账的熔断只对上游瞬态失败计数，取消与业务失败不动健康度。
+		queue.WithTransientClassifier(service.IsTransientTaskError),
+		// 限流槽路由用的执行身份投影；解析失败由 worker 兜底 DefaultProvider，不阻断认领循环。
+		queue.WithProviderExtractor(service.NewProviderExtractor(store, config.NewResolver(gdb))),
+		// 执行前复检引用资产，收窄「准入与执行之间」的项目 / 剧本漂移窗口。
+		queue.WithPreflight(service.NewWorkerPreflight(store)),
+		// 重启自愈：按提交时锁定的身份轮询下载，绝不重新 submit（重复 submit 等于重复计费）。
+		queue.WithResumeExecutor(service.NewResumeExecutor(dispatcher)))
+	// 取消回调先注册再启动 worker：取消 API 才能把进程内取消信号同步投递给在途执行。
+	q.SetCancelCallback(worker.RequestCancel)
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel() // 兜底：中途 return 时也停掉 worker（关停路径另显式调用一次）
+	go worker.Run(workerCtx)
+
 	agentRT, err := agent.NewRuntime(context.Background(), agent.ModelConfig{
 		APIKey:  cfg.LLMAPIKey,
 		Model:   cfg.LLMModel,
@@ -111,12 +150,25 @@ func run(log *slog.Logger) error {
 		agent.WithRelationAnalysis(func(ctx context.Context, pf *domain.ProjectFile) (agent.RelationTextGenerator, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}, store),
-		agent.WithScriptEditing(store), agent.WithAssetRename(assets))
-	// 生成类工具（generate_storyboards / generate_narration_audio / edit_images / generate_grid）依赖
-	// GenerationQueue 与 worker：队伍装配完成后在此补
-	// agent.WithGenerationTools(q, store)、agent.WithImageEditTools(q, store, config.NewResolver(gdb)) 与
-	// agent.WithGridTools(q, store, config.NewResolver(gdb), service.NewGridService(store))
-	// （见 docs/go-migration 的 P4 待接线项）。
+		agent.WithScriptEditing(store), agent.WithAssetRename(assets),
+		agent.WithTextGenerationTools(func(ctx context.Context, pf *domain.ProjectFile) (service.TextCompletion, error) {
+			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
+		}, store),
+		agent.WithScriptReviewTools(store),
+		agent.WithReferenceTools(func(ctx context.Context, pf *domain.ProjectFile) (service.TextCompletion, error) {
+			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
+		}, store, config.NewResolver(gdb)),
+		agent.WithTimelineTools(service.NewMediaAssemblyService(gdb)),
+		agent.WithMemoryProposals(service.NewMemoryService(gdb)),
+		// 生成类工具依赖上面装配好的 GenerationQueue 与 worker。
+		agent.WithAssetGeneration(q, store),
+		agent.WithGenerationTools(q, store),
+		agent.WithImageEditTools(q, store, config.NewResolver(gdb)),
+		agent.WithGridTools(q, store, config.NewResolver(gdb), service.NewGridService(store)),
+		agent.WithEpisodePlanning(store, func(ctx context.Context, pf *domain.ProjectFile) (service.TextCompletion, error) {
+			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
+		}),
+		agent.WithVideoGeneration(q, store, config.NewResolver(gdb), store))
 	if err != nil {
 		return err
 	}
@@ -127,7 +179,7 @@ func run(log *slog.Logger) error {
 		DB:      gdb,
 		Dialect: dialect,
 		Store:   store,
-		Hub:     service.NewEventHub(),
+		Hub:     hub,
 		Auth:    authSvc,
 		Agent:   agentRT,
 		Assets:  assets,
@@ -159,7 +211,9 @@ func run(log *slog.Logger) error {
 	log.Info("shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	// 先停会话 loop，再停 HTTP：loop 收口时不再往已关的连接写事件。
+	// 停 worker（等在途执行收尾），再停会话 loop，最后停 HTTP。
+	workerCancel()
+	worker.Stop(ctx)
 	agentRT.Close()
 	if err := srv.Shutdown(ctx); err != nil {
 		return err

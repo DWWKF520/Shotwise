@@ -178,11 +178,27 @@ func TestTaskDispatcherRejectsEmptyAndUnsupported(t *testing.T) {
 	})); err == nil || !strings.Contains(err.Error(), "scene") {
 		t.Fatalf("structured prompt without scene should fail loud: %v", err)
 	}
+	// video / reference_video 已接线：未注入视频生成器时按缺失依赖 fail loud，而非 unsupported。
 	_, err := dispatcher.Execute(context.Background(), &repository.TaskData{
 		TaskID: "t2", ProjectName: "p1", TaskType: "video", MediaType: "video", ResourceID: "E1S01",
 		Payload: map[string]any{"prompt": "x"}, UserID: repository.DefaultUserID,
 	})
-	if err == nil || !strings.Contains(err.Error(), "unsupported task_type: video") {
+	if err == nil || strings.Contains(err.Error(), "unsupported task_type") {
+		t.Fatalf("video task should be routed, not unsupported: %v", err)
+	}
+	_, err = dispatcher.Execute(context.Background(), &repository.TaskData{
+		TaskID: "t3", ProjectName: "p1", TaskType: "reference_video", MediaType: "video", ResourceID: "E1U01",
+		Payload: map[string]any{"prompt": "x"}, UserID: repository.DefaultUserID,
+	})
+	if err == nil || strings.Contains(err.Error(), "unsupported task_type") {
+		t.Fatalf("reference_video task should be routed, not unsupported: %v", err)
+	}
+	// 仍未迁移的画布任务类型照常 fail loud。
+	_, err = dispatcher.Execute(context.Background(), &repository.TaskData{
+		TaskID: "t4", ProjectName: "p1", TaskType: "canvas_image_split", MediaType: "image", ResourceID: "E1S01",
+		Payload: map[string]any{"prompt": "x"}, UserID: repository.DefaultUserID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported task_type: canvas_image_split") {
 		t.Fatalf("unported task type should fail loud: %v", err)
 	}
 }

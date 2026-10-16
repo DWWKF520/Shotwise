@@ -31,15 +31,19 @@ type TaskDispatcher struct {
 	store  *ProjectStore
 	images *ImageGenerator
 	audio  *AudioGenerator
+	videos *VideoGenerator
 }
-
-// 编译期契约：派发器可直接作为 worker 的执行层注入（queue.NewWorker 的 TaskExecutor 形参）。
-var _ queue.TaskExecutor = (*TaskDispatcher)(nil)
 
 // NewTaskDispatcher 构造；images 为 nil 时只能处理无需生成的任务类型（当前没有）。
 func NewTaskDispatcher(store *ProjectStore, images *ImageGenerator) *TaskDispatcher {
 	return &TaskDispatcher{store: store, images: images}
 }
+
+// 编译期契约：派发器可直接作为 worker 的执行层注入（queue.NewWorker 的 TaskExecutor 形参）。
+var _ queue.TaskExecutor = (*TaskDispatcher)(nil)
+
+// SetVideoGenerator 注入视频生成器；未注入时 video / reference_video 任务 fail loud。
+func (d *TaskDispatcher) SetVideoGenerator(videos *VideoGenerator) { d.videos = videos }
 
 // Execute 派发一个已认领任务；返回值写回 task.result_json。
 func (d *TaskDispatcher) Execute(ctx context.Context, task *repository.TaskData) (map[string]any, error) {
@@ -60,6 +64,10 @@ func (d *TaskDispatcher) Execute(ctx context.Context, task *repository.TaskData)
 		return d.executeImageEdit(ctx, task)
 	case "grid":
 		return d.executeGrid(ctx, task)
+	case "video":
+		return d.executeVideoTask(ctx, task)
+	case "reference_video":
+		return d.executeReferenceVideoTask(ctx, task)
 	default:
 		return nil, fmt.Errorf("unsupported task_type: %s", task.TaskType)
 	}

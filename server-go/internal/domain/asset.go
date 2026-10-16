@@ -27,10 +27,12 @@ const (
 
 // AssetSpec 描述一类资产的存储契约。
 type AssetSpec struct {
-	Kind              AssetKind
-	BucketKey         string // project.json 上的键名，也是版本历史的 resource_type
-	Subdir            string // 项目目录下的子目录
-	SheetKey          string // 定妆图/设计稿字段名
+	Kind      AssetKind
+	BucketKey string // project.json 上的键名，也是版本历史的 resource_type
+	Subdir    string // 项目目录下的子目录
+	SheetKey  string // 定妆图/设计稿字段名
+	// LabelZh 是资产类型的中文名，服务 logger 与 agent 侧字符串（按 i18n 规范豁免翻译）。
+	LabelZh           string
 	ExtraStringFields []string
 	ExtraListFields   []string
 	InGlobalLibrary   bool
@@ -40,6 +42,7 @@ type AssetSpec struct {
 var AssetSpecs = map[AssetKind]AssetSpec{
 	AssetCharacter: {
 		Kind: AssetCharacter, BucketKey: "characters", Subdir: "characters", SheetKey: "character_sheet",
+		LabelZh: "角色",
 		// voice_updated_at 不在可写字段里：它只由系统在 reference_audio 真正变更时机械戳写，
 		// 开放任意覆写会让 voice_notice_dismissed_at 的等值校验被绕过。
 		ExtraStringFields: []string{"voice_style", "reference_image", "reference_audio", "character_avatar", "voice_notice_dismissed_at"},
@@ -47,14 +50,17 @@ var AssetSpecs = map[AssetKind]AssetSpec{
 	},
 	AssetScene: {
 		Kind: AssetScene, BucketKey: "scenes", Subdir: "scenes", SheetKey: "scene_sheet",
+		LabelZh:         "场景",
 		InGlobalLibrary: true,
 	},
 	AssetProp: {
 		Kind: AssetProp, BucketKey: "props", Subdir: "props", SheetKey: "prop_sheet",
+		LabelZh:         "道具",
 		InGlobalLibrary: true,
 	},
 	AssetProduct: {
 		Kind: AssetProduct, BucketKey: "products", Subdir: "products", SheetKey: "product_sheet",
+		LabelZh:           "产品",
 		ExtraStringFields: []string{"brand"},
 		ExtraListFields:   []string{"reference_images", "selling_points"},
 		// 全局资产库是单图列模型，多图列表型的 product 暂不进入。

@@ -21,6 +21,11 @@ type fakeGenerationProjects struct {
 func (f *fakeGenerationProjects) Get(string) (*domain.ProjectFile, error) { return f.pf, nil }
 func (f *fakeGenerationProjects) Dir(string) (string, error)              { return f.dir, nil }
 
+// Update 就地 mutate 项目，使该替身同时满足分集规划工具的 service.EpisodeStore。
+func (f *fakeGenerationProjects) Update(_ string, mutate func(*domain.ProjectFile) error) error {
+	return mutate(f.pf)
+}
+
 func (f *fakeGenerationProjects) ReadScriptJSON(_, filename string) (map[string]any, error) {
 	script, ok := f.scripts[filename]
 	if !ok {

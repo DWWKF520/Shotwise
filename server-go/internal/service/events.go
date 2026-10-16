@@ -17,6 +17,9 @@ type Change struct {
 	Important  bool   `json:"important"`
 	ScriptFile string `json:"script_file,omitempty"`
 	Episode    *int   `json:"episode,omitempty"`
+	// AssetFingerprints 是生成完成事件专有的附加字段（受影响文件的 mtime 指纹，键为项目相对路径），
+	// 供前端 cache-bust。
+	AssetFingerprints map[string]int64 `json:"asset_fingerprints,omitempty"`
 }
 
 // ChangeBatch 是一次广播的增量。

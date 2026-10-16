@@ -96,11 +96,13 @@ func enqueueGenerationTasks(
 	return ids, nil
 }
 
-// generationMediaType 映射任务类型的媒体通道。
+// generationMediaType 映射任务类型的媒体通道（video / reference_video → video；tts → audio；其余 → image）。
 func generationMediaType(taskType string) string {
 	switch taskType {
 	case "tts":
 		return "audio"
+	case "video", "reference_video":
+		return "video"
 	default:
 		return "image"
 	}

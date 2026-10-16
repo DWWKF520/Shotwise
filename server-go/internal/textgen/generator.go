@@ -41,6 +41,11 @@ const (
 // ErrUnsupportedProvider 解析出的文本 provider 当前 Go 侧未实现。解析层不回落到其它供应商。
 var ErrUnsupportedProvider = errors.New("unsupported text provider")
 
+// ErrOutputTruncated 表示结构化输出被输出上限截断、内容不完整。
+//
+// 调用方据它短路重试循环：重发同一份必然再截断的请求没有意义。
+var ErrOutputTruncated = errors.New("text output truncated")
+
 // tier 是文本任务档位，与 Python TextTaskTier 对应。
 type tier string
 

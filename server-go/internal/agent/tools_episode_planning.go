@@ -8,14 +8,129 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
+	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
 // 分集规划工具（对应 Python sdk_tools/episode_planning.py）。
 
-// WithEpisodePlanning 注入分集规划工具的项目依赖；未注入时不注册这组工具。
-func WithEpisodePlanning(store service.EpisodeStore) RuntimeOption {
-	return func(r *Runtime) { r.episodeStore = store }
+// WithEpisodePlanning 注入分集规划工具的依赖；未注入时不注册这组工具。
+func WithEpisodePlanning(store service.EpisodeStore, gen service.TextCompletionFactory) RuntimeOption {
+	return func(r *Runtime) {
+		r.episodeStore = store
+		r.episodeTextGen = gen
+	}
+}
+
+// maxInstructionsLen 是 instructions 入参长度上限（超长会失控 token 用量并稀释模型对原文的处理）。
+const maxInstructionsLen = 4000
+
+type planEpisodesIn struct {
+	Instructions string `json:"instructions,omitempty" jsonschema:"description=用户分集意见原文（可选，如「按章节对齐切分」）；原样注入规划 prompt 的「用户意见」分节，遵循强度由正文表达。每批调用都要重复带上，缺省/空白视同未传，最长 4000 字符"`
+}
+
+// newPlanEpisodesTool 构造 plan_episodes。
+func newPlanEpisodesTool(
+	project string, store service.EpisodeStore, gen service.TextCompletionFactory,
+) (tool.InvokableTool, error) {
+	return toolutils.InferTool("plan_episodes",
+		"分集规划：从账本 planning_cursor 起读一个源文窗口，调用项目配置的文本模型一次规划出"+
+			"窗口内所有剧情弧完整的集（标题/钩子/原文范围；drama 另含分集大纲），在同一把项目锁内"+
+			"写账本、派生 source/episode_N.txt 并清理残留派生文件。返回账本摘要（每集标题+钩子+体量）。"+
+			"窗口字数与每批集数上限为内部默认，project.json 顶层 planning_window_chars / "+
+			"planning_max_episodes 可覆盖，每集目标体量沿用 episode_target_units。"+
+			"用户表达分集意见（如按章节对齐切分、指定某处收尾）时经 instructions 传入原文；意见原样注入"+
+			"规划 prompt 的「用户意见」分节（遵循强度由正文表达，需要强约束时在正文写明），并附带已规划"+
+			"集数、未规划余量、本窗口体量供换算切分节奏。规划按窗口分多批（长篇会多次调用本工具），"+
+			"instructions 不持久化，规划全部完成前每一批调用都要重复带上同一偏好。末批即全部源文规划完毕、"+
+			"或再次调用已无新内容时，返回会额外附全局体量核对材料（累计集数、体量最小几集、体量中位数、"+
+			"目标体量）：若用户给过总集数、按章节对齐等结构性偏好，须对照核对、有偏差明确告知用户；"+
+			"常规批次只报累计已规划集数。提交时按参与源文件记录内容指纹；若检测到已记录的源文件内容被改动"+
+			"或消失（源文被替换/编辑/删除，即使账本坐标仍在界内），会拒绝规划并指名变动文件，此时需调用 "+
+			"reset_episode_planning 做全量重置后才能重新规划。",
+		func(ctx context.Context, in planEpisodesIn) (string, error) {
+			instructions := in.Instructions
+			if len([]rune(instructions)) > maxInstructionsLen {
+				return denyEnvelope(fmt.Sprintf(
+					"❌ 参数错误：instructions 过长（%d 字符，上限 %d），请精简后重试",
+					len([]rune(instructions)), maxInstructionsLen)), nil
+			}
+			if store == nil || gen == nil {
+				return denyEnvelope("episode planning not configured"), nil
+			}
+			pf, err := store.Get(project)
+			if err != nil {
+				return denyEnvelope("❌ 分集规划失败：" + err.Error()), nil
+			}
+			generator, err := gen(ctx, pf)
+			if err != nil {
+				return denyEnvelope("❌ 分集规划失败：" + err.Error()), nil
+			}
+			planner, err := service.NewEpisodePlanner(store, project, generator)
+			if err != nil {
+				return denyEnvelope("❌ 分集规划失败：" + err.Error()), nil
+			}
+			result, err := planner.Plan(ctx, instructions)
+			if err != nil {
+				return denyEnvelope("❌ 分集规划失败：" + err.Error()), nil
+			}
+			if len(result.Episodes) == 0 && result.SourceExhausted {
+				lines := []string{"源文已全部规划完毕，没有可规划的新内容。"}
+				lines = append(lines, renderLedgerStats(result.LedgerStats)...)
+				return okEnvelope(strings.Join(lines, "\n")), nil
+			}
+			return okEnvelope(formatPlanSummary(result)), nil
+		})
+}
+
+// formatPlanSummary 渲染账本摘要：每集标题 + 钩子 + 体量（阅读单位）。
+func formatPlanSummary(result *service.PlanResult) string {
+	lines := []string{fmt.Sprintf("✅ 已规划 %d 集：", len(result.Episodes))}
+	for _, ep := range result.Episodes {
+		statusNote := ""
+		if ep.LedgerStatus == domain.LedgerStatusStale {
+			statusNote = "（stale，需重做下游产物）"
+		}
+		lines = append(lines, fmt.Sprintf("- 第 %d 集《%s》%s｜体量约 %d｜钩子：%s",
+			ep.Episode, ep.Title, statusNote, ep.ReadingUnits, ep.Hook))
+	}
+	if result.SourceExhausted {
+		lines = append(lines, "源文已全部规划完毕。")
+	} else if result.Cursor != nil {
+		lines = append(lines, fmt.Sprintf("下一批规划起点：%s 偏移 %d",
+			result.Cursor.SourceFile, result.Cursor.Offset))
+	}
+	if result.LedgerStats != nil {
+		lines = append(lines, renderLedgerStats(result.LedgerStats)...)
+	} else {
+		lines = append(lines, fmt.Sprintf("累计已规划 %d 集。", result.TotalPlanned))
+	}
+	lines = append(lines, "请把以上摘要展示给用户做批级审阅；需要调整时先调用 reset_episode_planning 退回到"+
+		"最早受影响的集，再带 instructions 重新调用本工具。")
+	return strings.Join(lines, "\n")
+}
+
+// renderLedgerStats 渲染全局核对材料。
+func renderLedgerStats(stats *service.LedgerStats) []string {
+	if stats == nil {
+		return nil
+	}
+	lines := []string{fmt.Sprintf("累计总集数：%d", stats.TotalEpisodes)}
+	if len(stats.Smallest) > 0 {
+		parts := make([]string, 0, len(stats.Smallest))
+		for _, item := range stats.Smallest {
+			parts = append(parts, fmt.Sprintf("第 %d 集（约 %d）", item[0], item[1]))
+		}
+		lines = append(lines, "体量最小的几集："+strings.Join(parts, "、"))
+	}
+	if stats.MedianUnits != nil {
+		lines = append(lines, fmt.Sprintf("全账本体量中位数：约 %d", *stats.MedianUnits))
+	}
+	if stats.TargetUnits != nil {
+		lines = append(lines, fmt.Sprintf("每集目标体量设置：约 %d", *stats.TargetUnits))
+	}
+	lines = append(lines, "若用户给过总集数、按章节对齐等结构性偏好，请对照以上分布核实，有偏差须向用户明确说明。")
+	return lines
 }
 
 type resetEpisodePlanningIn struct {

@@ -34,6 +34,15 @@ var scriptCameraMotions = []string{
 
 var scriptTransitionTypes = []string{"cut", "fade", "dissolve"}
 
+// ShotTypes 暴露分镜景别枚举（供上层构造 response_schema）。
+func ShotTypes() []string { return append([]string(nil), scriptShotTypes...) }
+
+// CameraMotions 暴露运镜枚举（供上层构造 response_schema）。
+func CameraMotions() []string { return append([]string(nil), scriptCameraMotions...) }
+
+// TransitionTypes 暴露转场枚举。
+func TransitionTypes() []string { return append([]string(nil), scriptTransitionTypes...) }
+
 var scriptGeneratedStatuses = []string{"pending", "storyboard_ready", "completed"}
 
 // scriptLegacyDroppedFields 是存量 JSON 可能残留、Python 在校验前剥离的字段。

@@ -131,7 +131,8 @@ func (g *geminiAistudio) Generate(
 	text, finishReason := parsed.firstCandidate()
 	if finishReason == geminiFinishMaxTokens {
 		if schema != nil {
-			return "", fmt.Errorf("gemini-aistudio/%s 的结构化输出被输出上限截断，内容不完整", g.model)
+			return "", fmt.Errorf("%w: gemini-aistudio/%s 的结构化输出被输出上限截断，内容不完整",
+				ErrOutputTruncated, g.model)
 		}
 		slog.Warn("gemini-aistudio 文本输出被输出上限截断", "model", g.model, "max_output_tokens", maxOutputTokens)
 	}

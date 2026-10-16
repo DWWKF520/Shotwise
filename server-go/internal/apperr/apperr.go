@@ -19,7 +19,10 @@ type Error struct {
 	Code   string
 	Params map[string]any
 	Object bool // true → detail 渲染成 {"code":..., ...params}；false → 渲染成翻译后的字符串
-	Err    error
+	// Literal 为 true 时 detail 直接输出 Code 原文：对应 Python 侧把字面量字符串
+	// 直接交给 HTTPException 的场景（如 "creative_board_not_found"），不走 i18n。
+	Literal bool
+	Err     error
 }
 
 func (e *Error) Error() string {
@@ -48,6 +51,11 @@ func New(status int, code string, params map[string]any) *Error {
 // NewText 构造字符串形 detail 的错误（i18n key 渲染）。
 func NewText(status int, key string, params map[string]any) *Error {
 	return &Error{Status: status, Code: key, Params: params, Object: false}
+}
+
+// NewLiteral 构造字面量 detail 的错误：detail 原样输出 text，不做 i18n 翻译。
+func NewLiteral(status int, text string) *Error {
+	return &Error{Status: status, Code: text, Object: false, Literal: true}
 }
 
 func BadRequest(code string, params map[string]any) *Error {
@@ -81,6 +89,9 @@ func (v *Validation) Error() string { return "validation_error" }
 
 // Detail 渲染 detail 字段的值。
 func (e *Error) Detail(loc i18n.Locale) any {
+	if e.Literal {
+		return e.Code
+	}
 	if !e.Object {
 		return i18n.T(loc, e.Code, e.Params)
 	}

@@ -105,6 +105,15 @@ type EpisodeMeta struct {
 	Hook           string       `json:"hook,omitempty"`
 	SourceRange    *SourceRange `json:"source_range,omitempty"`
 	Outline        *Outline     `json:"outline,omitempty"`
+	// Step1Review 记录该集 step1 结构化中间态的审核确认（确认指纹 + 确认时刻）。
+	// 真值只存确认指纹，pending / confirmed 由读时比对 live step1 内容指纹派生。
+	Step1Review *Step1Review `json:"step1_review,omitempty"`
+}
+
+// Step1Review 是 step1 审核确认记录。
+type Step1Review struct {
+	Fingerprint string `json:"fingerprint"`
+	ConfirmedAt string `json:"confirmed_at,omitempty"`
 }
 
 // SourceRange 记录该集在源文件中的字符区间。
@@ -313,7 +322,23 @@ func (p *ProjectFile) Validate() error {
 func (p *ProjectFile) Clone() *ProjectFile {
 	out := *p
 	if p.Episodes != nil {
-		out.Episodes = append([]EpisodeMeta(nil), p.Episodes...)
+		out.Episodes = make([]EpisodeMeta, len(p.Episodes))
+		for i := range p.Episodes {
+			out.Episodes[i] = p.Episodes[i]
+			if p.Episodes[i].Step1Review != nil {
+				review := *p.Episodes[i].Step1Review
+				out.Episodes[i].Step1Review = &review
+			}
+			if p.Episodes[i].SourceRange != nil {
+				sourceRange := *p.Episodes[i].SourceRange
+				out.Episodes[i].SourceRange = &sourceRange
+			}
+			if p.Episodes[i].Outline != nil {
+				outline := *p.Episodes[i].Outline
+				outline.StoryBeats = append([]string(nil), p.Episodes[i].Outline.StoryBeats...)
+				out.Episodes[i].Outline = &outline
+			}
+		}
 	}
 	if p.DeletedEpisodeScriptFiles != nil {
 		out.DeletedEpisodeScriptFiles = append([]string(nil), p.DeletedEpisodeScriptFiles...)

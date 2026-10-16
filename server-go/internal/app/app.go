@@ -51,9 +51,48 @@ func New(rt *Runtime) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	registerAuth(v1, rt)
 	registerProjects(v1, rt)
+	registerMemories(v1, rt)
+	registerMediaAssembly(v1, rt)
+	registerCreativeBoards(v1, rt)
+	registerPublishing(v1, rt)
 	registerAgent(v1, rt)
 
 	return r
+}
+
+// registerPublishing 发布账号与发布任务路由。
+func registerPublishing(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterPublishing(authed, transport.PublishingDeps{
+		Publishing: service.NewPublishingService(rt.DB),
+		Events:     service.NewPublishJobEvents(rt.Hub, rt.Store),
+	})
+}
+
+// registerCreativeBoards 创意板路由（受 creative_board 开关约束）。
+func registerCreativeBoards(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	gated := authed.Group("", transport.RequireFeature("creative_board"))
+	transport.RegisterCreativeBoards(gated, transport.CreativeBoardDeps{
+		Boards: service.NewCreativeBoardService(rt.DB),
+	})
+}
+
+// registerMediaAssembly 媒体装配计划路由。
+func registerMediaAssembly(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterMediaAssembly(authed, transport.MediaAssemblyDeps{
+		Plans: service.NewMediaAssemblyService(rt.DB),
+	})
+}
+
+// registerMemories 长期记忆路由。
+func registerMemories(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterMemories(authed, transport.MemoryDeps{
+		Store:    rt.Store,
+		Memories: service.NewMemoryService(rt.DB),
+	})
 }
 
 // registerAuth 认证路由。status/token 必须公开（拿 token 之前就要可达）。

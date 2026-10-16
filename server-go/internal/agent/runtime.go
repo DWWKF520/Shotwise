@@ -249,8 +249,17 @@ type Runtime struct {
 	gridProjects GenerationProjects
 	gridCaps     service.ImageCapabilityResolver
 	gridSplitter GridSplitter
-	// episodeStore 为分集规划工具的依赖（WithEpisodePlanning 注入）。
-	episodeStore service.EpisodeStore
+	// episodeStore / episodeTextGen 为分集规划工具的依赖（WithEpisodePlanning 注入）。
+	episodeStore   service.EpisodeStore
+	episodeTextGen service.TextCompletionFactory
+	// textGen / scriptProjects 为剧本生成类工具（说书片段拆分 / 剧本规范化等）的依赖
+	// （WithTextGenerationTools 注入）。
+	textGen        service.TextCompletionFactory
+	scriptProjects TextGenerationProjects
+	// reviewProjects 为 step1 审核确认工具的依赖（WithScriptReviewTools 注入）。
+	reviewProjects ScriptReviewProjects
+	// memoryStore 为 propose_memory_candidate 的依赖（WithMemoryProposals 注入）。
+	memoryStore service.MemoryCandidateStore
 	// textGate 记录各项目最近一次文本清单签名，供 read_project_text 门禁使用。
 	textGate textFileGate
 
@@ -639,7 +648,7 @@ func (r *Runtime) newSessionLoop(sessionID, project string) *sessionLoop {
 	cfg := adk.TurnLoopConfig[InboxItem, *schema.Message]{
 		GenInput:     r.genInput(sl),
 		GenResume:    r.genResume(sl),
-		PrepareAgent: r.prepareAgent(project),
+		PrepareAgent: r.prepareAgent(sessionID, project),
 		OnAgentEvents: func(ctx context.Context, _ *adk.TurnContext[InboxItem, *schema.Message], events *adk.AsyncIterator[*adk.AgentEvent]) error {
 			return sl.adapter.consume(ctx, events)
 		},
@@ -736,18 +745,17 @@ func (r *Runtime) genResume(sl *sessionLoop) func(context.Context, *adk.TurnLoop
 
 // prepareAgent 返回每轮装配回调：CLAUDE.md / 长期记忆 / SessionValues 热更新
 // 在后续增量接入；v1 只装配系统提示 + 工具 + guard middleware。
-func (r *Runtime) prepareAgent(project string) func(context.Context, *adk.TurnLoop[InboxItem, *schema.Message], []InboxItem) (adk.Agent, error) {
+func (r *Runtime) prepareAgent(sessionID, project string) func(context.Context, *adk.TurnLoop[InboxItem, *schema.Message], []InboxItem) (adk.Agent, error) {
 	return func(ctx context.Context, _ *adk.TurnLoop[InboxItem, *schema.Message], _ []InboxItem) (adk.Agent, error) {
-		return r.buildAgent(ctx, project)
+		return r.buildAgent(ctx, sessionID, project)
 	}
 }
 
-// buildAgent 装配 ChatModelAgent（设计文档 §11）。
-func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, error) {
-	m, err := r.chatModel(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("agent: chat model: %w", err)
-	}
+// buildTools 装配项目绑定的全部业务工具（不含 middleware 与 subagent）。
+//
+// 独立于 buildAgent：注册校验（如「37 个工具全部在册」的断言）只需这一层，不必构造 chat model
+// 与 middleware 链。
+func (r *Runtime) buildTools(ctx context.Context, sessionID, project string) ([]tool.BaseTool, error) {
 	tools, err := BuiltinTools(r.dataDir, project)
 	if err != nil {
 		return nil, err
@@ -861,6 +869,83 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 			return nil, fmt.Errorf("agent: build reset_episode_planning: %w", err)
 		}
 		tools = append(tools, reset)
+		if r.episodeTextGen != nil {
+			plan, err := newPlanEpisodesTool(project, r.episodeStore, r.episodeTextGen)
+			if err != nil {
+				return nil, fmt.Errorf("agent: build plan_episodes: %w", err)
+			}
+			tools = append(tools, plan)
+		}
+	}
+	if r.textGen != nil && r.scriptProjects != nil {
+		builders := []struct {
+			name string
+			ctor func() (tool.InvokableTool, error)
+		}{
+			{"split_narration_segments", func() (tool.InvokableTool, error) {
+				return newSplitNarrationSegmentsTool(project, r.textGen, r.scriptProjects, r.videoCaps)
+			}},
+			{"normalize_drama_script", func() (tool.InvokableTool, error) {
+				return newNormalizeDramaScriptTool(project, r.textGen, r.scriptProjects, r.videoCaps)
+			}},
+			{"generate_episode_script", func() (tool.InvokableTool, error) {
+				return newGenerateEpisodeScriptTool(project, r.textGen, r.scriptProjects, r.videoCaps)
+			}},
+		}
+		for _, b := range builders {
+			built, err := b.ctor()
+			if err != nil {
+				return nil, fmt.Errorf("agent: build %s: %w", b.name, err)
+			}
+			tools = append(tools, built)
+		}
+	}
+	if r.reviewProjects != nil {
+		confirm, err := newConfirmScriptReviewTool(project, r.reviewProjects)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build confirm_script_review: %w", err)
+		}
+		tools = append(tools, confirm)
+	}
+	// 参考生视频工具链（拆分 / 取回编辑 / 校验晋升）；依赖与剧本生成类工具同源。
+	if r.textGen != nil && r.scriptProjects != nil {
+		refTools, err := ReferenceTools(project, r.textGen, r.scriptProjects, r.videoCaps)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build reference tools: %w", err)
+		}
+		for _, built := range refTools {
+			tools = append(tools, built)
+		}
+	}
+	if r.memoryStore != nil {
+		memory, err := newProposeMemoryCandidateTool(project, sessionID, r.memoryStore)
+		if err != nil {
+			return nil, fmt.Errorf("agent: build propose_memory_candidate: %w", err)
+		}
+		tools = append(tools, memory)
+	}
+	if deps, ok := r.VideoGenerationDeps(); ok {
+		videoBuilders := []struct {
+			name string
+			ctor func() (tool.InvokableTool, error)
+		}{
+			{"generate_video_episode", func() (tool.InvokableTool, error) { return newGenerateVideoEpisodeTool(project, deps) }},
+			{"generate_video_scene", func() (tool.InvokableTool, error) { return newGenerateVideoSceneTool(project, deps) }},
+			{"generate_video_all", func() (tool.InvokableTool, error) { return newGenerateVideoAllTool(project, deps) }},
+			{"generate_video_selected", func() (tool.InvokableTool, error) { return newGenerateVideoSelectedTool(project, deps) }},
+		}
+		for _, b := range videoBuilders {
+			built, err := b.ctor()
+			if err != nil {
+				return nil, fmt.Errorf("agent: build %s: %w", b.name, err)
+			}
+			tools = append(tools, built)
+		}
+	}
+	if built, err := r.timelineTools(project); err != nil {
+		return nil, err
+	} else {
+		tools = append(tools, built...)
 	}
 	if r.assetWriter != nil && r.projectWriter != nil {
 		patch, err := newPatchProjectTool(project, r.assetWriter, r.projectWriter)
@@ -875,6 +960,19 @@ func (r *Runtime) buildAgent(ctx context.Context, project string) (adk.Agent, er
 			return nil, fmt.Errorf("agent: build generate_assets: %w", err)
 		}
 		tools = append(tools, gen)
+	}
+	return tools, nil
+}
+
+// buildAgent 装配 ChatModelAgent（设计文档 §11）。
+func (r *Runtime) buildAgent(ctx context.Context, sessionID, project string) (adk.Agent, error) {
+	m, err := r.chatModel(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("agent: chat model: %w", err)
+	}
+	tools, err := r.buildTools(ctx, sessionID, project)
+	if err != nil {
+		return nil, err
 	}
 
 	guard := policy.NewAgentAccessPolicy(r.projectRoot(project), r.secretKeys)

@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -56,10 +57,24 @@ type VideoTarget struct {
 	ProviderModel config.ProviderModel
 	Backend       provider.VideoBackend
 	durations     []int
+	// caps 是该 backend 构造后的静态能力声明（参考图 / 参考音频上限、声音形态等）。
+	// 与 backend 同源读取，避免执行层另起一份按 registry 身份重查的实现而与实际 backend 分叉。
+	caps provider.VideoCapabilities
 }
 
 // SupportedDurations 返回该身份的声明时长（秒）；空 = 未声明，由时长守卫 fail loud。
 func (t *VideoTarget) SupportedDurations() []int { return t.durations }
+
+// Caps 返回该 backend 的能力声明（供参考视频路径取参考图 / 参考音频上限与声音形态）。
+func (t *VideoTarget) Caps() provider.VideoCapabilities { return t.caps }
+
+// BackendModel 返回 backend 报告的实际 model 名（家族别名 provider 下与 registry model id 可能不同）。
+func (t *VideoTarget) BackendModel() string {
+	if t.Backend == nil {
+		return ""
+	}
+	return t.Backend.Model()
+}
 
 // Resolve 解析视频执行身份并构造 backend。taskID 非空时注入 submit 后的 job_id /
 // api_call_id 持久化（worker 路径）；自定义供应商的 job_id 持久化注入随 resume 链路补齐，
@@ -72,6 +87,28 @@ func (g *VideoGenerator) Resolve(
 	if err != nil {
 		return nil, err
 	}
+	return g.buildVideoTarget(ctx, selected, taskID)
+}
+
+// ResolvePinned 按提交时锁进 payload 的能力桶身份键（video_provider_<bucket>）解析视频执行身份，
+// 不做能力桶闸——resume 路径据此按提交时的身份而非当下项目配置构造 backend 轮询：任务提交后到
+// 重启前用户改过供应商配置时，拿旧 job_id 去新 provider 轮询会把可恢复任务误判失败。
+//
+// payload 无锁定键（存量任务）时退回不定桶骨架，与 Python resume 的 VideoLaneRequest 同口径。
+func (g *VideoGenerator) ResolvePinned(
+	ctx context.Context, project *domain.ProjectFile, payload map[string]any, taskID string,
+) (*VideoTarget, error) {
+	selected, err := g.resolver.ResolveVideoBackend(ctx, project, payload, nil)
+	if err != nil {
+		return nil, err
+	}
+	return g.buildVideoTarget(ctx, selected, taskID)
+}
+
+// buildVideoTarget 按解析出的身份构造 backend：自定义供应商走 LB 输入，内置供应商走注册表 spec。
+func (g *VideoGenerator) buildVideoTarget(
+	ctx context.Context, selected config.ProviderModel, taskID string,
+) (*VideoTarget, error) {
 	if config.IsCustomProvider(selected.ProviderID) {
 		input, err := config.LoadCustomBackendInput(ctx, g.db, selected.ProviderID, selected.ModelID)
 		if err != nil {
@@ -94,6 +131,7 @@ func (g *VideoGenerator) Resolve(
 			ProviderModel: selected,
 			Backend:       backend.Video,
 			durations:     parseDurationsCSV(input.SupportedDurations),
+			caps:          backend.Video.VideoCapabilities(),
 		}, nil
 	}
 	spec, ok := provider.ProviderSpecFor(selected.ProviderID, provider.MediaVideo)
@@ -122,7 +160,50 @@ func (g *VideoGenerator) Resolve(
 	if err != nil {
 		return nil, err
 	}
-	return &VideoTarget{ProviderModel: selected, Backend: backend, durations: durations}, nil
+	return &VideoTarget{ProviderModel: selected, Backend: backend, durations: durations, caps: backend.VideoCapabilities()}, nil
+}
+
+// Resolution 解析该目标实际下发的分辨率档（对应 Python 侧 resolve_resolution(project, provider_id, backend.model)）。
+// 空串表示调用时不传分辨率参数，由 backend 按各自保底档处理。
+func (g *VideoGenerator) Resolution(
+	ctx context.Context, project *domain.ProjectFile, target *VideoTarget,
+) (string, error) {
+	if target == nil {
+		return "", fmt.Errorf("video target 未解析，先调 Resolve")
+	}
+	return g.resolver.ResolveResolution(ctx, project, target.ProviderModel.ProviderID, target.BackendModel())
+}
+
+// RequestedGenerateAudio 解析项目级「本集是否有声」开关（用户意图口径，与执行层结算读的
+// video_generate_audio 同源），供编排层判定是否组装参考音频 / 注入声音特征。
+func (g *VideoGenerator) RequestedGenerateAudio(ctx context.Context, project *domain.ProjectFile) (bool, error) {
+	return g.resolver.VideoGenerateAudioForProject(ctx, project)
+}
+
+// FallbackResolution 是该目标所属 provider 的兜底分辨率（纯查表，不触 DB），供参考视频路径求
+// resolution_or_fallback。
+func (t *VideoTarget) FallbackResolution() string {
+	if t == nil {
+		return config.ProviderFallbackResolution("")
+	}
+	return config.ProviderFallbackResolution(t.ProviderModel.ProviderID)
+}
+
+// PersistEffectiveDuration 把取档后实际申请的秒数写回 task payload，供 resume 路径读取。
+//
+// 非致命路径：持久化失败只降级 resume 元数据精度，不影响已在进行的生成。
+func (g *VideoGenerator) PersistEffectiveDuration(ctx context.Context, taskID string, seconds int) error {
+	return g.tasks.PersistEffectiveDuration(ctx, taskID, int64(seconds))
+}
+
+// PersistExecutionIdentity 把执行期实际解析出的身份写回 task.provider_id 列与 payload 锁定键。
+//
+// fail-fast：写回失败上抛、任务在向 provider 提交前失败——吞掉异常继续提交会留下「身份停留在
+// 入队投影、job_id 却已持久化」的任务，重启恢复拿错 backend 轮询。
+func (g *VideoGenerator) PersistExecutionIdentity(
+	ctx context.Context, taskID, providerID string, patch map[string]any,
+) error {
+	return g.tasks.PersistExecutionIdentity(ctx, taskID, providerID, patch)
 }
 
 // VideoGenerateParams 是一次视频生成的入参。身份解析已前置（VideoTarget），
@@ -182,6 +263,11 @@ func (g *VideoGenerator) Generate(
 	outPath, err := fs.SafeJoin(p.ProjectDir, false, filepath.FromSlash(outRel))
 	if err != nil {
 		return VideoGenerateResult{}, fmt.Errorf("非法资源 ID: %s", p.ResourceID)
+	}
+	// 产物目录按需创建（对应 Python MediaGenerator 的 output_path.parent.mkdir(parents=True)）：
+	// reference_videos/ 不在项目创建时的子目录骨架里，不建目录会让首次生成写盘失败。
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return VideoGenerateResult{}, err
 	}
 
 	serviceTier := p.ServiceTier
@@ -288,6 +374,121 @@ func (g *VideoGenerator) Generate(
 	}
 
 	version, _, err := versions.AddVersion(p.ResourceType, p.ResourceID, p.Prompt, outPath, meta)
+	if err != nil {
+		return VideoGenerateResult{}, err
+	}
+	return VideoGenerateResult{OutputPath: outPath, Version: version, VideoURI: out.VideoURI}, nil
+}
+
+// ResumeGenerateParams 是一次 resume 接续的入参。身份（backend）已由调用方按提交时锁定键解析；
+// prompt / aspect_ratio 等仅进日志与版本元数据，不影响 provider 端已提交 job 的结果。
+type ResumeGenerateParams struct {
+	ProjectName string
+	ProjectDir  string
+	// ResourceType 决定产物路径形状与版本账本键（videos / reference_videos）。
+	ResourceType string
+	ResourceID   string
+	Prompt       string
+	AspectRatio  string
+	// DurationSeconds 是提交时实际申请的秒数（payload 回读），进请求与版本元数据。
+	DurationSeconds int
+	Resolution      string
+	TaskID          string
+	// APICallID 是提交时持久化的记账行 id；nil（旧任务未持久化）时不补账、只记日志。
+	APICallID *int64
+	// SubmittedBaseURL 是提交本 job 时实际使用的请求域名回放值，只喂 backend 轮询，
+	// 进版本元数据会污染 versions.json，故与 Python 同口径单独承载。
+	SubmittedBaseURL string
+	Seed             *int64
+	ServiceTier      string
+	// GenerateAudio 仅在 payload 显式提供 bool 时非 nil；nil 时读全局设置。
+	GenerateAudio *bool
+}
+
+// ResumeGenerate 接续 provider 上已发起的视频 job：只轮询 + 下载 + 结算 + 版本登记，绝不重新
+// submit（重复 submit 等于重复计费，ADR 0007）。
+//
+// 与 Generate 的差异（对齐 Python resume_video_async）：
+//   - 不开记账括号（首次 submit 已落 pending 行），成功经 ResumeSuccess 按 api_call_id 精准翻
+//     success，过期经调用方 ResumeFailed 翻 failed，都不新开 pending。
+//   - 不读 storyboard / 参考资产、不做能力闸与时长守卫：provider 端 job 已在跑，本地资产缺失
+//     或能力漂移不该把已提交的付费任务卡成幽灵任务。
+//   - 成功后恒 AddVersion：下载的新视频覆盖了 output_path，必须 bump 版本号让 versions.json
+//     与磁盘一致；不做 Generate 的 EnsureCurrentTracked 前置补版本（与 Python 同口径）。
+func (g *VideoGenerator) ResumeGenerate(
+	ctx context.Context, target *VideoTarget, p ResumeGenerateParams, jobID string,
+) (VideoGenerateResult, error) {
+	if target == nil || target.Backend == nil {
+		return VideoGenerateResult{}, fmt.Errorf("video target 未解析，先调 Resolve")
+	}
+	backend := target.Backend
+	outRel, err := resourceRelativePath(p.ResourceType, p.ResourceID)
+	if err != nil {
+		return VideoGenerateResult{}, err
+	}
+	outPath, err := fs.SafeJoin(p.ProjectDir, false, filepath.FromSlash(outRel))
+	if err != nil {
+		return VideoGenerateResult{}, fmt.Errorf("非法资源 ID: %s", p.ResourceID)
+	}
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return VideoGenerateResult{}, err
+	}
+
+	serviceTier := p.ServiceTier
+	if serviceTier == "" {
+		serviceTier = "default"
+	}
+	meta := map[string]any{"duration_seconds": p.DurationSeconds, "service_tier": serviceTier}
+	if p.Seed != nil {
+		meta["seed"] = *p.Seed
+	}
+	if p.GenerateAudio != nil {
+		meta["generate_audio"] = *p.GenerateAudio
+	}
+
+	generateAudio := p.GenerateAudio
+	if generateAudio == nil {
+		configured, err := g.videoGenerateAudio(ctx)
+		if err != nil {
+			return VideoGenerateResult{}, err
+		}
+		generateAudio = &configured
+	}
+
+	request := provider.NewVideoGenerationRequest(p.Prompt, outPath)
+	request.AspectRatio = p.AspectRatio
+	request.DurationSeconds = p.DurationSeconds
+	request.Resolution = p.Resolution
+	request.GenerateAudio = *generateAudio
+	request.ProjectName = p.ProjectName
+	request.TaskID = p.TaskID
+	request.ServiceTier = serviceTier
+	request.Seed = p.Seed
+	request.SubmittedBaseURL = p.SubmittedBaseURL
+
+	out, err := backend.ResumeVideo(ctx, jobID, request)
+	if err != nil {
+		// 过期/不支持/端点变更的分类与过期补账由执行层（ResumeExecutor）承担：本层只把 backend
+		// 原始错误原样上抛，保持 provider 包的错误类型不被吞。
+		return VideoGenerateResult{}, err
+	}
+
+	if g.ledger != nil {
+		if p.APICallID == nil {
+			// 旧任务未持久化 api_call_id：按 Python 口径记 warning 不阻断——job 已成功，账本
+			// 缺一条补账不能把已完成的付费生成报成失败。
+			slog.Warn("resume 缺 api_call_id，跳过补账", "task_id", p.TaskID, "job_id", jobID)
+		} else if _, err := g.ledger.ResumeSuccess(ctx, *p.APICallID, pricing.Settlement{
+			UsageTokens:           int64ToInt(out.UsageTokens),
+			GenerateAudio:         out.GenerateAudio,
+			BilledDurationSeconds: intPtr(out.DurationSeconds),
+			ServiceTier:           serviceTier,
+		}); err != nil {
+			return VideoGenerateResult{}, err
+		}
+	}
+
+	version, _, err := NewVersions(p.ProjectDir).AddVersion(p.ResourceType, p.ResourceID, p.Prompt, outPath, meta)
 	if err != nil {
 		return VideoGenerateResult{}, err
 	}
