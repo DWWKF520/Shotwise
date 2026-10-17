@@ -433,5 +433,5 @@ func applyUnitVideoAssets(
 			return &out, nil
 		}
 	}
-	return nil, fmt.Errorf("unit not found: %s", resourceID)
+	return nil, &ReferenceUnitNotFoundError{UnitID: resourceID}
 }

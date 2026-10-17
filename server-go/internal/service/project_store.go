@@ -215,7 +215,11 @@ func (s *ProjectStore) ScriptsDir(name string) (string, error) {
 // 不给并发写者留覆盖窗口。不走 writeScript：迁移只是格式收编，不应刷新
 // metadata.updated_at、不触发 project.json 同步。
 func (s *ProjectStore) ReadScriptJSON(name, filename string) (map[string]any, error) {
-	if filepath.Base(filename) != filename {
+	// 先归一再防穿越（与 Python load_script 的 normalize_script_filename → _safe_subpath 同序）：
+	// project.json 的 episodes[].script_file 持久形态带 scripts/ 前缀，归一后剩余的多段
+	// / 穿越片段仍被 Base 检查拒绝。
+	filename = NormalizeScriptFilename(filename)
+	if filename == "" || filepath.Base(filename) != filename {
 		return nil, &fs.PathTraversalError{Msg: "invalid script file name"}
 	}
 	dir, err := s.ScriptsDir(name)

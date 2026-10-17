@@ -183,6 +183,7 @@ func run(log *slog.Logger) error {
 		Auth:    authSvc,
 		Agent:   agentRT,
 		Assets:  assets,
+		Queue:   q,
 	}
 
 	engine := app.New(rt)

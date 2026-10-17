@@ -103,6 +103,22 @@ func (s *ProjectStore) WithScriptLock(project, scriptFilename string, fn func(di
 // 顺序与 Python 一致：结构守卫 → 集号一致性 → metadata 重算 → 原子写 → 集元数据同步。
 // validate 为 false 时整体豁免结构校验与 metadata 重算（资产回写热路径专用）。
 func (s *ProjectStore) writeScript(project, dir, filename string, script map[string]any, before map[string]any, validate bool) error {
+	if err := s.writeScriptFile(dir, filename, script, before, validate); err != nil {
+		return err
+	}
+	if s.Exists(project) {
+		if _, isInt := scriptEpisodeNumber(script); isInt {
+			return s.syncEpisodeFromScript(project, filename)
+		}
+	}
+	return nil
+}
+
+// writeScriptFile 只做结构守卫 + 集号一致性 + metadata 重算 + 原子写，不触碰 project.json。
+//
+// 供已持项目锁的调用方（UpdateEpisodeScript）内联完成集元数据同步——若在此调用
+// syncEpisodeFromScript 会二次取项目锁，与调用方已持的锁自死锁。
+func (s *ProjectStore) writeScriptFile(dir, filename string, script map[string]any, before map[string]any, validate bool) error {
 	if validate {
 		if err := guardNoWorse(before, script); err != nil {
 			return err
@@ -120,16 +136,7 @@ func (s *ProjectStore) writeScript(project, dir, filename string, script map[str
 	if err != nil {
 		return err
 	}
-	if err := fs.WriteJSONAtomic(target, script); err != nil {
-		return err
-	}
-
-	if s.Exists(project) {
-		if _, isInt := scriptEpisodeNumber(script); isInt {
-			return s.syncEpisodeFromScript(project, filename)
-		}
-	}
-	return nil
+	return fs.WriteJSONAtomic(target, script)
 }
 
 // guardNoWorse 「不更坏」守卫：仅当本次写入引入新结构错误时拒绝。

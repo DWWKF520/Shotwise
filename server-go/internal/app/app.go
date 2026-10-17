@@ -10,6 +10,7 @@ import (
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/infra/db"
+	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/service"
 	transport "github.com/shotwise/shotwise/internal/transport/http"
 	"gorm.io/gorm"
@@ -26,6 +27,7 @@ type Runtime struct {
 	Hub     *service.EventHub
 	Auth    *auth.Service
 	Agent   *agent.Runtime
+	Queue   *queue.Queue
 }
 
 // New 构造引擎并完成路由注册。
@@ -52,6 +54,7 @@ func New(rt *Runtime) *gin.Engine {
 	registerAuth(v1, rt)
 	registerProjects(v1, rt)
 	registerMemories(v1, rt)
+	registerReferenceVideos(v1, rt)
 	registerMediaAssembly(v1, rt)
 	registerJianyingAssembly(v1, rt)
 	registerMediaRendering(v1, rt)
@@ -63,6 +66,17 @@ func New(rt *Runtime) *gin.Engine {
 	registerAgent(v1, rt)
 
 	return r
+}
+
+// registerReferenceVideos 参考生视频 unit 路由（对应 Python 侧无 feature gate 的挂载）。
+func registerReferenceVideos(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterReferenceVideos(authed, transport.ReferenceVideoDeps{
+		Store:    rt.Store,
+		Resolver: config.NewResolver(rt.DB),
+		Queue:    rt.Queue,
+		Hub:      rt.Hub,
+	})
 }
 
 // registerMediaAssets 项目媒体库路由（受 media_library 开关约束）。
