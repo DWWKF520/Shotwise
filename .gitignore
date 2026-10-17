@@ -126,3 +126,4 @@ deploy/production/pgdata/
 /.kling-*
 /.recovery-*
 /$null
+.codeartsdoer
