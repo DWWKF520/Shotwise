@@ -22,6 +22,18 @@ func (r *UserRepository) EnsureDefaultUser(username string) error {
 		FirstOrCreate(&u).Error
 }
 
+// EnsureSystemUser 保证代码拥有的系统记录有合法的 users 外键
+// （对应 Python server/auth.py::ensure_system_user）。
+//
+// 官方 Creation Skill 铸造工作流定义时以 actor_id="system" 写入 workflow_definitions.user_id，
+// 该列有指向 users(id) 的外键，缺这条种子行会在落库时违反外键约束。
+func (r *UserRepository) EnsureSystemUser() error {
+	u := User{ID: "system", Username: "system", Role: "admin", IsActive: true}
+	return r.db.Where(User{ID: "system"}).
+		Assign(User{Username: "system", Role: "admin"}).
+		FirstOrCreate(&u).Error
+}
+
 // RoleOf 解析角色；无记录返回空串（调用方降级为 user，fail-closed）。
 func (r *UserRepository) RoleOf(sub string) string {
 	var u User

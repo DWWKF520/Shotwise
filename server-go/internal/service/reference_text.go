@@ -315,6 +315,14 @@ func matchVoiceoverLine(line string) (string, bool) {
 	return unwrapBraces(normalizeShotSource(line))
 }
 
+// ParsePromptShots 导出 parsePrompt 的公开包装：抛掉 mention 名，只返回 shots 列表。
+//
+// 供 reference_video_api 的新建 unit（shots 各取 {"text": ...}）与 PATCH 重解析正文复用，
+// 不复制切分口径。
+func ParsePromptShots(text string) ([]map[string]any, []string) {
+	return parsePrompt(text)
+}
+
 // parsePrompt 把书写层 prompt 文本拆为 (shots, mention_names)。
 //
 // 有 `镜头N：` header 时按 header 切分；无 header 时整段视为单镜头。shots 以 {"text": ...} 呈现
@@ -429,7 +437,8 @@ func splitCharacterVariantMention(name string) (string, string) {
 
 // findCharacterVariant 在角色条目的 variants 集合中按稳定 id 或 slug 查衍生形态。
 //
-// 键为 slug（与落盘形状一致），返回到该 slug 的 variant dict（含 id / slug）。
+// 键为 slug（与落盘形状一致），返回到该 slug 的 variant dict（含 id / slug / image_path；
+// image_path 缺失或非字符串时为空串，与 Python normalize_variant 的缺省口径一致）。
 func findCharacterVariant(character *domain.AssetEntry, characterID, identifier string) map[string]any {
 	if character == nil {
 		return nil
@@ -455,7 +464,8 @@ func findCharacterVariant(character *domain.AssetEntry, characterID, identifier 
 			rawSlug = slug
 		}
 		if id == identifier || domain.NormalizeAssetName(rawSlug) == target {
-			return map[string]any{"id": id, "slug": rawSlug}
+			imagePath, _ := raw["image_path"].(string)
+			return map[string]any{"id": id, "slug": rawSlug, "image_path": imagePath}
 		}
 	}
 	return nil

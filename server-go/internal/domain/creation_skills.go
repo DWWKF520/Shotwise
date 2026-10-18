@@ -28,6 +28,21 @@ type CreationSkillCompatibility struct {
 	hasGridStoryboards bool
 }
 
+// NewCreationSkillCompatibility 从集合构造兼容性声明，供从持久化记录重建目录。
+// gridStoryboards 为 nil 表示不限定宫格开关；非 nil（含空集合）表示限定。
+func NewCreationSkillCompatibility(
+	contentModes, generationModes, requiredInputs, scopes map[string]bool, gridStoryboards map[bool]bool,
+) *CreationSkillCompatibility {
+	return &CreationSkillCompatibility{
+		ContentModes:       contentModes,
+		GenerationModes:    generationModes,
+		RequiredInputs:     requiredInputs,
+		Scopes:             scopes,
+		GridStoryboards:    gridStoryboards,
+		hasGridStoryboards: gridStoryboards != nil,
+	}
+}
+
 func stringSet(values []string) map[string]bool {
 	out := make(map[string]bool, len(values))
 	for _, v := range values {

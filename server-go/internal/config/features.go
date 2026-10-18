@@ -52,6 +52,31 @@ func FeatureEnabled(name string) bool {
 	return false
 }
 
+// workflowEnvFlag 复刻 server/services/workflows.py 的 _flag(name, *, default=False)：
+// 环境变量缺省 → default（false）；取值须落在 true 集合内才视为开启，其余（含非法值）一律关闭。
+func workflowEnvFlag(name string) bool {
+	raw, present := os.LookupEnv(name)
+	if !present {
+		return false
+	}
+	return featureTrueValues[strings.ToLower(strings.TrimSpace(raw))]
+}
+
+// MarketplacePublicEnabled 对应 service.marketplace_public_enabled。
+func MarketplacePublicEnabled() bool {
+	return workflowEnvFlag("SHOTWISE_WORKFLOW_MARKETPLACE_PUBLIC")
+}
+
+// TemplateUploadEnabled 对应 service.template_upload_enabled。
+func TemplateUploadEnabled() bool {
+	return workflowEnvFlag("SHOTWISE_WORKFLOW_TEMPLATE_UPLOAD")
+}
+
+// AutoOptimizationEnabled 对应 service.auto_optimization_enabled。
+func AutoOptimizationEnabled() bool {
+	return workflowEnvFlag("SHOTWISE_WORKFLOW_AUTO_OPTIMIZATION")
+}
+
 // normalizeFeatureName 复刻 Python 的 _normalize_name：小写、非字母数字转下划线、去首尾下划线。
 func normalizeFeatureName(name string) string {
 	lowered := strings.ToLower(strings.TrimSpace(name))
