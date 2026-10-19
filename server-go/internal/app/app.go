@@ -84,6 +84,8 @@ func New(rt *Runtime) *gin.Engine {
 	registerProviders(v1, rt)
 	registerAgentConfig(v1, rt)
 	registerSystem(v1, rt)
+	registerAssistant(v1, rt)
+	registerFileRoutes(v1, rt)
 
 	return r
 }
@@ -360,6 +362,30 @@ func registerAgentConfig(v1 *gin.RouterGroup, rt *Runtime) {
 func registerSystem(v1 *gin.RouterGroup, rt *Runtime) {
 	admin := v1.Group("", rt.Auth.Middleware(), auth.RequireAdmin())
 	transport.RegisterSystem(admin, transport.SystemDeps{Config: rt.Config})
+}
+
+// registerAssistant 助手会话路由。
+//
+// 目前只注册 Python 侧已下线的 410 接口；会话型端点（send / rewrite / 列表 / 详情）需要
+// 先把持久会话存储（meta + 事件日志 + client_key 幂等）迁过来，半兼容的 200 比 404 更伤。
+func registerAssistant(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterAssistant(authed, transport.AssistantDeps{})
+}
+
+// registerFileRoutes 文件管理路由。
+//
+// 公开端点（项目静态文件 / 全局资产）不带鉴权：前端 <img>/<video> 直发请求带不了
+// Authorization header；两者都有 SafeJoin 防护与 nosniff。
+func registerFileRoutes(v1 *gin.RouterGroup, rt *Runtime) {
+	deps := transport.FilesDeps{
+		Store:  rt.Store,
+		Files:  service.NewFileService(rt.Store),
+		Review: service.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
+	}
+	transport.RegisterPublicFiles(v1, deps)
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterFiles(authed, deps)
 }
 
 // registerAuth 认证路由。status/token 必须公开（拿 token 之前就要可达）。
