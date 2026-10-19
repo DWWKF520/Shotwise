@@ -154,11 +154,16 @@ func run(log *slog.Logger) error {
 	defer workerCancel() // 兜底：中途 return 时也停掉 worker（关停路径另显式调用一次）
 	go worker.Run(workerCtx)
 
+	// 事件日志先构造成共享实例：Runtime（live 写入）与 AssistantService（受理/
+	// 幂等/分叉）必须共用同一 SQLStore——seq 分配的互斥在实例内，双实例并发
+	// Append 会撞 (session_id, seq) 主键。
+	evStore := eventlog.NewSQLStore(gdb)
+
 	agentRT, err := agent.NewRuntime(context.Background(), agent.ModelConfig{
 		APIKey:  cfg.LLMAPIKey,
 		Model:   cfg.LLMModel,
 		BaseURL: cfg.LLMBaseURL,
-	}, cfg.DataDir, cpStore, eventlog.NewSQLStore(gdb),
+	}, cfg.DataDir, cpStore, evStore,
 		agent.WithIdleTimeout(cfg.AgentIdleTimeout),
 		agent.WithProjectWriters(assets, store), agent.WithAssetProjects(store),
 		agent.WithVideoCapabilities(config.NewResolver(gdb)),
@@ -197,6 +202,7 @@ func run(log *slog.Logger) error {
 		Hub:     hub,
 		Auth:    authSvc,
 		Agent:   agentRT,
+		Assistant: agent.NewAssistantService(gdb, evStore, agentRT, store, cfg.DataDir),
 		Assets:  assets,
 		Queue:   q,
 		Worker:  worker,

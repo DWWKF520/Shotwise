@@ -331,7 +331,7 @@ func (r *Runtime) chatModel(ctx context.Context) (model.ToolCallingChatModel, er
 // Query 提交一条用户消息（对应 Python client_factory.Query）。
 // 会话已有活跃 loop 时排队（非抢占）；否则新建 loop。返回 SSE 事件流与退订函数。
 func (r *Runtime) Query(ctx context.Context, sessionID, project, message string) (string, <-chan Event, func(), error) {
-	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message})
+	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message}, false)
 }
 
 // ErrSkillNotInvocable 表示显式触发的 skill 在项目中不存在或不可由用户触发。
@@ -349,11 +349,19 @@ func (r *Runtime) QueryWithSkill(ctx context.Context, sessionID, project, skill,
 	if !slices.ContainsFunc(entries, func(e skills.CatalogEntry) bool { return e.Name == skill }) {
 		return sessionID, nil, nil, fmt.Errorf("%w: %s", ErrSkillNotInvocable, skill)
 	}
-	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message, SkillHint: skill})
+	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message, SkillHint: skill}, false)
 }
 
-// submitQuery 把一条用户输入排入会话 loop（Query / QueryWithSkill 共用）。
-func (r *Runtime) submitQuery(ctx context.Context, sessionID, project string, item InboxItem) (string, <-chan Event, func(), error) {
+// QueryPrelogged 提交一条已由调用方写入事件日志的用户消息（持久会话受理路径）：
+// 服务层先以 client_key 幂等落库拿权威条目，再经本方法入队，避免 submitQuery
+// 内置的用户条目写入造成重复。
+func (r *Runtime) QueryPrelogged(ctx context.Context, sessionID, project, message string) (string, <-chan Event, func(), error) {
+	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message}, true)
+}
+
+// submitQuery 把一条用户输入排入会话 loop（Query / QueryWithSkill / QueryPrelogged 共用）。
+// preLogged 为 true 时消息已由调用方写入事件日志，此处不再重复落库。
+func (r *Runtime) submitQuery(ctx context.Context, sessionID, project string, item InboxItem, preLogged bool) (string, <-chan Event, func(), error) {
 	if item.Text == "" {
 		return "", nil, nil, fmt.Errorf("agent: message is required")
 	}
@@ -367,7 +375,9 @@ func (r *Runtime) submitQuery(ctx context.Context, sessionID, project string, it
 		return sessionID, nil, nil, err
 	}
 	ch, unsub := sl.bus.Subscribe()
-	sl.adapter.appendUserEntries(ctx, item.Text)
+	if !preLogged {
+		sl.adapter.appendUserEntries(ctx, item.Text)
+	}
 	if ok, _ := sl.loop.Push(item); !ok {
 		unsub()
 		return sessionID, nil, nil, fmt.Errorf("agent: session %s is shutting down", sessionID)

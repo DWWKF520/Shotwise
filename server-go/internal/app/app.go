@@ -31,7 +31,10 @@ type Runtime struct {
 	Hub     *service.EventHub
 	Auth    *auth.Service
 	Agent   *agent.Runtime
-	Queue   *queue.Queue
+	// Assistant 是持久会话编排层（meta + 事件日志 + client_key 幂等 + rewrite 分叉）。
+	// main.go 装配；nil 时 assistant 路由组整组跳过（与 Agent 同口径）。
+	Assistant *agent.AssistantService
+	Queue     *queue.Queue
 	// Worker 是进程内生成 worker；为 nil 时队列可观测性省掉泳道与 ETA 容量分母。
 	Worker *queue.Worker
 }
@@ -374,13 +377,20 @@ func registerSystem(v1 *gin.RouterGroup, rt *Runtime) {
 	transport.RegisterSystem(admin, transport.SystemDeps{Config: rt.Config})
 }
 
-// registerAssistant 助手会话路由。
+// registerAssistant 助手会话路由（持久会话契约：meta + 事件日志 + client_key 幂等）。
 //
-// 目前只注册 Python 侧已下线的 410 接口；会话型端点（send / rewrite / 列表 / 详情）需要
-// 先把持久会话存储（meta + 事件日志 + client_key 幂等）迁过来，半兼容的 200 比 404 更伤。
+// authed 走 Bearer；entries/stream 是 EventSource 直发请求，走 flexible
+// 鉴权（?token=）。assistant 为 nil（未装配智能体运行时）时整组跳过。
 func registerAssistant(v1 *gin.RouterGroup, rt *Runtime) {
+	if rt.Assistant == nil {
+		return
+	}
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterAssistant(authed, transport.AssistantDeps{})
+	sse := v1.Group("", rt.Auth.FlexibleMiddleware())
+	transport.RegisterAssistant(authed, sse, transport.AssistantDeps{
+		Assistant: rt.Assistant,
+		Store:     rt.Store,
+	})
 }
 
 // registerFileRoutes 文件管理路由。
