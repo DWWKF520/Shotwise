@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -775,4 +776,94 @@ func isRelationStatus(s string) bool {
 // formatRelationTimestamp 输出与 Python datetime.isoformat() 同形的 UTC 时间戳。
 func formatRelationTimestamp(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05.000000+00:00")
+}
+
+// userVisibleEdge 返回边的「用户可见五元组」：这五项任一被用户改动即视为人工编辑。
+func userVisibleEdge(edge RelationEdge) string {
+	return strings.Join([]string{edge.Source, edge.Target, edge.Type, edge.Label, boolText(edge.Directed), edge.Description}, "\x00")
+}
+
+func boolText(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
+}
+
+// ApplyManualRelationships 把画布快照落库并识别用户的编辑 / 删除。
+//
+// 与 AI 合并规则（MergeAIRelationships）互补的两条语义：
+//   - 未改动的 AI 边保持 AI 所有；编辑过或新建的边转为 manual（manual_override=true），
+//     后续 AI 刷新不得覆盖；
+//   - 删除一条 AI 边写入 pair 级 suppressed 记录，重新分析时该对不复活。
+//
+// submittedEdges 是画布提交的全量边（已按 ParseRelationEdge 解析）。
+func ApplyManualRelationships(
+	existing map[string]any, characters AssetBucket, submittedEdges []RelationEdge,
+) (RelationsData, error) {
+	current, err := NormalizeCharacterRelations(existing, characters)
+	if err != nil {
+		return RelationsData{}, err
+	}
+	oldByID := map[string]RelationEdge{}
+	for _, edge := range current.Edges {
+		oldByID[edge.ID] = edge
+	}
+	submittedIDs := map[string]bool{}
+	normalized := make([]RelationEdge, 0, len(submittedEdges))
+	for _, edge := range submittedEdges {
+		submittedIDs[edge.ID] = true
+		previous, known := oldByID[edge.ID]
+		switch {
+		case !known:
+			// 新建边一律归人工。
+			edge.Origin = "manual"
+			edge.ManualOverride = true
+			edge.Confidence = nil
+		case userVisibleEdge(previous) != userVisibleEdge(edge):
+			// 编辑过：转人工，但保留原 AI 置信度供 UI 展示。
+			edge.Origin = "manual"
+			edge.ManualOverride = true
+			edge.Confidence = previous.Confidence
+		default:
+			edge = previous
+		}
+		normalized = append(normalized, edge)
+	}
+
+	suppressions := map[relationPair]SuppressedPair{}
+	for _, pair := range current.SuppressedPairs {
+		suppressions[relationPairKey(pair.Source, pair.Target, pair.Directed)] = pair
+	}
+	for _, previous := range current.Edges {
+		if submittedIDs[previous.ID] || previous.Origin != "ai" || previous.ManualOverride {
+			continue
+		}
+		// 删除的纯 AI 边：登记抑制对，防止下次分析静默复活。
+		suppressions[relationPairKey(previous.Source, previous.Target, previous.Directed)] = SuppressedPair{
+			Source:   previous.Source,
+			Target:   previous.Target,
+			Directed: previous.Directed,
+		}
+	}
+	currentPairs := map[relationPair]bool{}
+	for _, edge := range normalized {
+		currentPairs[relationPairKey(edge.Source, edge.Target, edge.Directed)] = true
+	}
+	filtered := make([]SuppressedPair, 0, len(suppressions))
+	for key, pair := range suppressions {
+		if !currentPairs[key] {
+			filtered = append(filtered, pair)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].Source != filtered[j].Source {
+			return filtered[i].Source < filtered[j].Source
+		}
+		return filtered[i].Target < filtered[j].Target
+	})
+	current.Revision++
+	current.Edges = normalized
+	current.SuppressedPairs = filtered
+	return current, nil
 }

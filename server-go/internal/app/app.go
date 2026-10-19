@@ -2,6 +2,7 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/queue"
+	"github.com/shotwise/shotwise/internal/textgen"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
 	transport "github.com/shotwise/shotwise/internal/transport/http"
@@ -87,6 +89,8 @@ func New(rt *Runtime) *gin.Engine {
 	registerAssistant(v1, rt)
 	registerFileRoutes(v1, rt)
 	registerProjectExtras(v1, rt)
+	registerGlobalAssets(v1, rt)
+	registerCharacterRelations(v1, rt)
 
 	return r
 }
@@ -395,6 +399,29 @@ func registerProjectExtras(v1 *gin.RouterGroup, rt *Runtime) {
 	transport.RegisterProjectExtras(authed, transport.ProjectExtraDeps{
 		Store: rt.Store,
 		Extra: service.NewProjectExtraService(rt.Store, rt.Queue, config.NewResolver(rt.DB)),
+	})
+}
+
+// registerGlobalAssets 全局资产库路由（跨项目复用的 character / scene / prop）。
+func registerGlobalAssets(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterAssetsGlobal(authed, transport.AssetsDeps{
+		Assets: service.NewGlobalAssetService(
+			repository.NewGlobalAssetRepository(rt.DB), rt.Store),
+	})
+}
+
+// registerCharacterRelations 角色关系图路由。
+//
+// analyze 复用 agent 包的同一份分析实现（与 SDK 工具零分叉）；工厂每轮现取，
+// 保证用当轮的文本后端配置。
+func registerCharacterRelations(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterCharacterRelations(authed, transport.CharacterRelationsDeps{
+		Store: rt.Store,
+		RelationFactory: func(ctx context.Context, pf *domain.ProjectFile) (agent.RelationTextGenerator, error) {
+			return textgen.NewGenerator(ctx, rt.DB, pf, textgen.TaskScript)
+		},
 	})
 }
 

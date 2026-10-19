@@ -469,3 +469,11 @@ func relationTypeEnum() []any {
 	}
 	return out
 }
+
+// AnalyzeCharacterRelations 是 HTTP 端点用的导出入口：语义与 SDK 工具完全一致
+// （analyzing 标记 → 推断 → 合并 → 落盘；失败写回 failed 并保留旧图）。
+func AnalyzeCharacterRelations(
+	ctx context.Context, project string, factory RelationGeneratorFactory, projects RelationProjects,
+) (int, error) {
+	return analyzeCharacterRelations(ctx, project, factory, projects)
+}

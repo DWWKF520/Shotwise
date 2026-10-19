@@ -8,7 +8,7 @@
 | 项 | 量 |
 |---|---|
 | Python 代码 | `server/` 5.8 万行（152 文件）+ `lib/` 6.7 万行（278 文件） |
-| HTTP 端点 | 344 个（45 个 router 文件 + 资产工厂 4 类型 × 4 端点）——**已迁 281 / 未迁 63**（2026-10-19 实测，`server-go/scripts/audit_endpoints.py`，见 §4.1） |
+| HTTP 端点 | 344 个（45 个 router 文件 + 资产工厂 4 类型 × 4 端点）——**已迁 292 / 未迁 52**（2026-10-19 实测，`server-go/scripts/audit_endpoints.py`，见 §4.1） |
 | DB 表 | 53 张业务表（Alembic 78 个迁移，3 个 merge 点） |
 | 供应商 backend | 视频 11 个类 / 图片 9 个类 / 音频 2 个类 + 自定义供应商声明式端点 |
 | 智能体工具 | 进程内 MCP 37 个（32 对外 + 5 内部） |
@@ -73,7 +73,7 @@ server-go/
 | **P4 生成流水线** | 队列去重、双通道 worker、容量表、熔断、租约、resume、ffmpeg | 批量生成 + 取消 + 断点续传冒烟 | 完成（HTTP 面 44/44 全迁；**service 层完成**：queue 全套单测绿；定价目录 `pricing.BuiltinCatalog` 按内置注册表移植（11 家 / 107 模型 / 10 种 kind，费率与 Python 逐项一致）；`TaskDispatcher` 覆盖 storyboard / design / tts / image_edit / grid / video / reference_video 全部 task_type；`cmd/shotwised` 装配 queue + worker 并**注入全部钩子**：终态→项目变更事件（含 asset_fingerprints，`NewTerminalEmitter`）、中断记账收口（`NewLedgerSettler`，启动收口 + 取消收口）、失败编码（`EncodeTaskFailure` / `EncodeTaskError`）、瞬态判定（`IsTransientTaskError`，熔断只计上游瞬态失败）、执行身份投影（`NewProviderExtractor`，三级回退且失败兜底不阻断认领）、执行前复检（`NewWorkerPreflight`）、resume 执行器（`NewResumeExecutor`，按提交时锁定身份轮询下载、绝不重新 submit）。端到端冒烟 `cmd/shotwised/assembly_smoke_test.go` 覆盖批量生成 + 终态事件广播 + 取消 + 记账收口 + 断点续传五条链路。**HTTP 面已全迁（44/44）**：generate 14（含 canvas-images 2）、tasks 8、grids 7、episode_duration 5、batches 4、end_frames 3、queue_observability 2、shot_uploads 1。**已知留白**：`MediaIndexer`（media_assets 登记）未接入——`WithMediaIndexer` 有定义但 `cmd/` 从未调用，属 media_* 长尾；变更事件文案的 zh/en/vi 三语化未做（按 Python 保持中文字面量）；grid 任务的 preflight 复检未纳入；**worker 侧 `canvas_image_*` 十个 task_type 尚未实现**（`TaskDispatcher` 显式报错 `unsupported task_type`，即画布端点可提交但落执行态即失败，需补 `tasks_canvas.go`）） |
 | **P5 智能体** | Eino ChatModelAgent + GuardedTool + 37 工具 + SSE entry 流 | 一条完整会话跑通（含 Skill 调用与 AskUserQuestion） | 进行中（会话面已闭环：TurnLoop 驱动、guard middleware + AgentAccessPolicy（含 EnhancedInvokableToolCall 包裹）、ask_user HITL（checkpoint 落 SQL + 按 question_id 回答续跑）、事件日志落 `agent_session_event_log` 且 SSE `id: seq` + `Last-Event-ID` 续传、`entries` / `entries/stream` / `interrupt` / `questions/{id}/answer` 端点已接；37 个工具已全部实现：32 个对外工具（list_project_text_files / read_project_text / list_pending_assets / generate_assets / generate_storyboards / edit_images / generate_grid / generate_narration_audio / plan_episodes / reset_episode_planning / patch_project / get_video_capabilities / analyze_character_relations / inspect_director_review / patch_episode_script / insert_segment / remove_segment / split_segment / patch_episode_meta / rename_asset / split_narration_segments / normalize_drama_script / generate_episode_script / confirm_script_review / split_reference_video_units / open_reference_step1_for_edit / validate_and_promote_reference_draft / generate_video_episode / generate_video_scene / generate_video_all / generate_video_selected / propose_memory_candidate）与 5 个内部 timeline 工具（get_episode_media_manifest / create_timeline_plan / get_timeline_plan / update_timeline_plan / validate_timeline_plan）；剧本生成的 ad / reference_video / drama / narration 四条 step2 路径均已迁移。剧本写盘统一入口（锁 + 结构不更坏 + metadata 重算 + 分集镜像）、结构校验器、step1→step2 审核 gate（确认指纹落 `episodes[i].step1_review` + 读时派生状态）与参考路径正式 step1 单一写盘出口（per-path 锁 + OCC 基线比对 + 清 step2 草稿）已就位；skills / subagents / filesystem+沙箱 已装配；存量 step1 时长收编迁移（`step1_migration.go`）、参考音频「多段总时长」闸门、Web 保存 / 确认入口（ScriptReviewService + 4 个 step1-review gate 端点 + pending-authoring 端点，测试对齐 Python 侧三组用例）均已补齐。**已知未迁移项**：双模型通道未动——`NewChatModel` 仅 openai 单通道，`03-agent-runtime-eino.md` §15 的 claude↔openai 分派、`ModelRetryConfig` / `ModelFailoverConfig`、switch_agent 同构切换均未做；assistant 端点残缺——14 个中仅 6 个已实现且**挂错前缀**（现注册在 `/agent/sessions*`，Python 与前端 `frontend/src/api.ts` 的契约是 `/projects/{n}/assistant/sessions*`），send / rewrite / 删除 / 详情 / messages(410) / snapshot(410) / switch-agent / skills 8 个未接；agent_config 8 与 agent_chat 1 亦未迁（**P5 小计 23 个**）） |
 | **P6 长尾 router** | workflows(41) / memories(15) / creative_boards(16) / publishing / media_* | 端点覆盖对齐清单 | 已完成（151/151 端点全覆盖：memories 15、media_assembly 8、creative_boards 16、publishing 11、media_assets 9、jianying_assembly 1、creative_context 2、media_rendering 14、reference_videos 10（10 端点全量：list / derive-units / add / patch / delete / reorder / duration-precheck / script-preview / generate(202) / upload-video；ad 派生索引与 narration/drama 自包含 unit 双口径、资产 preflight 硬/软分层、视频能力解析闸、上传落盘后绑定复核均带单测）、**workflows 41**、**creation_plans 13**。workflows：定义/版本/运行/事件日志 + 模板市场与审核 + 预算预留结算 + 智能体 patch，图哈希与 Python `canonical_json` 逐字节对齐（整数值浮点按 Python repr 补 `.0`，否则同一张图两套服务算出不同 graph_hash）；模板契约的安全校验（绝对路径 / URL / 父目录穿越 / 外链 `$ref`）同步迁入。creation_plans：官方 Skill 目录同步（启动期物化，失败不阻断）、计划编译/预览/启动/取消/作废/重编译/重启、兼容性事件与指标；启动路径需在同一事务内「建运行 → 跃迁 → 派发」，否则派发读不到未提交的运行行。官方 Skill 铸造的 revision 归属 `system`，启动官方计划时跳过 revision / 定义的归属与工作区校验（计划行本身仍按 user_id 收敛）。**draft_promotions 9 + prompt_registry 2 = 11**，至此 **151/151 全覆盖**。draft_promotions：Agent/Upload/Online-AI 三源草稿的隔离评审流（草稿只存评审记录，正式剧本仍是唯一内容真相源），域内含三方合并（已知集合按 scene_id/segment_id/shot_id/unit_id 稳定 ID 逐项合并、其余数组整体冲突、JSON Pointer 转义与冲突路径口径与 Python 逐字段对拍）、结构校验注入（`ValidateScriptStructure` 的错误逐条转 `script_structure_invalid`）、晋升是剧本锁内的 compare-and-write（revision = mtime_ns，与 Python `st_mtime_ns` 同口径；读必须先内容后 stat，否则存量迁移的写回会让基线 mtime 过期、晋升恒被判 stale；锁内必须走无锁读，否则撞存量迁移会二次取同一把锁自死锁）。草稿 store 落 `<数据目录>/.draft_promotions.json`，直存 `json.RawMessage`——过一遍 `map[string]any` 会把 int64 的 mtime 修订号（约 1.8e18）经 float64 抹掉精度（该量级 ULP 256ns），compare-and-write 必然误判。prompt_registry：`agent_runtime_profile` 的只读投影（system/agent/skill/reference 四组、frontmatter/标题/小节/mode 注释推导、CRLF 通用换行归一、码点截断），与 Python 实算的 23 条目录逐条对拍。错误信封统一为 `{"detail": "<翻译文案>"}`（ApiError 口径），三语补齐 `script_not_found` / `request_invalid` / `prompt_template_not_found`） |
-| **P7 切换** | 前端指向 Go 服务，Python 服务下线 | 前端全流程回归通过 | 未开始（**前置条件未满足**：63 个端点缺失，前端核心流程——生成触发 / 任务面板 / 供应商配置 / 宫格 / 文件上传 / 费用统计——依赖这些端点，`frontend/src/api.ts` 实际在调；另需先修 assistant 6 端点的前缀错位） |
+| **P7 切换** | 前端指向 Go 服务，Python 服务下线 | 前端全流程回归通过 | 未开始（**前置条件未满足**：52 个端点缺失，前端核心流程——生成触发 / 任务面板 / 供应商配置 / 宫格 / 文件上传 / 费用统计——依赖这些端点，`frontend/src/api.ts` 实际在调；另需先修 assistant 6 端点的前缀错位） |
 
 ### 4.1 端点覆盖盘点（脚本实测，替代人工点数）
 
@@ -84,7 +84,7 @@ python server-go/scripts/audit_endpoints.py          # 汇总 + 缺失清单
 python server-go/scripts/audit_endpoints.py --diff   # 只打缺失
 ```
 
-当前实测：**Python 321 条路由装饰器 / Go 已注册 273 / 缺失 63**（2026-10-19）。321 与 §1 的 344 之差来自 16 个资产工厂端点（由 Go 侧工厂循环注册，脚本不展开）与 `api_route` 多方法去重。
+当前实测：**Python 321 条路由装饰器 / Go 已注册 284 / 缺失 52**（2026-10-19）。321 与 §1 的 344 之差来自 16 个资产工厂端点（由 Go 侧工厂循环注册，脚本不展开）与 `api_route` 多方法去重。
 
 未迁端点按 router 分布（端点数）：projects 17、custom_providers 15、assistant 14、files 12、assets（全局库）8、characters avatar/variants 6、system_config 4、character_relations 3、usage 3、agent_chat / cost_estimation / creative 各 1（合计 73）。其中 assistant 14 个里有 6 个已实现但**前缀错位**（现挂 `/agent/sessions*`，Python 与前端 `api.ts` 的契约是 `/projects/{n}/assistant/sessions*`）。
 
@@ -100,6 +100,21 @@ python server-go/scripts/audit_endpoints.py --diff   # 只打缺失
 | generate | 14 | `transport/http/generate.go` | 分镜/视频/tts/资产/图片编辑/音色样本 + **canvas-images 2**；`message_key` 在传输层渲染，服务层不持 locale |
 | batches | 4 | `service/generation_batch.go` + `transport/http/batches.go` | 准入原子（一个事务、冲突整批回滚）；状态从任务状态派生，不落库；`extra="forbid"` 严格入参 |
 | episode_duration | 5 | `service/episode_duration.go` + `transport/http/episode_duration.go` | 保存只写 metadata；预览纯读；应用才写分镜时长；写路径全部锁内比对修订号，过期 409 带 `actual_revision` |
+
+### 4.8 本轮第八批：角色关系图（3 端点）
+
+| 组 | 端点数 | 落点 | 关键语义 |
+|---|---|---|---|
+| character_relations | 3 | `domain/relations.go`（补 ApplyManualRelationships）+ `transport/http/character_relations.go` | PUT：base_revision 乐观并发（冲突 409，后写方刷新合并，先写方不被覆盖）；手动合并双语义——未改动的 AI 边保持 AI 所有、编辑/新建转 manual，**删除纯 AI 边写 pair 级抑制对**（重新分析不复活）；node_positions 可单独保存。analyze：复用 `agent.AnalyzeCharacterRelations`（与 SDK 工具**同一份实现**，analyzing 标记 → 推断 → 合并 → 落盘，失败写回 failed 保留旧图） |
+
+**踩坑（对 OCC 类端点通用）**：修订号比较不能用类型断言——`cloneValue` 深拷贝会保留 int 而非 float64，`current["revision"].(float64)` 断言失败静默变 0，过期基线误判为匹配、**静默覆盖别人的写入**。必须数值化比较（`coerceRevision`）。
+**测试语义提醒**：无向关系的 pair 身份按名称排序规范化——删除 AI 边的同时若提交了同 pair 的另一条边，抑制对会被过滤（用户重建了该关系，不应抑制）。
+
+### 4.7 本轮第七批：全局资产库（8 端点）
+
+| 组 | 端点数 | 落点 | 关键语义 |
+|---|---|---|---|
+| assets（全局库） | 8 | `service/global_assets.go`（补 FromProject / ApplyToProject）+ `transport/http/assets_global.go` | from-project：sheet 经 SafeJoin、reference_audio 额外要求父目录命中 refs_audio（防 PATCH 写入任意路径被诱导复制 project.json）；拷贝与 DB 写入共用失败边界（清理孤儿文件）；覆盖写时旧文件在 DB 成功后才删。apply-to-project：冲突三策略 skip/overwrite/rename（rename 用「名字 (N)」最小可用后缀，NFC 坐标系判定 + 累积冲突检查）；文件先全部拷贝、project.json 一次性写回（无半批资产）；overwrite 落在存量真实 key 上（可能是 NFD），否则并存两条同名条目 |
 
 ### 4.6 本轮第六批：projects 剧本/分集组（10 端点）
 
