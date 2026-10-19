@@ -81,6 +81,9 @@ func New(rt *Runtime) *gin.Engine {
 	registerShotUploads(v1, rt)
 	registerOnboardingAndKeys(v1, rt)
 	registerFeatures(v1, rt)
+	registerProviders(v1, rt)
+	registerAgentConfig(v1, rt)
+	registerSystem(v1, rt)
 
 	return r
 }
@@ -328,6 +331,35 @@ func registerFeatures(v1 *gin.RouterGroup, rt *Runtime) {
 		Plans: service.NewCreationPlanService(
 			rt.DB, rt.Dialect, service.NewWorkflowService(rt.DB), config.NewResolver(rt.DB)),
 	})
+}
+
+// registerProviders 供应商管理路由。
+//
+// 已收敛范围：openai / claude（文本）、ark 的 seedance（视频）与 seedream（图片）、
+// openai video / openai image。管理面本身不按厂商写分支——目录直接读注册表，
+// 所以后续加厂商不需要改这层。
+func registerProviders(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterProviders(authed, transport.ProviderDeps{
+		Providers: service.NewProviderAdminService(rt.DB),
+	})
+}
+
+// registerAgentConfig Agent 凭证与预设目录路由。
+//
+// 收敛范围：预设只给 anthropic（claude）与 openai 两家 + 自定义哨兵；凭证仍按
+// (user, sdk_type) 维度互斥激活，所以 claude 与 openai 可以各激活一条。
+func registerAgentConfig(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterAgentConfig(authed, transport.AgentConfigDeps{
+		Credentials: service.NewAgentCredentialService(rt.DB),
+	})
+}
+
+// registerSystem 系统级路由（诊断日志打包，管理员限定）。
+func registerSystem(v1 *gin.RouterGroup, rt *Runtime) {
+	admin := v1.Group("", rt.Auth.Middleware(), auth.RequireAdmin())
+	transport.RegisterSystem(admin, transport.SystemDeps{Config: rt.Config})
 }
 
 // registerAuth 认证路由。status/token 必须公开（拿 token 之前就要可达）。

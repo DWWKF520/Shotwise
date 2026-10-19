@@ -160,30 +160,25 @@ def eval_string(expr: str, consts: dict[str, str], depth: int = 0) -> str | None
 
 
 def go_endpoints() -> dict[str, set[str]]:
-    # 只把 engine 根当作空前缀：v1 / authed / gated 全由 `x.Group(...)` 推导。
-    # 传输层的 `group` 是函数形参（即 v1），不在 prefixes 里 → 走下面的兜底 /api/v1。
-    prefixes: dict[str, str] = {"r": "", "router": ""}
+    """解析 Go 侧注册面。
+
+    前缀与字符串常量都按**文件**作用域解析：`admin` / `base` / `gated` 这类短变量在不同
+    register 函数里指不同分组，混成全局字典会让后解析的文件覆盖前一个（例如把
+    `admin := group.Group("/agent", ...)` 覆盖成 `/api/v1`，导致整组端点被误判未迁）。
+    """
     out: dict[str, set[str]] = {}
     files = [p for p in sorted(GO_HTTP.glob("*.go")) if not p.name.endswith("_test.go")]
     files += [p for p in sorted(GO_APP.glob("*.go")) if not p.name.endswith("_test.go")]
-    # 先建立 group 前缀（多轮，允许链式依赖）
+
+    # 跨文件也能看到的包级字符串常量（const / var），先建一份全局底表。
     texts = {p: p.read_text(encoding="utf-8") for p in files}
-    for _ in range(4):
-        for text in texts.values():
-            for match in GO_GROUP.finditer(text):
-                var, parent, base = match.group(1), match.group(2), match.group(3)
-                parent_prefix = prefixes.get(parent, prefixes.get(parent.split(".")[-1]))
-                if parent_prefix is None:
-                    continue
-                prefixes[var] = normalize(parent_prefix + base)
-    # 常量按文件解析：同名短变量（base / prefix）在不同文件里指不同路径，
-    # 混成一个全局字典会让后解析的文件串到前一个文件的 base。
     global_consts: dict[str, str] = {}
     for text in texts.values():
         for match in GO_STR_DECL.finditer(text):
             value = eval_string(match.group(2), global_consts)
             if value is not None:
                 global_consts.setdefault(match.group(1), value)
+
     for path in files:
         text = texts[path]
         consts = dict(global_consts)
@@ -191,6 +186,14 @@ def go_endpoints() -> dict[str, set[str]]:
             value = eval_string(match.group(2), consts)
             if value is not None:
                 consts[match.group(1)] = value
+
+        prefixes: dict[str, str] = {"r": "", "router": ""}
+        for _ in range(4):
+            for match in GO_GROUP.finditer(text):
+                var, parent, base = match.group(1), match.group(2), match.group(3)
+                parent_prefix = prefixes.get(parent, prefixes.get(parent.split(".")[-1], "/api/v1"))
+                prefixes[var] = normalize(parent_prefix + base)
+
         for match in GO_CALL.finditer(text):
             target, method, raw = match.group(1), match.group(2), match.group(3)
             route = eval_string(raw, consts)
