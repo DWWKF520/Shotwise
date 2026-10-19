@@ -89,6 +89,7 @@ func New(rt *Runtime) *gin.Engine {
 	registerSystemConfig(v1, rt)
 	registerCreative(v1, rt)
 	registerProjectSourceExport(v1, rt)
+	registerProjectArchive(v1, rt)
 	registerAssistant(v1, rt)
 	registerFileRoutes(v1, rt)
 	registerProjectExtras(v1, rt)
@@ -458,6 +459,14 @@ func registerProjectSourceExport(v1 *gin.RouterGroup, rt *Runtime) {
 	deps := transport.NewSourceExportDeps(rt.Store, rt.Auth, rt.DB)
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterProjectSourceExport(v1, authed, deps)
+}
+
+// registerProjectArchive 项目 ZIP 导入端点。
+func registerProjectArchive(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterProjectArchive(authed, transport.ArchiveDeps{
+		Archive: service.NewProjectArchiveService(rt.Store),
+	})
 }
 
 // registerAuth 认证路由。status/token 必须公开（拿 token 之前就要可达）。

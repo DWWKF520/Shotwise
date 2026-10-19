@@ -5,11 +5,13 @@ package http
 import (
 	"archive/zip"
 	"errors"
+	"fmt"
 	stdiofs "io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -23,9 +25,10 @@ import (
 
 // sourceExportDeps 聚合依赖。
 type sourceExportDeps struct {
-	Store  *service.ProjectStore
-	Source *service.ProjectSource
-	Auth   *auth.Service
+	Store    *service.ProjectStore
+	Source   *service.ProjectSource
+	Auth     *auth.Service
+	Jianying *service.JianyingDraftService
 }
 
 // RegisterProjectSourceExport 注册四个端点。export/token 在 authed 组内；
@@ -36,6 +39,7 @@ func RegisterProjectSourceExport(group *gin.RouterGroup, authed *gin.RouterGroup
 	authed.POST("/projects/:name/generate-overview", h.generateOverview)
 	authed.POST("/projects/:name/export/token", h.createExportToken)
 	group.GET("/projects/:name/export", h.exportArchive)
+	group.GET("/projects/:name/export/jianying-draft", h.exportJianyingDraft)
 }
 
 type projectSourceHandlers struct{ deps sourceExportDeps }
@@ -201,6 +205,61 @@ func (h *projectSourceHandlers) exportArchive(c *gin.Context) {
 	_ = zipWriter.Close()
 }
 
+// exportJianyingDraft 导出指定集的剪映草稿 ZIP（download_token 认证，浏览器原生下载）。
+func (h *projectSourceHandlers) exportJianyingDraft(c *gin.Context) {
+	name := c.Param("name")
+	if _, err := h.deps.Auth.VerifyDownloadToken(c.Query("download_token"), name); err != nil {
+		apperr.Abort(c, apperr.NewText(http.StatusUnauthorized, "download_token_invalid", nil))
+		return
+	}
+	episode, err := strconv.Atoi(c.Query("episode"))
+	if err != nil {
+		apperr.Abort(c, apperr.NewText(http.StatusUnprocessableEntity, "request_invalid", nil))
+		return
+	}
+	draftPath := c.Query("draft_path")
+	if strings.TrimSpace(draftPath) == "" {
+		apperr.Abort(c, apperr.NewText(http.StatusUnprocessableEntity, "request_invalid", nil))
+		return
+	}
+	useDraftInfoName := c.DefaultQuery("jianying_version", "6") != "5"
+	zipPath, draftName, exportErr := h.deps.Jianying.ExportEpisodeDraft(
+		c.Request.Context(), name, episode, draftPath, useDraftInfoName)
+	if exportErr != nil {
+		abortJianyingExportErr(c, exportErr)
+		return
+	}
+	defer func() { _ = os.RemoveAll(filepath.Dir(zipPath)) }()
+	c.Header("Content-Disposition",
+		fmt.Sprintf("attachment; filename=\"%s_episode_%d_jianying_draft.zip\"", name, episode))
+	c.Header("Content-Type", "application/zip")
+	c.File(zipPath)
+	_ = draftName
+}
+
+// abortJianyingExportErr 把剪映导出域错误映射到 Python 同形状态码（与拼装面的 abortJianyingErr 区分）。
+func abortJianyingExportErr(c *gin.Context, err error) {
+	var jyErr *service.JianyingError
+	var notFound *service.SourceReadError
+	switch {
+	case errors.As(err, &jyErr):
+		if jyErr.Key == "jianying_no_completed_segments" {
+			apperr.Abort(c, apperr.NewText(http.StatusUnprocessableEntity, "jianying_no_completed_segments",
+				map[string]any{"episode": c.Query("episode")}))
+			return
+		}
+		apperr.Abort(c, apperr.Internal(err))
+	case errors.Is(err, service.ErrNoCompletedSegments):
+		apperr.Abort(c, apperr.NewText(http.StatusUnprocessableEntity, "jianying_no_completed_segments",
+			map[string]any{"episode": c.Query("episode")}))
+	case errors.Is(err, os.ErrNotExist), errors.As(err, &notFound):
+		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "project_not_found",
+			map[string]any{"name": c.Param("name")}))
+	default:
+		apperr.Abort(c, apperr.Internal(err))
+	}
+}
+
 // abortSourceErr 把源文/概述域错误映射到 Python 同形状态码。
 func abortSourceErr(c *gin.Context, err error) {
 	var (
@@ -278,8 +337,9 @@ func fsSafeDir(root, name string) (string, error) {
 // NewSourceExportDeps 是 app 层的构造入口。
 func NewSourceExportDeps(store *service.ProjectStore, authService *auth.Service, gdb *gorm.DB) sourceExportDeps {
 	return sourceExportDeps{
-		Store:  store,
-		Source: service.NewProjectSource(store, gdb),
-		Auth:   authService,
+		Store:    store,
+		Source:   service.NewProjectSource(store, gdb),
+		Auth:     authService,
+		Jianying: service.NewJianyingDraftService(store),
 	}
 }
