@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,9 @@ type ProjectDeps struct {
 }
 
 // ListProjects 列出项目。
+//
+// 响应形状对齐 Python list_projects：{projects: [...]}，每项是读时计算的 ProjectSummary
+// （含 thumbnail / status / media_summary），不含 total 字段。
 func ListProjects(d ProjectDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		names, err := d.Store.List()
@@ -29,18 +33,96 @@ func ListProjects(d ProjectDeps) gin.HandlerFunc {
 			return
 		}
 		items := make([]gin.H, 0, len(names))
-		for _, n := range names {
-			item := gin.H{"name": n}
-			if pf, err := d.Store.Get(n); err == nil {
-				item["title"] = pf.Title
-				item["content_mode"] = pf.ContentMode
-				item["generation_mode"] = pf.GenerationMode
-				item["episodes_count"] = len(pf.Episodes)
-			}
-			items = append(items, item)
+		for _, name := range names {
+			items = append(items, projectSummaryItem(d.Store, name))
 		}
-		c.JSON(http.StatusOK, gin.H{"projects": items, "total": len(items)})
+		c.JSON(http.StatusOK, gin.H{"projects": items})
 	}
+}
+
+// projectSummaryItem 计算单个项目的列表行；任何加载失败都退化成基本信息行（不 500）。
+func projectSummaryItem(store *service.ProjectStore, name string) gin.H {
+	project, err := store.ReadProjectRaw(name)
+	if err != nil {
+		return gin.H{
+			"name":          name,
+			"title":         "",
+			"style":         "",
+			"thumbnail":     nil,
+			"status":        gin.H{},
+			"media_summary": emptyMediaSummary(),
+		}
+	}
+
+	preloaded := preloadProjectScripts(store, name, project)
+	calculator := service.NewStatusCalculator(store)
+	status := calculator.CalculateProjectStatus(name, project, nil, preloaded)
+	thumbnail := service.ResolveProjectCover(store, name, project, preloaded)
+
+	title, _ := project["title"].(string)
+	style := project["style"]
+	if style == nil {
+		style = ""
+	}
+	var createdAt, updatedAt any
+	if metadata, ok := project["metadata"].(map[string]any); ok {
+		createdAt = metadata["created_at"]
+		updatedAt = metadata["updated_at"]
+	}
+
+	return gin.H{
+		"name":              name,
+		"title":             title,
+		"style":             style,
+		"style_template_id": project["style_template_id"],
+		"style_image":       project["style_image"],
+		"thumbnail":         thumbnail,
+		"created_at":        createdAt,
+		"updated_at":        updatedAt,
+		"status":            status,
+		"media_summary":     projectMediaSummary(store, name),
+	}
+}
+
+// preloadProjectScripts 一次性加载项目全部剧本（键为 episode.script_file 原值）。
+func preloadProjectScripts(store *service.ProjectStore, name string, project map[string]any) map[string]map[string]any {
+	preloaded := map[string]map[string]any{}
+	episodes, ok := project["episodes"].([]any)
+	if !ok {
+		return preloaded
+	}
+	for _, raw := range episodes {
+		ep, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		scriptFile, _ := ep["script_file"].(string)
+		if scriptFile == "" {
+			continue
+		}
+		if script, err := store.ReadScriptJSON(name, scriptFile); err == nil {
+			preloaded[scriptFile] = script
+		}
+	}
+	return preloaded
+}
+
+// projectMediaSummary 读取持久化的媒体索引摘要；缺失或损坏时返回空摘要。
+func projectMediaSummary(store *service.ProjectStore, name string) service.MediaIndexSummary {
+	dir, err := store.Dir(name)
+	if err != nil {
+		return emptyMediaSummary()
+	}
+	summary, err := service.ProjectMediaCatalog(dir).Summary()
+	if err != nil {
+		return emptyMediaSummary()
+	}
+	return summary
+}
+
+// emptyMediaSummary 对应 Python _empty_project_media_summary。
+func emptyMediaSummary() service.MediaIndexSummary {
+	return service.MediaIndexSummary{Status: "stale", SummaryVersion: 1}
 }
 
 // CreateProjectRequest 创建项目的请求体。
@@ -102,15 +184,54 @@ func CreateProject(d ProjectDeps) gin.HandlerFunc {
 }
 
 // GetProject 读取项目详情。
+//
+// 响应形状对齐 Python get_project：{project, scripts, asset_fingerprints}。
+// project 是原始 JSON 注入读时计算字段后的结果；scripts 的键去掉 scripts/ 前缀；
+// asset_fingerprints 是 {项目相对路径: mtime_ns}。
 func GetProject(d ProjectDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		name := c.Param("name")
-		pf, err := d.Store.Get(name)
+		project, err := d.Store.ReadProjectRaw(name)
 		if err != nil {
 			abortProjectErr(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, pf)
+
+		calculator := service.NewStatusCalculator(d.Store)
+		project = calculator.EnrichProject(name, project)
+
+		generationMode, _ := project["generation_mode"].(string)
+		scripts := gin.H{}
+		if episodes, ok := project["episodes"].([]any); ok {
+			for _, rawEp := range episodes {
+				ep, ok := rawEp.(map[string]any)
+				if !ok {
+					continue
+				}
+				scriptFile, _ := ep["script_file"].(string)
+				if scriptFile == "" {
+					continue
+				}
+				script, err := d.Store.ReadScriptJSON(name, scriptFile)
+				if err != nil {
+					// 剧本缺失/损坏不阻断详情：与 Python 只跳过该集一致。
+					continue
+				}
+				key := strings.TrimPrefix(scriptFile, "scripts/")
+				scripts[key] = calculator.EnrichScript(script, generationMode)
+			}
+		}
+
+		fingerprints := map[string]int64{}
+		if dir, err := d.Store.Dir(name); err == nil {
+			fingerprints = service.ComputeProjectAssetFingerprints(dir)
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"project":            project,
+			"scripts":            scripts,
+			"asset_fingerprints": fingerprints,
+		})
 	}
 }
 

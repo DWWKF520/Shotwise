@@ -74,6 +74,28 @@ func MergePreflightResults(results ...PreflightResult) PreflightResult {
 	return merged
 }
 
+// I18NParams 把校验结果展开成 generation_asset_preflight_failed 的渲染参数。
+//
+// 三类问题分别逗号拼接、空类别用「—」占位（与 Python 侧 _raise_asset_preflight 同形）。
+// Go 侧尚无「缺少角色衍生形态」这一类，missing_variants 恒为占位符。
+func (r PreflightResult) I18NParams() map[string]any {
+	var unregistered, missingSheet []string
+	for _, issue := range r.Issues {
+		label := issue.AssetName
+		switch issue.Kind {
+		case PreflightKindUnregistered:
+			unregistered = append(unregistered, label)
+		case PreflightKindMissingSheet:
+			missingSheet = append(missingSheet, label)
+		}
+	}
+	return map[string]any{
+		"unregistered":     joinLabelsOrDash(unregistered),
+		"missing_images":   joinLabelsOrDash(missingSheet),
+		"missing_variants": "—",
+	}
+}
+
 // FormatPreflightError 把校验结果渲染成给模型看的错误文案；无问题时返回空串。
 //
 // 两类问题分别以「种类:名」条目罗列，空类别用「—」占位，与 Python format_preflight_error

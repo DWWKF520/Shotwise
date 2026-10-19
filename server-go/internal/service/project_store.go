@@ -95,6 +95,22 @@ func (s *ProjectStore) Get(name string) (*domain.ProjectFile, error) {
 	return s.load(dir)
 }
 
+// ReadProjectRaw 以 map 形式读取 project.json 原文。
+//
+// 用于读时注入计算字段的响应路径：Python 侧是在原始 dict 上就地 enrich，Go 若先解成
+// 结构体再序列化会丢掉结构体未建模的键，因此这里保留原始键值对。
+func (s *ProjectStore) ReadProjectRaw(name string) (map[string]any, error) {
+	dir, err := s.Dir(name)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := s.readJSONObject(filepath.Join(dir, "project.json"))
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
 // WithProjectLock 在项目锁内执行 fn。
 //
 // 资产重命名要跨 project.json + scripts/ + drafts/ + 磁盘文件一起改，Python 侧按
@@ -304,7 +320,11 @@ func (s *ProjectStore) readJSONObject(p string) (map[string]any, error) {
 	return payload, nil
 }
 
-// List 列出项目目录名（只认含 project.json 的目录），按名称排序。
+// List 列出项目目录名，按名称排序。
+//
+// 与 Python ProjectManager.list_projects 同口径：只要是目录、且名字不以 "." / "_" 开头就列出，
+// 不要求 project.json 存在——缺 project.json 的目录由上层退化成基本行，而不是从列表里消失
+// （`_global_assets` 这类以下划线开头的内部目录靠前缀排除）。
 func (s *ProjectStore) List() ([]string, error) {
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
@@ -319,12 +339,10 @@ func (s *ProjectStore) List() ([]string, error) {
 			continue
 		}
 		n := e.Name()
-		if len(n) > 0 && n[0] == '.' {
+		if strings.HasPrefix(n, ".") || strings.HasPrefix(n, "_") {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(s.root, n, "project.json")); err == nil {
-			names = append(names, n)
-		}
+		names = append(names, n)
 	}
 	sort.Strings(names)
 	return names, nil

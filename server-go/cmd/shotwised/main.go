@@ -83,6 +83,21 @@ func run(log *slog.Logger) error {
 	if err := users.EnsureDefaultUser(cfg.AuthUsername); err != nil {
 		return err
 	}
+	// 官方 Creation Skill 目录以 actor_id="system" 铸造工作流定义，
+	// workflow_definitions.user_id 有指向 users(id) 的外键，缺这条种子行会落库失败。
+	if err := users.EnsureSystemUser(); err != nil {
+		return err
+	}
+
+	// 把代码拥有的官方 Skill 清单物化到库里（对应 Python 启动期 sync_official_creation_skills）。
+	// 失败不阻断启动：同步是幂等的，下次启动会重试。
+	workflows := service.NewWorkflowService(gdb)
+	if synced, err := service.NewCreationSkillCatalog(gdb, workflows).
+		SyncOfficialCreationSkills(context.Background()); err != nil {
+		log.Error("official Creation Skill catalog synchronization failed (non-fatal)", "error", err)
+	} else if synced > 0 {
+		log.Info("official Creation Skill catalog synchronized", "changes", synced)
+	}
 
 	authSvc := auth.New(cfg.TokenSecret, cfg.AuthEnabled, users)
 	if cfg.AuthPassword != "" {
@@ -184,6 +199,7 @@ func run(log *slog.Logger) error {
 		Agent:   agentRT,
 		Assets:  assets,
 		Queue:   q,
+		Worker:  worker,
 	}
 
 	engine := app.New(rt)

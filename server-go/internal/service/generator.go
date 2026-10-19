@@ -647,6 +647,35 @@ func (g *AudioGenerator) Generate(
 	return AudioGenerateResult{OutputPath: outPath, Version: version}, nil
 }
 
+// AudioVoices 是项目实际生效的 audio backend 音色目录。
+type AudioVoices struct {
+	Configured bool
+	ProviderID string
+	Model      string
+	Voices     []provider.VoiceOption
+}
+
+// Voices 解析项目生效的 audio backend 并返回其音色目录。
+//
+// 解析失败（无全局默认且自动推断不到 ready 的 audio 供应商）视为「未配置」而不是错误：
+// 前端据此禁用入口，与角色卡「audio_backend 未配置该入口不可用」的口径一致。
+func (g *AudioGenerator) Voices(ctx context.Context, project *domain.ProjectFile) (AudioVoices, error) {
+	selected, err := g.resolver.ResolveAudioBackend(ctx, project, nil)
+	if err != nil {
+		return AudioVoices{}, nil
+	}
+	backend, err := g.buildAudioBackend(ctx, selected)
+	if err != nil {
+		return AudioVoices{}, nil
+	}
+	return AudioVoices{
+		Configured: true,
+		ProviderID: selected.ProviderID,
+		Model:      backend.Model(),
+		Voices:     backend.ListVoices(),
+	}, nil
+}
+
 // buildAudioBackend 按解析出的身份构造音频 backend（与 buildImageBackend 同构）。
 func (g *AudioGenerator) buildAudioBackend(ctx context.Context, selected config.ProviderModel) (provider.AudioBackend, error) {
 	if config.IsCustomProvider(selected.ProviderID) {

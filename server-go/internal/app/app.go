@@ -9,8 +9,10 @@ import (
 	"github.com/shotwise/shotwise/internal/agent"
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
+	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/queue"
+	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
 	transport "github.com/shotwise/shotwise/internal/transport/http"
 	"gorm.io/gorm"
@@ -28,6 +30,8 @@ type Runtime struct {
 	Auth    *auth.Service
 	Agent   *agent.Runtime
 	Queue   *queue.Queue
+	// Worker 是进程内生成 worker；为 nil 时队列可观测性省掉泳道与 ETA 容量分母。
+	Worker *queue.Worker
 }
 
 // New 构造引擎并完成路由注册。
@@ -63,7 +67,15 @@ func New(rt *Runtime) *gin.Engine {
 	registerPublishing(v1, rt)
 	registerMediaAssets(v1, rt)
 	registerScriptReview(v1, rt)
+	registerWorkflows(v1, rt)
+	registerCreationPlans(v1, rt)
+	registerDraftPromotions(v1, rt)
+	registerPromptRegistry(v1, rt)
 	registerAgent(v1, rt)
+	registerTasks(v1, rt)
+	registerGenerate(v1, rt)
+	registerEpisodeDuration(v1, rt)
+	registerBatches(v1, rt)
 
 	return r
 }
@@ -153,6 +165,106 @@ func registerScriptReview(v1 *gin.RouterGroup, rt *Runtime) {
 	transport.RegisterScriptReview(authed, transport.ScriptReviewDeps{
 		Store:   rt.Store,
 		Reviews: service.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
+	})
+}
+
+// registerWorkflows Shotwise Flow 路由（对应 Python 侧无 feature gate 的挂载）。
+func registerWorkflows(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterWorkflows(authed, transport.WorkflowDeps{
+		Workflows: service.NewWorkflowService(rt.DB),
+	})
+}
+
+// registerCreationPlans 创作计划路由（受 creation_plan + official_creation_skills 双开关约束）。
+//
+// 与 Python 侧 router 级 dependencies 等价：任一开关关闭，整组端点 404 feature_disabled。
+func registerCreationPlans(v1 *gin.RouterGroup, rt *Runtime) {
+	workflows := service.NewWorkflowService(rt.DB)
+	authed := v1.Group("", rt.Auth.Middleware())
+	gated := authed.Group("",
+		transport.RequireFeature("creation_plan"),
+		transport.RequireFeature("official_creation_skills"),
+	)
+	transport.RegisterCreationPlans(gated, transport.CreationPlanDeps{
+		Store: rt.Store,
+		Plans: service.NewCreationPlanService(rt.DB, rt.Dialect, workflows, config.NewResolver(rt.DB)),
+	})
+}
+
+// registerDraftPromotions 草稿晋升路由（对应 Python 侧无 feature gate 的挂载）。
+func registerDraftPromotions(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterDraftPromotions(authed, transport.DraftPromotionDeps{
+		Store: rt.Store,
+		Drafts: domain.NewDraftPromotionService(
+			service.NewFileDraftPromotionRepository(rt.Store),
+			service.ScriptStructureDraftValidator(),
+		),
+	})
+}
+
+// registerPromptRegistry 提示词模板只读路由（对应 Python 侧无 feature gate 的挂载）。
+func registerPromptRegistry(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterPromptRegistry(authed, transport.PromptRegistryDeps{})
+}
+
+// registerTasks 任务队列 / 队列可观测性 / 版本路由。
+func registerTasks(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	if rt.Queue != nil {
+		transport.RegisterTasks(authed, transport.TaskDeps{Queue: rt.Queue})
+	}
+	var snapshotter service.WorkerSnapshotter
+	if rt.Worker != nil {
+		snapshotter = rt.Worker
+	}
+	transport.RegisterQueueObservability(authed, transport.QueueObservabilityDeps{
+		Obs: service.NewQueueObservability(rt.DB, snapshotter),
+	})
+	transport.RegisterVersions(authed, transport.VersionDeps{
+		Versions: service.NewVersionService(rt.Store),
+	})
+}
+
+// registerGenerate 生成入队路由（分镜图 / 视频 / 旁白 / 资产设计图 / 图片编辑 / 试听样本）。
+func registerGenerate(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	resolver := config.NewResolver(rt.DB)
+	transport.RegisterGenerate(authed, transport.GenerateDeps{
+		Store: rt.Store,
+		Generate: service.NewGenerateService(
+			rt.Store, rt.Queue, resolver, service.NewAudioGenerator(rt.DB, nil)),
+	})
+}
+
+// registerEpisodeDuration 分集目标时长规划路由。
+//
+// 档位解析与生成路径同源（同一个 config.Resolver），否则预览给出的时长会在提交时被
+// 后端按另一套档位静默夹取。
+func registerEpisodeDuration(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterEpisodeDuration(authed, transport.EpisodeDurationDeps{
+		Store:    rt.Store,
+		Duration: service.NewEpisodeDurationService(rt.Store, config.NewResolver(rt.DB)),
+	})
+}
+
+// registerBatches 批量生成路由。
+//
+// 仓储与适配器都按「项目 + 调用者」现场构造：批次号是全局主键，围栏必须落在查询条件上，
+// 否则同一批次号可以被跨项目/跨用户读到。
+func registerBatches(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterBatches(authed, transport.BatchDeps{
+		Store: rt.Store,
+		NewOrchestrator: func(projectName, userID string) *service.BatchOrchestrator {
+			repo := repository.NewTaskRepo(rt.DB)
+			adapter := service.NewBatchTaskAdapter(repo, rt.Queue, projectName)
+			return service.NewBatchOrchestrator(
+				service.NewGormBatchRepository(rt.DB, userID, projectName), adapter)
+		},
 	})
 }
 

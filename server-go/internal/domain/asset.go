@@ -335,35 +335,51 @@ type AssetBucket map[string]*AssetEntry
 //
 // 存量 key 可能是任一编码形式，不能拿归一后的名字直接下标，否则会对着同一个视觉名字
 // 新建第二条资产或漏判冲突。多形式并存时后写入的胜出（与读侧合并方向一致）。
+// ResolveKey 在资产桶中按比对坐标系（NFC）解析 name 对应的真实落盘 key。
+//
+// Python 侧按 dict 插入序取「后写入」的一条；Go map 没有插入序，用可持有的代理规则：
+// 写入侧恒落 NFC，故 NFC 形态的 key 就是后写入的那条；没有 NFC 形态（存量 NFD 数据）
+// 时按字典序取第一条。两份等价 key 并存本就是脏数据，规则确定比选中哪条更重要——
+// 否则同一份数据每次请求可能解析出不同的 key。
 func (b AssetBucket) ResolveKey(name string) (string, bool) {
 	target := NormalizeAssetName(name)
-	found := ""
-	ok := false
+	fallback := ""
+	hasFallback := false
 	for key := range b {
-		if NormalizeAssetName(key) == target {
-			found, ok = key, true
+		if NormalizeAssetName(key) != target {
+			continue
+		}
+		if key == target {
+			return key, true
+		}
+		if !hasFallback || key < fallback {
+			fallback, hasFallback = key, true
 		}
 	}
-	return found, ok
+	return fallback, hasFallback
 }
 
 // RekeyEquivalent 把桶中与 oldName 视觉等价的全部 key 一并改成 newName，返回改名后的条目。
 //
 // 只改 ResolveKey 选中的那一条，另一条等价 key 会顶着旧名带着失效的路径字段留在桶里。
+// 整簇等价 key 合并成一条：胜者（ResolveKey 选出的后写入条目）的值落到 newName，
+// 其余等价 key 删除——合并方向与读侧一致。
 func (b AssetBucket) RekeyEquivalent(oldName, newName string) (*AssetEntry, bool) {
-	if _, ok := b.ResolveKey(oldName); !ok {
+	winnerKey, ok := b.ResolveKey(oldName)
+	if !ok {
 		return nil, false
 	}
 	target := NormalizeAssetName(oldName)
+	winner := b[winnerKey]
 	rekeyed := AssetBucket{}
-	var winner *AssetEntry
 	for key, value := range b {
 		if NormalizeAssetName(key) == target {
-			rekeyed[newName] = value
-			winner = value
-		} else {
-			rekeyed[key] = value
+			if key == winnerKey {
+				rekeyed[newName] = winner
+			}
+			continue
 		}
+		rekeyed[key] = value
 	}
 	for k := range b {
 		delete(b, k)

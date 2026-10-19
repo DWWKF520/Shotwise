@@ -145,6 +145,8 @@ Go 侧用 `sync.WaitGroup` + `context.Context` 实现，`app.state` 上的 6 个
 - `creation_plans.py`（13，gate `creation_plan` + `official_creation_skills`）
 - `workflows.py`（**41，最重**）：`/workflows[/{id}[/revisions,/export,/template-upgrade]]`、`/workflow-revisions/{id}[/validate,/publish,/runs]`、`/workflow-runs/{id}[/start,/pause,/resume,/cancel,/retry,/budget/*,/patch/*,/nodes/{key}/log]`、`/workflow-templates[...]`（含 `/admin/...` 审核队列）
 - `reference_videos.py`（10）
+- `draft_promotions.py`（9）：`/projects/{n}/draft-promotions[/upload,/online-ai][/{id}[/abandon,/prepare,/confirm]]`；草稿 store 落 `<数据目录>/.draft_promotions.json`，晋升是剧本锁内的 compare-and-write（revision = mtime_ns）
+- `prompt_registry.py`（2，只读）：`/prompts/registry[/{template_path:path}]`
 
 ## 3. SSE（3 条真实通道）
 

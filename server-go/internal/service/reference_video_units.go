@@ -185,6 +185,23 @@ func (s *ProjectStore) LoadEpisodeScript(project string, episode int) (*domain.P
 func (s *ProjectStore) UpdateEpisodeScript(
 	project string, resolver EpisodeScriptResolver, mutate func(script map[string]any) error,
 ) error {
+	return s.updateEpisodeScript(project, resolver, mutate, true)
+}
+
+// UpdateEpisodeScriptNoValidate 与 UpdateEpisodeScript 同源，但跳过结构校验与元数据重算。
+//
+// 对应 Python `locked_episode_script(..., validate=False)`：只动 duration_seconds /
+// duration_locked 这类热路径字段时既不重算metadata（否则 updated_at 与统计被刷新，
+// 剧本修订号随之漂移），也不做「不更坏」比对。
+func (s *ProjectStore) UpdateEpisodeScriptNoValidate(
+	project string, resolver EpisodeScriptResolver, mutate func(script map[string]any) error,
+) error {
+	return s.updateEpisodeScript(project, resolver, mutate, false)
+}
+
+func (s *ProjectStore) updateEpisodeScript(
+	project string, resolver EpisodeScriptResolver, mutate func(script map[string]any) error, validate bool,
+) error {
 	dir, err := s.Dir(project)
 	if err != nil {
 		return err
@@ -239,7 +256,7 @@ func (s *ProjectStore) UpdateEpisodeScript(
 				runErr = mutateErr
 				return
 			}
-			if writeErr := s.writeScriptFile(dir, norm, script, before, true); writeErr != nil {
+			if writeErr := s.writeScriptFile(dir, norm, script, before, validate); writeErr != nil {
 				runErr = writeErr
 				return
 			}

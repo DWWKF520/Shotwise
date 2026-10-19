@@ -68,6 +68,9 @@ func sortedBoolSetKeys(set map[string]bool) []string {
 	return out
 }
 
+// HasGridStoryboards 报告该 Skill 是否限定宫格开关取值（nil 表示不限定）。
+func (c *CreationSkillCompatibility) HasGridStoryboards() bool { return c.hasGridStoryboards }
+
 // Check 返回不兼容原因；兼容时返回空。
 func (c *CreationSkillCompatibility) Check(project map[string]any, availableInputs map[string]bool) string {
 	if !c.ContentModes[projectString(project, "content_mode")] {
@@ -189,14 +192,27 @@ type CreationSkillDefinition struct {
 func CompatibilityReport(
 	skill *CreationSkillDefinition, project map[string]any, availableInputs map[string]bool,
 ) map[string]any {
+	return CompatibilityReportWithAlternatives(skill, project, availableInputs, nil)
+}
+
+// CompatibilityReportWithAlternatives 在报告里附带"当前项目可用的其它官方 Skill"。
+//
+// 对应 Python lib/creation_skills.compatibility_report(alternatives=...) 的
+// 非空分支；无替代项时给出空数组（而不是 null），前端直接遍历。
+func CompatibilityReportWithAlternatives(
+	skill *CreationSkillDefinition, project map[string]any, availableInputs map[string]bool, alternatives []string,
+) map[string]any {
 	result := skill.LatestVersion.Compatibility.Explain(project, availableInputs)
 	var conflictReason any
 	if reasons, ok := result["reasons"].([]string); ok && len(reasons) > 0 {
 		conflictReason = reasons[0]
 	}
+	if alternatives == nil {
+		alternatives = []string{}
+	}
 	result["skill_id"] = skill.ID
 	result["skill_version_id"] = skill.LatestVersion.ID
-	result["alternative_skills"] = []string{}
+	result["alternative_skills"] = alternatives
 	result["conflict_reason"] = conflictReason
 	return result
 }
