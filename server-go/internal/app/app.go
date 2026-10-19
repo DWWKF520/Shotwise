@@ -86,6 +86,7 @@ func New(rt *Runtime) *gin.Engine {
 	registerSystem(v1, rt)
 	registerAssistant(v1, rt)
 	registerFileRoutes(v1, rt)
+	registerProjectExtras(v1, rt)
 
 	return r
 }
@@ -386,6 +387,15 @@ func registerFileRoutes(v1 *gin.RouterGroup, rt *Runtime) {
 	transport.RegisterPublicFiles(v1, deps)
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterFiles(authed, deps)
+}
+
+// registerProjectExtras 项目扩展端点（剧本编辑 / 分集元数据 / 概述 / 视频能力）。
+func registerProjectExtras(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterProjectExtras(authed, transport.ProjectExtraDeps{
+		Store: rt.Store,
+		Extra: service.NewProjectExtraService(rt.Store, rt.Queue, config.NewResolver(rt.DB)),
+	})
 }
 
 // registerAuth 认证路由。status/token 必须公开（拿 token 之前就要可达）。
