@@ -7,15 +7,17 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
 )
 
-// ConfigService 是配置读取服务：provider_config / system_setting / provider_credential
-// 三张表的读取侧（对应 Python lib/config/service.py 的读路径）。写入侧随 providers
-// router 波次落地，本层先只承担 resolver 所需的读取面。
+// ConfigService 是配置服务：provider_config / system_setting / provider_credential
+// 三张表的读写侧（对应 Python lib/config/service.py）。写入侧目前只有设置项的通用写入口
+// SetSetting，provider 配置的写入面随 providers router 波次落地。
 type ConfigService struct {
 	db *gorm.DB
 }
@@ -240,4 +242,24 @@ func overlayCredential(cred *repository.ProviderCredential, config map[string]st
 	if cred.SecretKey != nil && *cred.SecretKey != "" {
 		config["secret_key"] = *cred.SecretKey
 	}
+}
+
+// SetSetting 写入（或覆盖）一条 system_setting。
+//
+// 先 UPDATE 再按需 INSERT：该表没有 key 上的唯一索引，用 ORM 的 Save 会依赖主键；
+// 只有 (key) 这一条业务身份，按 key 匹配才不会写出重复行。
+func (s *ConfigService) SetSetting(ctx context.Context, key, value string) error {
+	now := db.NewFlexibleTime(time.Now())
+	res := s.db.WithContext(ctx).Model(&repository.SystemSetting{}).
+		Where("key = ?", key).
+		Updates(map[string]any{"value": value, "updated_at": now})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Create(&repository.SystemSetting{
+		Key: key, Value: value, UpdatedAt: now,
+	}).Error
 }

@@ -164,3 +164,25 @@ func CalculateGridLayout(numScenes int, aspectRatio string, allowLargeGrid bool)
 		PlaceholderCount: chosen.cellCount - effective,
 	}, true
 }
+
+// VideoAspectRatioOf 返回项目的视频比例（宫格画布与冻结在记录上的单格比例共用此取值）。
+//
+// 与 aspectRatioFor 的区别：这里只认 project.json 的 aspect_ratio，缺省一律 9:16
+// （竖屏保底），不按资源类型分叉——宫格画布的几何只由「视频成品比例」决定。
+func VideoAspectRatioOf(pf *ProjectFile) string {
+	if pf != nil && pf.AspectRatio != "" {
+		return pf.AspectRatio
+	}
+	return orientationAspect["vertical"]
+}
+
+// GridStoryboardEnabled 判定项目是否按宫格生产分镜图。
+//
+// 宫格是 storyboard 路线内的分镜图生产方式：reference_video 路线没有分镜图步骤，
+// 即使残留 grid_storyboard=true 也不激活宫格分支。
+func GridStoryboardEnabled(pf *ProjectFile) bool {
+	if pf == nil {
+		return false
+	}
+	return pf.GenerationMode == string(GenerationStoryboard) && pf.GridStoryboard
+}

@@ -76,6 +76,11 @@ func New(rt *Runtime) *gin.Engine {
 	registerGenerate(v1, rt)
 	registerEpisodeDuration(v1, rt)
 	registerBatches(v1, rt)
+	registerGrids(v1, rt)
+	registerEndFrames(v1, rt)
+	registerShotUploads(v1, rt)
+	registerOnboardingAndKeys(v1, rt)
+	registerFeatures(v1, rt)
 
 	return r
 }
@@ -265,6 +270,63 @@ func registerBatches(v1 *gin.RouterGroup, rt *Runtime) {
 			return service.NewBatchOrchestrator(
 				service.NewGormBatchRepository(rt.DB, userID, projectName), adapter)
 		},
+	})
+}
+
+// registerGrids 宫格图路由。
+//
+// 档位门控（4×4 / 5×5 是否放行）与执行侧必须同源：这里注入的 resolver 与生成路径是
+// 同一个 config.Resolver，否则预览按 4K 放行、执行按 2K 落地会让格数对不上。
+func registerGrids(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterGrids(authed, transport.GridDeps{
+		Store: rt.Store,
+		Grids: service.NewGridTaskService(
+			rt.Store, rt.Queue, config.NewResolver(rt.DB), service.NewGridService(rt.Store)),
+	})
+}
+
+// registerEndFrames 镜头尾帧路由。
+func registerEndFrames(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterEndFrames(authed, transport.EndFrameDeps{
+		Store:    rt.Store,
+		EndFrame: service.NewEndFrameService(rt.Store),
+	})
+}
+
+// registerShotUploads 镜头级分镜图 / 视频上传路由。
+//
+// 与宫格联合图上传分开挂：那条只覆盖联合图、不动分镜格；这条覆盖单格并对齐生成链路的
+// 「版本 + 剧本回写 + 指纹」三件套。
+func registerShotUploads(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterShotUploads(authed, transport.ShotUploadDeps{
+		Store:   rt.Store,
+		Uploads: service.NewShotUploadService(rt.Store),
+	})
+}
+
+// registerOnboardingAndKeys 首次引导状态与 API Key 管理。
+//
+// API Key 的增删查必须走 JWT 身份（路由层再加一道 auth.RequireAdmin）：
+// 一把泄漏的 key 若能自我续期 / 自我吊销他人，等于把凭证管理面变成了提权面。
+func registerOnboardingAndKeys(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterOnboarding(authed, transport.OnboardingDeps{
+		Config: config.NewConfigService(rt.DB),
+	})
+	transport.RegisterAPIKeys(authed, transport.APIKeyDeps{DB: rt.DB})
+}
+
+// registerFeatures 放量诊断路由。
+//
+// 走 authed：诊断面不含密钥，但会暴露「哪些开关开着」，仍然不该对匿名请求开放。
+func registerFeatures(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterFeatures(authed, transport.FeaturesDeps{
+		Plans: service.NewCreationPlanService(
+			rt.DB, rt.Dialect, service.NewWorkflowService(rt.DB), config.NewResolver(rt.DB)),
 	})
 }
 

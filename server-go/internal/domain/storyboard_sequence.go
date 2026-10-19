@@ -252,3 +252,43 @@ func storyboardTruthy(value any) bool {
 	}
 	return true
 }
+
+// NewStoryboardGeneratedAssets 返回分镜条目的标准 generated_assets 模板。
+//
+// 与 Python create_generated_assets 同形：补齐缺失键用，写回时只填「原本不存在」的键，
+// 已有值一律保留（旧剧本可能带着上一轮生成的产物路径）。
+func NewStoryboardGeneratedAssets() map[string]any {
+	return map[string]any{
+		"storyboard_image":      nil,
+		"storyboard_last_image": nil,
+		"video_clip":            nil,
+		"video_thumbnail":       nil,
+		"video_uri":             nil,
+		"narration_audio":       nil,
+		"grid_id":               nil,
+		"grid_cell_index":       nil,
+		"status":                "pending",
+		"video_generated_at":    nil,
+	}
+}
+
+// UpdateStoryboardItemStatus 按 generated_assets 内容重算并写回条目状态。
+//
+// pending / storyboard_ready / completed 三态判定与 Python update_scene_status 一致：
+// 有视频即 completed，仅有分镜图即 storyboard_ready，其余 pending。
+func UpdateStoryboardItemStatus(item map[string]any) string {
+	assets, ok := item["generated_assets"].(map[string]any)
+	if !ok {
+		assets = map[string]any{}
+		item["generated_assets"] = assets
+	}
+	status := "pending"
+	switch {
+	case storyboardTruthy(assets["video_clip"]):
+		status = "completed"
+	case storyboardTruthy(assets["storyboard_image"]):
+		status = "storyboard_ready"
+	}
+	assets["status"] = status
+	return status
+}
