@@ -86,11 +86,15 @@ func New(rt *Runtime) *gin.Engine {
 	registerProviders(v1, rt)
 	registerAgentConfig(v1, rt)
 	registerSystem(v1, rt)
+	registerSystemConfig(v1, rt)
+	registerCreative(v1, rt)
+	registerProjectSourceExport(v1, rt)
 	registerAssistant(v1, rt)
 	registerFileRoutes(v1, rt)
 	registerProjectExtras(v1, rt)
 	registerGlobalAssets(v1, rt)
 	registerCharacterRelations(v1, rt)
+	registerCharacterExtras(v1, rt)
 
 	return r
 }
@@ -423,6 +427,37 @@ func registerCharacterRelations(v1 *gin.RouterGroup, rt *Runtime) {
 			return textgen.NewGenerator(ctx, rt.DB, pf, textgen.TaskScript)
 		},
 	})
+}
+
+// registerCharacterExtras 角色头像与变体路由。
+func registerCharacterExtras(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterCharacterExtras(authed, transport.CharacterDeps{
+		Variants: service.NewCharacterVariants(rt.Store),
+	})
+}
+
+// registerSystemConfig 系统配置路由（GET 公开、PATCH 管理员），与诊断日志分开挂。
+func registerSystemConfig(v1 *gin.RouterGroup, rt *Runtime) {
+	transport.RegisterSystemConfig(v1, transport.SystemConfigDeps{
+		Config: service.NewSystemConfigService(rt.DB, config.NewConfigService(rt.DB)),
+	})
+}
+
+// registerCreative 创作稿文本生成端点。
+func registerCreative(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterCreative(authed, transport.CreativeDeps{Store: rt.Store, DB: rt.DB})
+}
+
+// registerProjectSourceExport 源文上传、概述生成与导出。
+//
+// export/token 走 authed；GET /export 走 download_token（浏览器原生下载带不了
+// Authorization header），token 的 purpose/project 双校验绑定单个项目。
+func registerProjectSourceExport(v1 *gin.RouterGroup, rt *Runtime) {
+	deps := transport.NewSourceExportDeps(rt.Store, rt.Auth, rt.DB)
+	authed := v1.Group("", rt.Auth.Middleware())
+	transport.RegisterProjectSourceExport(v1, authed, deps)
 }
 
 // registerAuth 认证路由。status/token 必须公开（拿 token 之前就要可达）。
