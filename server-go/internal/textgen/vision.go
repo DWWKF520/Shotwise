@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
+	"gorm.io/gorm"
 )
 
 // StyleAnalysisPrompt 与 Python lib/text_backends/prompts.py 的
@@ -84,4 +86,18 @@ func (g *geminiAistudio) GenerateWithImage(
 // VisionGenerator 是带图像输入的文本生成接口。
 type VisionGenerator interface {
 	GenerateWithImage(ctx context.Context, prompt string, imageData []byte, mediaType string, maxOutputTokens int) (string, error)
+}
+
+// NewVisionGenerator 按项目解析出的文本 provider 构造视觉生成器。
+// 解析到的 provider 不支持图像输入时返回 ErrUnsupportedProvider。
+func NewVisionGenerator(ctx context.Context, db *gorm.DB, project *domain.ProjectFile, task TaskType) (VisionGenerator, error) {
+	gen, err := NewGenerator(ctx, db, project, task)
+	if err != nil {
+		return nil, err
+	}
+	vg, ok := gen.(VisionGenerator)
+	if !ok {
+		return nil, fmt.Errorf("%w: 当前文本 provider 不支持图像输入", ErrUnsupportedProvider)
+	}
+	return vg, nil
 }

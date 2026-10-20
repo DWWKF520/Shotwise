@@ -153,15 +153,16 @@ type ProjectFile struct {
 	GenerationMode string `json:"generation_mode"`
 	GridStoryboard bool   `json:"grid_storyboard,omitempty"`
 
-	AspectRatio     string   `json:"aspect_ratio,omitempty"`
-	Style           string   `json:"style"`
-	StyleTemplateID string   `json:"style_template_id,omitempty"`
-	StyleImage      string   `json:"style_image,omitempty"`
-	DefaultDuration *int     `json:"default_duration,omitempty"`
-	TargetDuration  *int     `json:"target_duration,omitempty"`
-	Brief           string   `json:"brief,omitempty"`
-	SourceLanguage  string   `json:"source_language,omitempty"`
-	SpeechRate      *float64 `json:"speech_rate_units_per_second,omitempty"`
+	AspectRatio      string   `json:"aspect_ratio,omitempty"`
+	Style            string   `json:"style"`
+	StyleTemplateID  string   `json:"style_template_id,omitempty"`
+	StyleImage       string   `json:"style_image,omitempty"`
+	StyleDescription string   `json:"style_description,omitempty"`
+	DefaultDuration  *int     `json:"default_duration,omitempty"`
+	TargetDuration   *int     `json:"target_duration,omitempty"`
+	Brief            string   `json:"brief,omitempty"`
+	SourceLanguage   string   `json:"source_language,omitempty"`
+	SpeechRate       *float64 `json:"speech_rate_units_per_second,omitempty"`
 
 	NarrationVoice     string   `json:"narration_voice,omitempty"`
 	NarrationSpeed     *float64 `json:"narration_speed,omitempty"`

@@ -406,6 +406,7 @@ func registerFileRoutes(v1 *gin.RouterGroup, rt *Runtime) {
 	transport.RegisterPublicFiles(v1, deps)
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterFiles(authed, deps)
+	transport.RegisterFileUploads(authed, transport.FileUploadDeps{Store: rt.Store, DB: rt.DB})
 }
 
 // registerProjectExtras 项目扩展端点（剧本编辑 / 分集元数据 / 概述 / 视频能力）。

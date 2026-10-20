@@ -1,4 +1,4 @@
-﻿﻿package service
+package service
 
 // SourceLoader（对应 lib/source_loader）：把上传的小说源文规范化为 UTF-8 .txt，
 // 按需备份原始字节到 raw/。
@@ -54,8 +54,8 @@ type SourceError struct {
 	Filename   string
 	Reason     string // corrupt_file
 	Tried      []string
-	SizeBytes  int64 // too_large
-	LimitBytes int64 // too_large
+	SizeBytes  int64  // too_large
+	LimitBytes int64  // too_large
 	Existing   string // conflict（建议重命名的现状名）
 	Suggested  string // conflict
 }
@@ -94,7 +94,7 @@ const (
 
 const (
 	// SourceMaxBytes 是源文原始字节上限（50 MB，与 Python DEFAULT_MAX_BYTES 同值）。
-	SourceMaxBytes = 50 * 1024 * 1024
+	SourceMaxBytes        = 50 * 1024 * 1024
 	sourceMaxConflictIter = 10000
 	// scannedPDFCharsPerPage 是扫描版 PDF 的字符密度阈值（同 Python）。
 	scannedPDFCharsPerPage = 50

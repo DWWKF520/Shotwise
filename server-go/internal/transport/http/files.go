@@ -5,7 +5,7 @@
 //     （前端经 <img>/<video> 直发请求带不了 Authorization header），但都有 SafeJoin 防护；
 //   - 其余端点走标准鉴权。
 //
-// 未注册：POST /upload/{type}（待 SourceLoader 迁移）与 POST /style-image（待 Gemini 分析）。
+// 上传端点（POST /upload/{type} 与 POST /style-image）见 files_upload.go。
 package http
 
 import (
