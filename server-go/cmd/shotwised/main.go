@@ -159,12 +159,35 @@ func run(log *slog.Logger) error {
 	// Append 会撞 (session_id, seq) 主键。
 	evStore := eventlog.NewSQLStore(gdb)
 
+	// 会话主模型凭证链：DB 活跃 agent 凭证（chat_completions 协议）优先，env 兜底。
+	// 按次解析——prepareAgent 每轮回调，设置页切换凭证从下一轮起生效，无需重启。
+	agentCreds := service.NewAgentCredentialService(gdb)
+	agentModelResolver := func(ctx context.Context) (agent.ModelConfig, error) {
+		resolved, ok, err := agentCreds.ResolveActiveModel(ctx)
+		if err != nil {
+			return agent.ModelConfig{}, err
+		}
+		if ok {
+			return agent.ModelConfig{
+				APIKey:  resolved.APIKey,
+				Model:   resolved.Model,
+				BaseURL: resolved.BaseURL,
+			}, nil
+		}
+		return agent.ModelConfig{
+			APIKey:  cfg.LLMAPIKey,
+			Model:   cfg.LLMModel,
+			BaseURL: cfg.LLMBaseURL,
+		}, nil
+	}
+
 	agentRT, err := agent.NewRuntime(context.Background(), agent.ModelConfig{
 		APIKey:  cfg.LLMAPIKey,
 		Model:   cfg.LLMModel,
 		BaseURL: cfg.LLMBaseURL,
 	}, cfg.DataDir, cpStore, evStore,
 		agent.WithIdleTimeout(cfg.AgentIdleTimeout),
+		agent.WithModelResolver(agentModelResolver),
 		agent.WithProjectWriters(assets, store), agent.WithAssetProjects(store),
 		agent.WithVideoCapabilities(config.NewResolver(gdb)),
 		agent.WithRelationAnalysis(func(ctx context.Context, pf *domain.ProjectFile) (agent.RelationTextGenerator, error) {
@@ -194,18 +217,18 @@ func run(log *slog.Logger) error {
 	}
 
 	rt := &app.Runtime{
-		Config:  cfg,
-		Log:     log,
-		DB:      gdb,
-		Dialect: dialect,
-		Store:   store,
-		Hub:     hub,
-		Auth:    authSvc,
-		Agent:   agentRT,
+		Config:    cfg,
+		Log:       log,
+		DB:        gdb,
+		Dialect:   dialect,
+		Store:     store,
+		Hub:       hub,
+		Auth:      authSvc,
+		Agent:     agentRT,
 		Assistant: agent.NewAssistantService(gdb, evStore, agentRT, store, cfg.DataDir),
-		Assets:  assets,
-		Queue:   q,
-		Worker:  worker,
+		Assets:    assets,
+		Queue:     q,
+		Worker:    worker,
 	}
 
 	engine := app.New(rt)

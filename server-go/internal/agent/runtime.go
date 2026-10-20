@@ -221,6 +221,9 @@ type Runtime struct {
 	chatModelErr  error
 	// chatModelOverride 优先于惰性构造（测试注入 / 未来 provider 链扩展位）。
 	chatModelOverride model.ToolCallingChatModel
+	// modelResolver 非空时每轮经它解析会话主模型（生产：DB 活跃凭证，切换即时
+	// 生效，失败当场报错不缓存）；为空时用启动期 cfg 惰性构造一次（dev env 部署）。
+	modelResolver func(ctx context.Context) (ModelConfig, error)
 	// extraTools 追加在 BuiltinTools 之后的扩展工具（测试 / 后续增量注入位）。
 	extraTools []tool.BaseTool
 	// assetWriter / projectWriter 为 patch_project 的写入依赖（WithProjectWriters 注入）。
@@ -292,6 +295,13 @@ func WithChatModel(m model.ToolCallingChatModel) RuntimeOption {
 	return func(r *Runtime) { r.chatModelOverride = m }
 }
 
+// WithModelResolver 注入会话主模型的按次解析器（生产：DB 活跃 agent 凭证）。
+// prepareAgent 每轮回调 buildAgent → chatModel，解析器每轮调用一次——设置页切换
+// 凭证从下一轮起生效，无需重启；解析失败当场报错不缓存。override 仍优先于解析器。
+func WithModelResolver(resolve func(ctx context.Context) (ModelConfig, error)) RuntimeOption {
+	return func(r *Runtime) { r.modelResolver = resolve }
+}
+
 // NewRuntime 构造运行时。cpStore / evStore 传 nil 时使用内存实现（演示用）。
 func NewRuntime(ctx context.Context, cfg ModelConfig, dataDir string, cpStore CheckPointStore, evStore eventlog.Store, opts ...RuntimeOption) (*Runtime, error) {
 	if cpStore == nil {
@@ -317,10 +327,18 @@ func NewRuntime(ctx context.Context, cfg ModelConfig, dataDir string, cpStore Ch
 	return r, nil
 }
 
-// chatModel 返回会话模型：override 优先（测试注入），否则惰性构造（失败缓存错误）。
+// chatModel 返回会话模型：override 优先（测试注入），其次按次解析器（生产 DB 凭证），
+// 均未注入时走启动期 cfg 的惰性构造（失败缓存错误）。
 func (r *Runtime) chatModel(ctx context.Context) (model.ToolCallingChatModel, error) {
 	if r.chatModelOverride != nil {
 		return r.chatModelOverride, nil
+	}
+	if r.modelResolver != nil {
+		cfg, err := r.modelResolver(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("agent: resolve chat model: %w", err)
+		}
+		return NewChatModel(ctx, cfg)
 	}
 	r.chatModelOnce.Do(func() {
 		r.chatModelInst, r.chatModelErr = NewChatModel(ctx, r.cfg)

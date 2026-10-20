@@ -133,19 +133,19 @@ type AgentCredentialView struct {
 
 // AgentCredentialInput 是创建 / 更新入参（nil 表示不修改）。
 type AgentCredentialInput struct {
-	SDKType      *string
-	Protocol     *string
-	PresetID     *string
-	DisplayName  *string
-	BaseURL      *string
-	APIKey       *string
-	Model        *string
-	HaikuModel   *string
-	SonnetModel  *string
-	OpusModel    *string
-	SubagentMdl  *string
-	ModelMap     []map[string]any
-	Activate     *bool
+	SDKType       *string
+	Protocol      *string
+	PresetID      *string
+	DisplayName   *string
+	BaseURL       *string
+	APIKey        *string
+	Model         *string
+	HaikuModel    *string
+	SonnetModel   *string
+	OpusModel     *string
+	SubagentMdl   *string
+	ModelMap      []map[string]any
+	Activate      *bool
 	ClearModelMap bool
 }
 
@@ -407,6 +407,43 @@ func (s *AgentCredentialService) TestCredential(
 		return ConnectionTest{}, err
 	}
 	return probeAgentEndpoint(ctx, row.Protocol, row.BaseURL, row.APIKey)
+}
+
+// ResolvedAgentModel 是可驱动 Go 智能体运行时的活跃凭证投影。
+type ResolvedAgentModel struct {
+	APIKey  string
+	Model   string
+	BaseURL string
+}
+
+// ResolveActiveModel 取可驱动 Go 运行时的活跃凭证。
+//
+// Go 运行时是单一 Eino 循环，只讲 OpenAI 兼容 chat_completions 协议
+// （agent/provider.go）：活跃凭证按 protocol 过滤——chat_completions 可直接驱动
+// （含经 OpenAI 兼容网关接入的 Claude）；anthropic_messages 是 Claude SDK 子进程
+// 协议，Go 运行时不会说，跳过。本部署为单用户鉴权，不按 user 过滤，按 id 升序取
+// 第一条凭证齐全的活跃行；model 列空时回落预设默认模型。
+// 无可用凭证返回 ok=false，调用方回落 env 配置（dev 部署形态）。
+func (s *AgentCredentialService) ResolveActiveModel(ctx context.Context) (ResolvedAgentModel, bool, error) {
+	var rows []repository.AgentAnthropicCredential
+	if err := s.db.WithContext(ctx).
+		Where("is_active = ? AND protocol = ?", true, "chat_completions").
+		Order("id ASC").Find(&rows).Error; err != nil {
+		return ResolvedAgentModel{}, false, err
+	}
+	for _, row := range rows {
+		if strings.TrimSpace(row.BaseURL) == "" || strings.TrimSpace(row.APIKey) == "" {
+			continue
+		}
+		model := strings.TrimSpace(derefString(row.Model))
+		if model == "" {
+			if preset, ok := AgentPresetByID(row.PresetID); ok {
+				model = preset.DefaultModel
+			}
+		}
+		return ResolvedAgentModel{APIKey: row.APIKey, Model: model, BaseURL: row.BaseURL}, true, nil
+	}
+	return ResolvedAgentModel{}, false, nil
 }
 
 // ---- 内部 ----
