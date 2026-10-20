@@ -130,6 +130,33 @@ func ResolveDataDir() string {
 	return filepath.Join(wd, "projects")
 }
 
+// ResolveFrontendDist 决定前端构建产物目录：SHOTWISE_FRONTEND_DIST > 从 cwd 向上
+// 回溯查找 <dir>/frontend/dist（对应 Python PROJECT_ROOT / "frontend" / "dist"）。
+// 候选命中以 index.html 为准（构建产物不完整时不视为可用）。返回空串表示未找到，
+// 调用方跳过 SPA 挂载，API 不受影响。
+func ResolveFrontendDist() string {
+	if v := strings.TrimSpace(os.Getenv("SHOTWISE_FRONTEND_DIST")); v != "" {
+		return v
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	dir := wd
+	for i := 0; i < 6; i++ {
+		candidate := filepath.Join(dir, "frontend", "dist")
+		if info, err := os.Stat(filepath.Join(candidate, "index.html")); err == nil && !info.IsDir() {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
 // AssertNoProviderSecrets 在进程环境中发现 provider 密钥时返回错误。
 // 必须在任何子进程（ffmpeg / agent 工具 / 沙箱）启动之前调用。
 func AssertNoProviderSecrets() error {

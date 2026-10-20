@@ -13,9 +13,9 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/queue"
-	"github.com/shotwise/shotwise/internal/textgen"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/textgen"
 	transport "github.com/shotwise/shotwise/internal/transport/http"
 	"gorm.io/gorm"
 )
@@ -54,7 +54,10 @@ func New(rt *Runtime) *gin.Engine {
 	r.Use(requestLoggingMiddleware(rt.Log))
 	r.Use(corsMiddleware(rt.Config.CORSOrigins))
 
-	r.NoRoute(notFound)
+	// SPA 静态服务兜底未匹配路由；dist 不完整时保持 JSON 404。
+	if !registerSPA(r, config.ResolveFrontendDist(), rt.Log) {
+		r.NoRoute(notFound)
+	}
 	r.NoMethod(methodNotAllowed)
 
 	r.GET("/health", transport.Health)
