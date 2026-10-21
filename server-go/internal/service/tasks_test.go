@@ -193,13 +193,21 @@ func TestTaskDispatcherRejectsEmptyAndUnsupported(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "unsupported task_type") {
 		t.Fatalf("reference_video task should be routed, not unsupported: %v", err)
 	}
-	// 仍未迁移的画布任务类型照常 fail loud。
+	// canvas_image_* 已接线：split 会进入执行链，缺 source_kind 时按执行期校验报错，
+	// 而非 unsupported task_type。
 	_, err = dispatcher.Execute(context.Background(), &repository.TaskData{
 		TaskID: "t4", ProjectName: "p1", TaskType: "canvas_image_split", MediaType: "image", ResourceID: "E1S01",
 		Payload: map[string]any{"prompt": "x"}, UserID: repository.DefaultUserID,
 	})
-	if err == nil || !strings.Contains(err.Error(), "unsupported task_type: canvas_image_split") {
-		t.Fatalf("unported task type should fail loud: %v", err)
+	if err == nil || strings.Contains(err.Error(), "unsupported task_type") {
+		t.Fatalf("canvas task should be routed to executor, got %v", err)
+	}
+	_, err = dispatcher.Execute(context.Background(), &repository.TaskData{
+		TaskID: "t5", ProjectName: "p1", TaskType: "canvas_image_bogus", MediaType: "image", ResourceID: "E1S01",
+		Payload: map[string]any{"prompt": "x"}, UserID: repository.DefaultUserID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported task_type: canvas_image_bogus") {
+		t.Fatalf("unknown canvas operation should fail loud: %v", err)
 	}
 }
 

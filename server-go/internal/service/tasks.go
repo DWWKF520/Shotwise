@@ -9,7 +9,8 @@
 //   - tts / voice_sample 已接线（tasks_tts.go / tasks_voice_sample.go）；
 //     image_edit 已接线（tasks_image_edit.go）；grid 已接线（tasks_grid.go）。
 //   - video / reference_video 已接线（tasks_video.go / tasks_reference_video.go）。
-//   - canvas_image_* 的执行链未迁移：入队可用，执行期 fail loud。
+//   - canvas_image_* 已接线（tasks_canvas.go）：split / crop 确定性几何，其余八个走
+//     项目 i2i（redraw / erase 贴片合成回全图，outpaint 源图回贴画布）。
 package service
 
 import (
@@ -71,6 +72,10 @@ func (d *TaskDispatcher) Execute(ctx context.Context, task *repository.TaskData)
 		return d.executeVideoTask(ctx, task)
 	case "reference_video":
 		return d.executeReferenceVideoTask(ctx, task)
+	case "canvas_image_split", "canvas_image_panorama", "canvas_image_angles", "canvas_image_layers",
+		"canvas_image_hd", "canvas_image_outpaint", "canvas_image_redraw", "canvas_image_erase",
+		"canvas_image_cutout", "canvas_image_crop":
+		return d.executeCanvasImageTask(ctx, task)
 	default:
 		return nil, fmt.Errorf("unsupported task_type: %s", task.TaskType)
 	}
