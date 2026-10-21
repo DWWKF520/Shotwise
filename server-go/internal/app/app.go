@@ -90,6 +90,7 @@ func New(rt *Runtime) *gin.Engine {
 	registerOnboardingAndKeys(v1, rt)
 	registerFeatures(v1, rt)
 	registerProviders(v1, rt)
+	registerCustomProviders(v1, rt)
 	registerAgentConfig(v1, rt)
 	registerSystem(v1, rt)
 	registerSystemConfig(v1, rt)
@@ -360,6 +361,23 @@ func registerProviders(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterProviders(authed, transport.ProviderDeps{
 		Providers: service.NewProviderAdminService(rt.DB),
+	})
+}
+
+// registerCustomProviders 自定义供应商路由。
+//
+// 与内置供应商管理面同级：自定义供应商的凭据存在 custom_provider 表上，不走
+// provider_config / provider_credential，两条链路互不参照。
+func registerCustomProviders(v1 *gin.RouterGroup, rt *Runtime) {
+	authed := v1.Group("", rt.Auth.Middleware())
+	// 显式判空再装箱：rt.Worker 是 *queue.Worker，直接塞进接口会得到非 nil 的
+	// typed-nil，服务的 nil 判断挡不住，调用时才在解引用处炸。
+	var limits service.CustomCapacityRefresher
+	if rt.Worker != nil {
+		limits = rt.Worker
+	}
+	transport.RegisterCustomProviders(authed, transport.CustomProviderDeps{
+		Providers: service.NewCustomProviderService(rt.DB, rt.Store, limits),
 	})
 }
 
