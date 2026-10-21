@@ -49,6 +49,11 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
+	// 加载 .env（python-dotenv 语义：已存在的进程环境变量优先）。
+	// 先于 config.Load：后者把 env 摄成快照；也先于 AssertNoProviderSecrets：
+	// provider 密钥若写在 .env 里同样属于禁止进入进程环境的红线，加载后统一由断言拦截。
+	config.LoadDotenv()
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -97,6 +102,13 @@ func run(log *slog.Logger) error {
 		log.Error("official Creation Skill catalog synchronization failed (non-fatal)", "error", err)
 	} else if synced > 0 {
 		log.Info("official Creation Skill catalog synchronized", "changes", synced)
+	}
+
+	// 认证开启且 AUTH_PASSWORD 为空时自动生成密码并回写 .env（对齐 Python ensure_auth_password）。
+	if pwd, err := config.EnsureAuthPassword(cfg.AuthEnabled, "", log); err != nil {
+		return err
+	} else if pwd != "" {
+		cfg.AuthPassword = pwd
 	}
 
 	authSvc := auth.New(cfg.TokenSecret, cfg.AuthEnabled, users)
