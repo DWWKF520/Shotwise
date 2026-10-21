@@ -31,14 +31,6 @@ func TestExistingReferenceImagesSkipsMissingAndEscapes(t *testing.T) {
 	}
 }
 
-func TestDispatcherCharacterDesignFailsLoud(t *testing.T) {
-	d := NewTaskDispatcher(nil, nil)
-	_, err := d.Execute(context.Background(), &repository.TaskData{ProjectName: "p", TaskType: "character", ResourceID: "阿明"})
-	if err == nil || !strings.Contains(err.Error(), "not migrated") {
-		t.Fatalf("character must fail loud until avatar cropping is migrated, got %v", err)
-	}
-}
-
 func TestDesignTaskRequiresPromptBeforeTouchingStore(t *testing.T) {
 	d := NewTaskDispatcher(nil, nil)
 	_, err := d.Execute(context.Background(), &repository.TaskData{

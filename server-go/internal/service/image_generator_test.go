@@ -49,6 +49,12 @@ const minimalPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQV
 
 // newImageGeneratorFixture 装配一次「解析 → 生成 → 记账」所需的全部依赖。
 func newImageGeneratorFixture(t *testing.T, status int) (*ImageGenerator, *gorm.DB, string) {
+	return newImageGeneratorFixtureWithStub(t, openAIImageStub(t, status))
+}
+
+// newImageGeneratorFixtureWithStub 用调用方提供的假图片端点装配，供需要定制响应行为
+// （如在响应前并发改写项目状态模拟竞态）的测试复用。
+func newImageGeneratorFixtureWithStub(t *testing.T, srv *httptest.Server) (*ImageGenerator, *gorm.DB, string) {
 	t.Helper()
 	gdb, dialect, err := db.Open("sqlite://"+filepath.Join(t.TempDir(), "gen.db"), logger.Silent)
 	if err != nil {
@@ -71,7 +77,7 @@ func newImageGeneratorFixture(t *testing.T, status int) (*ImageGenerator, *gorm.
 		t.Fatalf("seed default user: %v", err)
 	}
 
-	srv := openAIImageStub(t, status)
+	srvURL := srv.URL
 	// 全局默认图片供应商 + 该供应商的凭证与端点。
 	for key, value := range map[string]string{
 		"default_image_backend": "openai/gpt-image-2",
@@ -85,7 +91,7 @@ func newImageGeneratorFixture(t *testing.T, status int) (*ImageGenerator, *gorm.
 	}
 	// provider_config 的 is_secret 标记决定该键是否回显给前端，api_key 属秘密项。
 	for key, secret := range map[string]bool{"api_key": true, "base_url": false} {
-		value := srv.URL
+		value := srvURL
 		if key == "api_key" {
 			value = "sk-test"
 		}

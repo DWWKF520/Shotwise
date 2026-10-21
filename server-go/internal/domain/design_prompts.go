@@ -11,8 +11,12 @@ const (
 	productLayout = "标准多角度产品参考图，纯净浅灰背景、均匀棚拍布光：正面、45° 侧面、背面三视图水平排列，" +
 		"下方一排关键细节特写（logo、文字、材质、接缝）。"
 
-	sceneGuard = "画面中没有人物出镜，空间透视正常，陈设固定，光影统一。"
-	propGuard  = "外观结构完整，焦点清晰。"
+	characterLayout = "横版 16:9 四格布局，纯白 (#FFFFFF) 背景：左侧约 40% 宽为胸像特写（清晰展示面部、发型、配饰、上装），" +
+		"右侧三个等宽面板分别为正面 / 四分之三侧面 / 背面的 A-Pose 全身视图。"
+
+	sceneGuard     = "画面中没有人物出镜，空间透视正常，陈设固定，光影统一。"
+	propGuard      = "外观结构完整，焦点清晰。"
+	characterGuard = "四个面板中角色面部、发型、服装、配饰完全一致；五官对称、手指完整为五指、肢体比例协调。"
 
 	productFidelityCore = "logo、文字、配色、材质、比例与结构不得改变或臆造"
 	productGuard        = "产品外观必须忠实于参考图中的真实产品：" + productFidelityCore + "；各视图为同一件产品。" +
@@ -22,6 +26,8 @@ const (
 	negativeTailScene   = "画面避免：出镜人物、水印、多余文字、Logo。"
 	negativeTailProp    = "画面避免：出镜人物、水印、多余文字、Logo。"
 	negativeTailProduct = "画面避免：出镜人物、水印、多余文字、Logo。"
+	// negativeTailCharacter 与 scene 族不同：角色的反向尾巴不含「出镜人物」。
+	negativeTailCharacter = "画面避免：水印、多余文字、Logo。"
 )
 
 // stylePrefix 组合视觉风格前缀（两者皆空时为空串）。
@@ -37,6 +43,16 @@ func stylePrefix(style, styleDescription string) string {
 		return ""
 	}
 	return strings.Join(parts, "\n") + "\n\n"
+}
+
+// BuildCharacterPrompt 角色设计图 prompt（四视图 16:9）。
+func BuildCharacterPrompt(name, description, style, styleDescription string) string {
+	return stylePrefix(style, styleDescription) +
+		"角色「" + name + "」的设计参考图。\n\n" +
+		description + "\n\n" +
+		characterLayout + "\n\n" +
+		characterGuard + "\n\n" +
+		negativeTailCharacter
 }
 
 // BuildScenePrompt 场景设计图 prompt（主 + 细节）。
