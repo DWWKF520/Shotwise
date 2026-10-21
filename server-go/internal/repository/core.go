@@ -17,6 +17,8 @@ type User struct {
 	IsActive  bool            `gorm:"column:is_active"`
 	CreatedAt db.FlexibleTime `gorm:"column:created_at"`
 	UpdatedAt db.FlexibleTime `gorm:"column:updated_at"`
+	// Python 侧 GitHub OAuth 的登录标识（users.github_id 列，共享 schema）；
+	// Go 侧不实现 OAuth，字段仅维持 schema_test 的模型 ↔ DDL 双向对齐。
 	GithubID  *string         `gorm:"column:github_id"`
 }
 

@@ -95,7 +95,7 @@ func (s *ProviderAdminService) List(ctx context.Context) ([]ProviderStatusView, 
 			RequiredKeys:   append([]string(nil), meta.RequiredKeys...),
 			ConfiguredKeys: keys,
 			MissingKeys:    missing,
-			Models:         modelsView(meta),
+			Models:         modelsView(providerID, meta),
 			ConsoleURL:     meta.ConsoleURL,
 			Enabled:        enabledMap[providerID],
 		})
@@ -197,7 +197,7 @@ func (s *ProviderAdminService) GetConfig(ctx context.Context, providerID string)
 		Enabled:     enabled,
 		Status:      status,
 		Fields:      fields,
-		Models:      modelsView(meta),
+		Models:      modelsView(providerID, meta),
 		ConsoleURL:  meta.ConsoleURL,
 	}, nil
 }
@@ -644,10 +644,17 @@ func capabilitiesOf(meta provider.ProviderMeta) []string {
 }
 
 // modelsView 把注册表模型序列化成 {model_id: {...}}。
-func modelsView(meta provider.ProviderMeta) map[string]any {
+//
+// 字段与 Python ModelInfoResponse 契约对齐：集合字段恒出现（未声明渲染为空集合/空对象），
+// 前端不做缺字段兜底（ProviderDetail 直接读 supported_durations.length）。音轨两位与
+// 声音一致性由 registry 的派生函数产出，不在本层复制公式。目录场景无项目上下文，
+// generation_mode 未知 → native 恒不出现（对应 Python derive_voice_consistency 以
+// generation_mode=None 调用），声音一致性退化为 has_audio_track 的两值派生。
+func modelsView(providerID string, meta provider.ProviderMeta) map[string]any {
 	out := make(map[string]any, len(meta.Models))
 	for _, entry := range meta.Models {
 		info := entry.Info
+		hasAudioTrack := provider.ModelHasAudioTrack(providerID, info)
 		item := map[string]any{
 			"id":           entry.ID,
 			"display_name": firstNonEmpty(info.DisplayName, entry.ID),
@@ -659,15 +666,36 @@ func modelsView(meta provider.ProviderMeta) map[string]any {
 			capabilities = append(capabilities, string(capability))
 		}
 		item["capabilities"] = capabilities
-		if len(info.SupportedDurations) > 0 {
-			item["supported_durations"] = info.SupportedDurations
+		durations := info.SupportedDurations
+		if durations == nil {
+			durations = []int{}
 		}
-		if len(info.Resolutions) > 0 {
-			item["resolutions"] = info.Resolutions
+		item["supported_durations"] = durations
+		constraints := info.DurationResolutionConstraints
+		if constraints == nil {
+			constraints = map[string][]int{}
 		}
+		item["duration_resolution_constraints"] = constraints
+		refDurations := info.ReferenceImageDurations
+		if refDurations == nil {
+			refDurations = []int{}
+		}
+		item["reference_image_durations"] = refDurations
+		resolutions := info.Resolutions
+		if resolutions == nil {
+			resolutions = []string{}
+		}
+		item["resolutions"] = resolutions
 		if info.AudioAlwaysOn {
 			item["audio_always_on"] = true
 		}
+		item["has_audio_track"] = hasAudioTrack
+		item["audio_switch_controllable"] = provider.ModelAudioSwitchControllable(info)
+		voiceConsistency := "none"
+		if hasAudioTrack {
+			voiceConsistency = "soft"
+		}
+		item["voice_consistency"] = voiceConsistency
 		out[entry.ID] = item
 	}
 	return out
