@@ -24,8 +24,8 @@ func TestRegisterCreativeContextRoutes(t *testing.T) {
 		registered[route.Method+" "+route.Path] = true
 	}
 	for _, want := range []string{
-		http.MethodPost + " /api/v1/projects/:project_id/creative-context/resolve",
-		http.MethodPost + " /api/v1/projects/:project_id/creative-context/resolve-references",
+		http.MethodPost + " /api/v1/projects/:name/creative-context/resolve",
+		http.MethodPost + " /api/v1/projects/:name/creative-context/resolve-references",
 	} {
 		if !registered[want] {
 			t.Errorf("route not registered: %s", want)

@@ -274,7 +274,7 @@ func abortAssetsErr(c *gin.Context, err error) {
 			map[string]any{"name": exists.Name}))
 	case errors.As(err, &missing):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "asset_source_resource_not_found",
-			map[string]any{"project": c.Param("project_name"), "name": c.Param("resource_id")}))
+			map[string]any{"project": missing.Project, "name": missing.Resource}))
 	case errors.Is(err, service.ErrGlobalTargetProjectNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "asset_target_project_not_found", nil))
 	case errors.Is(err, service.ErrGlobalAssetNotFound):

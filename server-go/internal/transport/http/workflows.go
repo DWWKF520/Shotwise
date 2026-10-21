@@ -74,11 +74,11 @@ func RegisterWorkflows(group *gin.RouterGroup, d WorkflowDeps) {
 	admin.POST("/admin/workflow-templates/:template_id/restore", restoreWorkflowTemplate(d))
 	admin.GET("/admin/workflow-templates/reviews", listWorkflowTemplateReviews(d))
 
-	group.GET("/projects/:project_id/workflow-runs", listRuns(d))
-	group.GET("/projects/:project_id/workflows", listWorkflows(d))
-	group.POST("/projects/:project_id/workflows/import", importWorkflow(d))
-	group.POST("/projects/:project_id/workflows/migrate", migrateProject(d))
-	group.GET("/projects/:project_id/event-log", replayProjectEvents(d))
+	group.GET("/projects/:name/workflow-runs", listRuns(d))
+	group.GET("/projects/:name/workflows", listWorkflows(d))
+	group.POST("/projects/:name/workflows/import", importWorkflow(d))
+	group.POST("/projects/:name/workflows/migrate", migrateProject(d))
+	group.GET("/projects/:name/event-log", replayProjectEvents(d))
 }
 
 // --- 请求体 ---
@@ -1244,7 +1244,7 @@ func listRuns(d WorkflowDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := d.Workflows.ListRuns(c.Request.Context(), c.Param("project_id"), currentUserID(c), limit)
+		result, err := d.Workflows.ListRuns(c.Request.Context(), c.Param("name"), currentUserID(c), limit)
 		if err != nil {
 			abortWorkflowErr(c, err)
 			return
@@ -1255,7 +1255,7 @@ func listRuns(d WorkflowDeps) gin.HandlerFunc {
 
 func listWorkflows(d WorkflowDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, err := d.Workflows.ListDefinitions(c.Request.Context(), c.Param("project_id"), currentUserID(c))
+		result, err := d.Workflows.ListDefinitions(c.Request.Context(), c.Param("name"), currentUserID(c))
 		if err != nil {
 			abortWorkflowErr(c, err)
 			return
@@ -1328,7 +1328,7 @@ func importWorkflow(d WorkflowDeps) gin.HandlerFunc {
 		}
 		result, err := d.Workflows.ImportDefinition(c.Request.Context(), service.WorkflowImportParams{
 			WorkspaceID:    workspaceID,
-			ProjectID:      c.Param("project_id"),
+			ProjectID:      c.Param("name"),
 			Name:           name,
 			Nodes:          nodes,
 			Edges:          edges,
@@ -1358,7 +1358,7 @@ func migrateProject(d WorkflowDeps) gin.HandlerFunc {
 			return
 		}
 		result, err := d.Workflows.MigrateProject(
-			c.Request.Context(), workspaceID, c.Param("project_id"), currentUserID(c),
+			c.Request.Context(), workspaceID, c.Param("name"), currentUserID(c),
 		)
 		if err != nil {
 			abortWorkflowErr(c, err)
@@ -1379,7 +1379,7 @@ func replayProjectEvents(d WorkflowDeps) gin.HandlerFunc {
 			return
 		}
 		result, err := d.Workflows.ListProjectEvents(
-			c.Request.Context(), c.Param("project_id"), currentUserID(c), int64(after), limit,
+			c.Request.Context(), c.Param("name"), currentUserID(c), int64(after), limit,
 		)
 		if err != nil {
 			abortWorkflowErr(c, err)

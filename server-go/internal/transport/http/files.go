@@ -51,7 +51,7 @@ func RegisterFiles(group *gin.RouterGroup, d FilesDeps) {
 	group.GET(base+"/drafts/:episode/step:step", getDraftContent(d))
 	group.PUT(base+"/drafts/:episode/step:step", putDraftContent(d))
 	group.DELETE(base+"/drafts/:episode/step:step", deleteDraftContent(d))
-	group.DELETE(base+"/characters/:char_name/reference-audio", deleteCharacterRefAudio(d))
+	group.DELETE(base+"/characters/:entry/reference-audio", deleteCharacterRefAudio(d))
 }
 
 // serveProjectFile 服务项目内静态文件。
@@ -225,7 +225,7 @@ func deleteDraftContent(d FilesDeps) gin.HandlerFunc {
 func deleteCharacterRefAudio(d FilesDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if err := d.Files.DeleteCharacterReferenceAudio(
-			c.Param("name"), c.Param("char_name")); err != nil {
+			c.Param("name"), c.Param("entry")); err != nil {
 			abortFilesErr(c, err)
 			return
 		}
@@ -261,9 +261,9 @@ func abortFilesErr(c *gin.Context, err error) {
 		missing  *service.MediaAssetNotFoundError
 	)
 	switch {
-	case errors.As(err, &missing) && c.Param("char_name") != "":
+	case errors.As(err, &missing) && c.Param("entry") != "":
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "character_not_found",
-			map[string]any{"name": c.Param("char_name")}))
+			map[string]any{"name": c.Param("entry")}))
 	case errors.Is(err, os.ErrNotExist):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "file_not_found",
 			map[string]any{"path": c.Param("filename")}))

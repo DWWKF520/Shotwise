@@ -20,8 +20,8 @@ type CreativeBoardDeps struct {
 
 // RegisterCreativeBoards 注册创意板路由；调用方负责挂 feature gate。
 func RegisterCreativeBoards(group *gin.RouterGroup, d CreativeBoardDeps) {
-	group.POST("/projects/:project_id/creative-boards", createCreativeBoard(d))
-	group.GET("/projects/:project_id/creative-boards", listCreativeBoards(d))
+	group.POST("/projects/:name/creative-boards", createCreativeBoard(d))
+	group.GET("/projects/:name/creative-boards", listCreativeBoards(d))
 
 	group.GET("/creative-boards/:board_id", getCreativeBoard(d))
 	group.PUT("/creative-boards/:board_id/snapshot", replaceCreativeBoardSnapshot(d))
@@ -53,7 +53,7 @@ func createCreativeBoard(d CreativeBoardDeps) gin.HandlerFunc {
 			return
 		}
 		board, err := d.Boards.CreateBoard(
-			c.Request.Context(), currentUserID(c), c.Param("project_id"), name,
+			c.Request.Context(), currentUserID(c), c.Param("name"), name,
 			anyMap(body["viewport"]), anyMap(body["display_settings"]),
 		)
 		if err != nil {
@@ -66,7 +66,7 @@ func createCreativeBoard(d CreativeBoardDeps) gin.HandlerFunc {
 
 func listCreativeBoards(d CreativeBoardDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, err := d.Boards.ListBoards(c.Request.Context(), currentUserID(c), c.Param("project_id"))
+		result, err := d.Boards.ListBoards(c.Request.Context(), currentUserID(c), c.Param("name"))
 		if err != nil {
 			abortCreativeBoardErr(c, err)
 			return

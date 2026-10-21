@@ -17,8 +17,8 @@ func TestRegisterCreativeBoardsRoutes(t *testing.T) {
 		registered[route.Method+" "+route.Path] = true
 	}
 	want := []string{
-		http.MethodPost + " /api/v1/projects/:project_id/creative-boards",
-		http.MethodGet + " /api/v1/projects/:project_id/creative-boards",
+		http.MethodPost + " /api/v1/projects/:name/creative-boards",
+		http.MethodGet + " /api/v1/projects/:name/creative-boards",
 		http.MethodGet + " /api/v1/creative-boards/:board_id",
 		http.MethodPut + " /api/v1/creative-boards/:board_id/snapshot",
 		http.MethodPatch + " /api/v1/creative-boards/:board_id",

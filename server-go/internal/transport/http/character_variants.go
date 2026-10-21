@@ -30,13 +30,13 @@ var variantAllowedKeys = map[string]bool{
 // RegisterCharacterExtras 注册头像与变体端点（挂在 /api/v1 之下，authed 组内）。
 func RegisterCharacterExtras(group *gin.RouterGroup, deps CharacterDeps) {
 	h := &characterHandlers{deps: deps}
-	group.POST("/projects/:name/characters/:char_name/avatar", h.uploadAvatar)
+	group.POST("/projects/:name/characters/:entry/avatar", h.uploadAvatar)
 	// 旧版别名（Python include_in_schema=False）：不带 /projects 前缀，仅兼容存量客户端。
-	group.POST("/:name/characters/:char_name/avatar", h.uploadAvatar)
-	group.GET("/projects/:name/characters/:char_name/variants", h.listVariants)
-	group.POST("/projects/:name/characters/:char_name/variants", h.createVariant)
-	group.PATCH("/projects/:name/characters/:char_name/variants/:variant_id", h.updateVariant)
-	group.DELETE("/projects/:name/characters/:char_name/variants/:variant_id", h.deleteVariant)
+	group.POST("/:name/characters/:entry/avatar", h.uploadAvatar)
+	group.GET("/projects/:name/characters/:entry/variants", h.listVariants)
+	group.POST("/projects/:name/characters/:entry/variants", h.createVariant)
+	group.PATCH("/projects/:name/characters/:entry/variants/:variant_id", h.updateVariant)
+	group.DELETE("/projects/:name/characters/:entry/variants/:variant_id", h.deleteVariant)
 }
 
 type characterHandlers struct{ deps CharacterDeps }
@@ -75,7 +75,7 @@ func (h *characterHandlers) uploadAvatar(c *gin.Context) {
 		return
 	}
 
-	relativePath, err := h.deps.Variants.UploadCharacterAvatar(c.Param("name"), c.Param("char_name"), content)
+	relativePath, err := h.deps.Variants.UploadCharacterAvatar(c.Param("name"), c.Param("entry"), content)
 	if err != nil {
 		abortCharacterErr(c, err)
 		return
@@ -84,7 +84,7 @@ func (h *characterHandlers) uploadAvatar(c *gin.Context) {
 }
 
 func (h *characterHandlers) listVariants(c *gin.Context) {
-	variants, err := h.deps.Variants.ListVariants(c.Param("name"), c.Param("char_name"))
+	variants, err := h.deps.Variants.ListVariants(c.Param("name"), c.Param("entry"))
 	if err != nil {
 		abortCharacterErr(c, err)
 		return
@@ -124,7 +124,7 @@ func (h *characterHandlers) createVariant(c *gin.Context) {
 		abortVariantError(c, http.StatusUnprocessableEntity, "character_variant_invalid_status", nil)
 		return
 	}
-	variant, err := h.deps.Variants.CreateVariant(c.Param("name"), c.Param("char_name"), service.VariantCreateInput{
+	variant, err := h.deps.Variants.CreateVariant(c.Param("name"), c.Param("entry"), service.VariantCreateInput{
 		Slug:         derefVariantString(body.Slug),
 		DisplayName:  body.DisplayName,
 		Description:  body.Description,
@@ -163,7 +163,7 @@ func (h *characterHandlers) updateVariant(c *gin.Context) {
 		return
 	}
 	_, metadataSet := raw["metadata"]
-	variant, err := h.deps.Variants.UpdateVariant(c.Param("name"), c.Param("char_name"), c.Param("variant_id"),
+	variant, err := h.deps.Variants.UpdateVariant(c.Param("name"), c.Param("entry"), c.Param("variant_id"),
 		service.VariantUpdateInput{
 			Slug:         body.Slug,
 			DisplayName:  body.DisplayName,
@@ -182,7 +182,7 @@ func (h *characterHandlers) updateVariant(c *gin.Context) {
 }
 
 func (h *characterHandlers) deleteVariant(c *gin.Context) {
-	variant, err := h.deps.Variants.DeleteVariant(c.Param("name"), c.Param("char_name"), c.Param("variant_id"))
+	variant, err := h.deps.Variants.DeleteVariant(c.Param("name"), c.Param("entry"), c.Param("variant_id"))
 	if err != nil {
 		abortCharacterErr(c, err)
 		return
@@ -271,7 +271,7 @@ func abortCharacterErr(c *gin.Context, err error) {
 		// FileNotFoundError→project_not_found / KeyError→character_not_found 的可观察
 		// 差异在这里收敛：角色缺失更常见，统一按 character_not_found。
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "character_not_found",
-			map[string]any{"name": c.Param("char_name")}))
+			map[string]any{"name": c.Param("entry")}))
 	default:
 		apperr.Abort(c, apperr.Internal(err))
 	}

@@ -35,15 +35,15 @@ type DraftPromotionDeps struct {
 // 与 /draft-promotions/:draft_id 同层，gin 按静态优先匹配（与 Python 侧
 // 「先注册具体路径」的实际效果一致）。
 func RegisterDraftPromotions(group *gin.RouterGroup, d DraftPromotionDeps) {
-	group.POST("/projects/:project_name/draft-promotions", createDraftPromotion(d, domain.DraftOriginAgent))
-	group.POST("/projects/:project_name/draft-promotions/upload", createDraftPromotion(d, domain.DraftOriginUpload))
-	group.POST("/projects/:project_name/draft-promotions/online-ai", createDraftPromotion(d, domain.DraftOriginOnlineAI))
-	group.GET("/projects/:project_name/draft-promotions", listDraftPromotions(d))
-	group.GET("/projects/:project_name/draft-promotions/:draft_id", getDraftPromotion(d))
-	group.PATCH("/projects/:project_name/draft-promotions/:draft_id", updateDraftPromotion(d))
-	group.POST("/projects/:project_name/draft-promotions/:draft_id/abandon", abandonDraftPromotion(d))
-	group.POST("/projects/:project_name/draft-promotions/:draft_id/prepare", prepareDraftPromotion(d))
-	group.POST("/projects/:project_name/draft-promotions/:draft_id/confirm", confirmDraftPromotion(d))
+	group.POST("/projects/:name/draft-promotions", createDraftPromotion(d, domain.DraftOriginAgent))
+	group.POST("/projects/:name/draft-promotions/upload", createDraftPromotion(d, domain.DraftOriginUpload))
+	group.POST("/projects/:name/draft-promotions/online-ai", createDraftPromotion(d, domain.DraftOriginOnlineAI))
+	group.GET("/projects/:name/draft-promotions", listDraftPromotions(d))
+	group.GET("/projects/:name/draft-promotions/:draft_id", getDraftPromotion(d))
+	group.PATCH("/projects/:name/draft-promotions/:draft_id", updateDraftPromotion(d))
+	group.POST("/projects/:name/draft-promotions/:draft_id/abandon", abandonDraftPromotion(d))
+	group.POST("/projects/:name/draft-promotions/:draft_id/prepare", prepareDraftPromotion(d))
+	group.POST("/projects/:name/draft-promotions/:draft_id/confirm", confirmDraftPromotion(d))
 }
 
 // --- 请求体 ---
@@ -82,7 +82,7 @@ func createDraftPromotion(d DraftPromotionDeps, origin domain.DraftOrigin) gin.H
 			abortMissingField(c, "content")
 			return
 		}
-		target := domain.DraftTarget{ProjectName: c.Param("project_name"), ScriptFile: *req.ScriptFile}
+		target := domain.DraftTarget{ProjectName: c.Param("name"), ScriptFile: *req.ScriptFile}
 		draft, err := d.Drafts.Create(target, req.Content, origin, currentUserID(c))
 		if err != nil {
 			abortDraftErr(c, err, *req.ScriptFile)
@@ -94,7 +94,7 @@ func createDraftPromotion(d DraftPromotionDeps, origin domain.DraftOrigin) gin.H
 
 func listDraftPromotions(d DraftPromotionDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		projectName := c.Param("project_name")
+		projectName := c.Param("name")
 		actorID := currentUserID(c)
 		var drafts []*domain.Draft
 		var err error
@@ -233,7 +233,7 @@ func loadScopedDraft(c *gin.Context, d DraftPromotionDeps) (*domain.Draft, bool)
 		abortDraftErr(c, err, "")
 		return nil, false
 	}
-	if draft.Target.ProjectName != c.Param("project_name") {
+	if draft.Target.ProjectName != c.Param("name") {
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "draft_not_found", map[string]any{"id": draft.ID}))
 		return nil, false
 	}

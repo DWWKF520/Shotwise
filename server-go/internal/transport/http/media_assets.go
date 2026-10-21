@@ -29,15 +29,15 @@ type MediaAssetsDeps struct {
 // 路由树注意：静态段（upload / scan / content / reconciliation）与 :media_asset_id
 // 参数段同层共存，gin 按静态优先匹配，不冲突。
 func RegisterMediaAssets(group *gin.RouterGroup, d MediaAssetsDeps) {
-	group.GET("/projects/:project_id/media-assets", listMediaAssets(d))
-	group.POST("/projects/:project_id/media-assets/upload", uploadMediaAsset(d))
-	group.POST("/projects/:project_id/media-assets/scan", scanMediaAssets(d))
-	group.POST("/projects/:project_id/media-assets/reconciliation/retry", retryMediaAssets(d))
-	group.GET("/projects/:project_id/media-assets/content/:media_asset_id", getMediaAssetContent(d))
-	group.GET("/projects/:project_id/media-assets/:media_asset_id", getMediaAsset(d))
-	group.POST("/projects/:project_id/media-assets/:media_asset_id/bindings", bindMediaAsset(d))
-	group.PATCH("/projects/:project_id/media-assets/:media_asset_id/archive", archiveMediaAsset(d))
-	group.DELETE("/projects/:project_id/media-assets/:media_asset_id", deleteMediaAsset(d))
+	group.GET("/projects/:name/media-assets", listMediaAssets(d))
+	group.POST("/projects/:name/media-assets/upload", uploadMediaAsset(d))
+	group.POST("/projects/:name/media-assets/scan", scanMediaAssets(d))
+	group.POST("/projects/:name/media-assets/reconciliation/retry", retryMediaAssets(d))
+	group.GET("/projects/:name/media-assets/content/:media_asset_id", getMediaAssetContent(d))
+	group.GET("/projects/:name/media-assets/:media_asset_id", getMediaAsset(d))
+	group.POST("/projects/:name/media-assets/:media_asset_id/bindings", bindMediaAsset(d))
+	group.PATCH("/projects/:name/media-assets/:media_asset_id/archive", archiveMediaAsset(d))
+	group.DELETE("/projects/:name/media-assets/:media_asset_id", deleteMediaAsset(d))
 }
 
 // mediaAssetKinds / origins / bindingKinds 是查询参数的合法枚举取值。
@@ -52,7 +52,7 @@ var mediaBindingKinds = map[string]bool{
 
 // resolveMediaProjectRoot 解析项目根目录；不存在或非法时写出 404 并返回 false。
 func resolveMediaProjectRoot(c *gin.Context, store *service.ProjectStore) (string, bool) {
-	projectID := c.Param("project_id")
+	projectID := c.Param("name")
 	if !store.Exists(projectID) {
 		apperr.Abort(c, apperr.NewLiteral(http.StatusNotFound, "project_not_found"))
 		return "", false
@@ -132,7 +132,7 @@ func listMediaAssets(d MediaAssetsDeps) gin.HandlerFunc {
 			}
 			archived = &parsed
 		}
-		projectID := c.Param("project_id")
+		projectID := c.Param("name")
 		result, err := service.ListProjectMediaAssets(service.ListProjectMediaAssetsParams{
 			ProjectID:     &projectID,
 			ProjectRoot:   root,
@@ -185,7 +185,7 @@ func uploadMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 		}
 		originalName := filename
 		asset, err := service.RegisterMediaAsset(service.RegisterMediaAssetParams{
-			ProjectID:    c.Param("project_id"),
+			ProjectID:    c.Param("name"),
 			ProjectRoot:  root,
 			RelativePath: relativePath,
 			Origin:       service.MediaOriginUpload,
@@ -200,7 +200,7 @@ func uploadMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 			reason := "upload_registration_unavailable"
 			origin := service.MediaOriginUpload
 			if _, enqErr := catalog.EnqueueReconciliation(service.EnqueueMediaReconciliationParams{
-				ProjectID:    c.Param("project_id"),
+				ProjectID:    c.Param("name"),
 				RelativePath: relativePath,
 				Reason:       reason,
 				Origin:       origin,
@@ -369,7 +369,7 @@ func bindMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 			return
 		}
 		result, err := service.BindProjectMediaAsset(
-			root, c.Param("project_id"), c.Param("media_asset_id"), bindingKind, targetID, purpose,
+			root, c.Param("name"), c.Param("media_asset_id"), bindingKind, targetID, purpose,
 		)
 		if err != nil {
 			abortMediaAssetErr(c, err)
@@ -425,7 +425,7 @@ func scanMediaAssets(d MediaAssetsDeps) gin.HandlerFunc {
 			}
 			dryRun = parsed
 		}
-		result, err := service.ScanProjectMediaAssets(c.Param("project_id"), root, dryRun)
+		result, err := service.ScanProjectMediaAssets(c.Param("name"), root, dryRun)
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return
@@ -444,7 +444,7 @@ func retryMediaAssets(d MediaAssetsDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := service.RetryProjectMediaReconciliation(c.Param("project_id"), root, itemID)
+		result, err := service.RetryProjectMediaReconciliation(c.Param("name"), root, itemID)
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return

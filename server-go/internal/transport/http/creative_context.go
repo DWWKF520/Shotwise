@@ -22,13 +22,13 @@ type CreativeContextDeps struct {
 
 // RegisterCreativeContext 注册创建上下文路由；调用方负责挂 feature gate。
 func RegisterCreativeContext(group *gin.RouterGroup, d CreativeContextDeps) {
-	group.POST("/projects/:project_id/creative-context/resolve", resolveCreativeContext(d))
-	group.POST("/projects/:project_id/creative-context/resolve-references", resolveCreativeReferences(d))
+	group.POST("/projects/:name/creative-context/resolve", resolveCreativeContext(d))
+	group.POST("/projects/:name/creative-context/resolve-references", resolveCreativeReferences(d))
 }
 
 func resolveCreativeContext(d CreativeContextDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		projectID := c.Param("project_id")
+		projectID := c.Param("name")
 		if !d.Store.Exists(projectID) {
 			apperr.Abort(c, apperr.NewLiteral(http.StatusNotFound, "project_not_found"))
 			return
@@ -48,7 +48,7 @@ func resolveCreativeContext(d CreativeContextDeps) gin.HandlerFunc {
 
 func resolveCreativeReferences(d CreativeContextDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		projectID := c.Param("project_id")
+		projectID := c.Param("name")
 		if !d.Store.Exists(projectID) {
 			apperr.Abort(c, apperr.NewLiteral(http.StatusNotFound, "project_not_found"))
 			return

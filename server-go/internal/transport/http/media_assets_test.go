@@ -25,15 +25,15 @@ func TestRegisterMediaAssetsRoutes(t *testing.T) {
 		registered[route.Method+" "+route.Path] = true
 	}
 	want := []string{
-		http.MethodGet + " /api/v1/projects/:project_id/media-assets",
-		http.MethodPost + " /api/v1/projects/:project_id/media-assets/upload",
-		http.MethodPost + " /api/v1/projects/:project_id/media-assets/scan",
-		http.MethodPost + " /api/v1/projects/:project_id/media-assets/reconciliation/retry",
-		http.MethodGet + " /api/v1/projects/:project_id/media-assets/content/:media_asset_id",
-		http.MethodGet + " /api/v1/projects/:project_id/media-assets/:media_asset_id",
-		http.MethodPost + " /api/v1/projects/:project_id/media-assets/:media_asset_id/bindings",
-		http.MethodPatch + " /api/v1/projects/:project_id/media-assets/:media_asset_id/archive",
-		http.MethodDelete + " /api/v1/projects/:project_id/media-assets/:media_asset_id",
+		http.MethodGet + " /api/v1/projects/:name/media-assets",
+		http.MethodPost + " /api/v1/projects/:name/media-assets/upload",
+		http.MethodPost + " /api/v1/projects/:name/media-assets/scan",
+		http.MethodPost + " /api/v1/projects/:name/media-assets/reconciliation/retry",
+		http.MethodGet + " /api/v1/projects/:name/media-assets/content/:media_asset_id",
+		http.MethodGet + " /api/v1/projects/:name/media-assets/:media_asset_id",
+		http.MethodPost + " /api/v1/projects/:name/media-assets/:media_asset_id/bindings",
+		http.MethodPatch + " /api/v1/projects/:name/media-assets/:media_asset_id/archive",
+		http.MethodDelete + " /api/v1/projects/:name/media-assets/:media_asset_id",
 	}
 	for _, route := range want {
 		if !registered[route] {

@@ -68,11 +68,11 @@ func TestRegisterWorkflowRoutes(t *testing.T) {
 		http.MethodPost + " /api/v1/admin/workflow-templates/:template_id/suspend",
 		http.MethodPost + " /api/v1/admin/workflow-templates/:template_id/restore",
 		http.MethodGet + " /api/v1/admin/workflow-templates/reviews",
-		http.MethodGet + " /api/v1/projects/:project_id/workflow-runs",
-		http.MethodGet + " /api/v1/projects/:project_id/workflows",
-		http.MethodPost + " /api/v1/projects/:project_id/workflows/import",
-		http.MethodPost + " /api/v1/projects/:project_id/workflows/migrate",
-		http.MethodGet + " /api/v1/projects/:project_id/event-log",
+		http.MethodGet + " /api/v1/projects/:name/workflow-runs",
+		http.MethodGet + " /api/v1/projects/:name/workflows",
+		http.MethodPost + " /api/v1/projects/:name/workflows/import",
+		http.MethodPost + " /api/v1/projects/:name/workflows/migrate",
+		http.MethodGet + " /api/v1/projects/:name/event-log",
 	}
 	if len(want) != 41 {
 		t.Fatalf("endpoint list must stay at 41, got %d", len(want))

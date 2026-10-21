@@ -342,11 +342,11 @@ func (s *GlobalAssetService) FromProject(ctx context.Context, in FromProjectInpu
 	}
 	bucket, ok := pf.BucketRef(kind)
 	if !ok || bucket == nil {
-		return nil, &GlobalSourceMissingError{}
+		return nil, &GlobalSourceMissingError{Project: in.ProjectName, Resource: in.ResourceID}
 	}
 	key, ok := bucket.ResolveKey(in.ResourceID)
 	if !ok || (*bucket)[key] == nil {
-		return nil, &GlobalSourceMissingError{}
+		return nil, &GlobalSourceMissingError{Project: in.ProjectName, Resource: in.ResourceID}
 	}
 	entry := (*bucket)[key]
 
@@ -500,7 +500,10 @@ func (s *GlobalAssetService) FromProject(ctx context.Context, in FromProjectInpu
 }
 
 // GlobalSourceMissingError 表示项目内未找到指定资源。
-type GlobalSourceMissingError struct{}
+type GlobalSourceMissingError struct {
+	Project  string
+	Resource string
+}
 
 func (e *GlobalSourceMissingError) Error() string { return "source resource not found" }
 
