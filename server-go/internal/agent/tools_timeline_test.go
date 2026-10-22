@@ -3,12 +3,14 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/components/tool"
 
+	"github.com/shotwise/shotwise/internal/agent/tools/timeline"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
@@ -16,6 +18,33 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+// writeReviewJSON 写入 JSON 文件（原 review 测试共享辅助，随包重组就地复制）。
+func writeReviewJSON(t *testing.T, path string, v any) {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeReviewVideo 写入占位视频文件（内容不是合法视频，仅用于存在性判定）。
+func writeReviewVideo(t *testing.T, dir, rel string) {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("not a real video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // 时间线内部工具（get_episode_media_manifest / create_timeline_plan / get_timeline_plan /
 // update_timeline_plan / validate_timeline_plan）的端到端测试：真实 sqlite + 真实项目目录。
@@ -80,7 +109,7 @@ func timelineToolsetForTest(t *testing.T) (*Runtime, map[string]tool.InvokableTo
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
-	tools, err := r.timelineTools("demo")
+	tools, err := timeline.NewTools("demo", r.projectRoot("demo"), r.timelinePlans)
 	if err != nil {
 		t.Fatalf("timeline tools: %v", err)
 	}
@@ -145,7 +174,7 @@ func TestTimelineToolsLifecycle(t *testing.T) {
 	_, byName := timelineToolsetForTest(t)
 
 	// 1. 媒体清单（只读）
-	text, manifest, isError := invokeTimelineTool(t, byName, timelineGetManifestName, `{"script":"episode_1.json"}`)
+	text, manifest, isError := invokeTimelineTool(t, byName, "get_episode_media_manifest", `{"script":"episode_1.json"}`)
 	if isError {
 		t.Fatalf("manifest failed: %s", text)
 	}
@@ -166,7 +195,7 @@ func TestTimelineToolsLifecycle(t *testing.T) {
 	}
 
 	// 2. 创建计划
-	text, created, isError := invokeTimelineTool(t, byName, timelineCreatePlanName, `{"script":"episode_1.json"}`)
+	text, created, isError := invokeTimelineTool(t, byName, "create_timeline_plan", `{"script":"episode_1.json"}`)
 	if isError {
 		t.Fatalf("create failed: %s", text)
 	}
@@ -183,13 +212,13 @@ func TestTimelineToolsLifecycle(t *testing.T) {
 	}
 
 	// 3. 读取计划
-	_, fetched, isError := invokeTimelineTool(t, byName, timelineGetPlanName, `{"plan_id":"`+planID+`"}`)
+	_, fetched, isError := invokeTimelineTool(t, byName, "get_timeline_plan", `{"plan_id":"`+planID+`"}`)
 	if isError || fetched["plan_id"] != planID {
 		t.Fatalf("get plan: err=%v payload=%v", isError, fetched)
 	}
 
 	// 4. 更新计划（允许字段）
-	text, updated, isError := invokeTimelineTool(t, byName, timelineUpdatePlanName,
+	text, updated, isError := invokeTimelineTool(t, byName, "update_timeline_plan",
 		`{"plan_id":"`+planID+`","patch":{"director_review":{"status":"approved"}}}`)
 	if isError {
 		t.Fatalf("update failed: %s", text)
@@ -203,7 +232,7 @@ func TestTimelineToolsLifecycle(t *testing.T) {
 	}
 
 	// 5. 校验计划：ffprobe 缺失导致媒体可用性阻塞，其余检查通过
-	text, validated, isError := invokeTimelineTool(t, byName, timelineValidatePlanName, `{"plan_id":"`+planID+`"}`)
+	text, validated, isError := invokeTimelineTool(t, byName, "validate_timeline_plan", `{"plan_id":"`+planID+`"}`)
 	if isError {
 		t.Fatalf("validate failed: %s", text)
 	}
@@ -232,31 +261,31 @@ func TestTimelineToolsRejectsInvalidInput(t *testing.T) {
 	_, byName := timelineToolsetForTest(t)
 
 	// plan_id 空
-	text, _, isError := invokeTimelineTool(t, byName, timelineGetPlanName, `{"plan_id":"  "}`)
+	text, _, isError := invokeTimelineTool(t, byName, "get_timeline_plan", `{"plan_id":"  "}`)
 	if !isError || !strings.Contains(text, "plan_id 必须是非空字符串") {
 		t.Fatalf("empty plan_id not rejected: %s", text)
 	}
 
 	// patch 空
-	text, _, isError = invokeTimelineTool(t, byName, timelineUpdatePlanName, `{"plan_id":"x","patch":{}}`)
+	text, _, isError = invokeTimelineTool(t, byName, "update_timeline_plan", `{"plan_id":"x","patch":{}}`)
 	if !isError || !strings.Contains(text, "patch 必须是非空对象") {
 		t.Fatalf("empty patch not rejected: %s", text)
 	}
 
 	// 未知 patch 字段：需先有一个真实计划（get_plan 先于 _apply_patch）
-	text, created, isError := invokeTimelineTool(t, byName, timelineCreatePlanName, `{"script":"episode_1.json"}`)
+	text, created, isError := invokeTimelineTool(t, byName, "create_timeline_plan", `{"script":"episode_1.json"}`)
 	if isError {
 		t.Fatalf("create failed: %s", text)
 	}
 	planID, _ := created["plan_id"].(string)
-	text, _, isError = invokeTimelineTool(t, byName, timelineUpdatePlanName,
+	text, _, isError = invokeTimelineTool(t, byName, "update_timeline_plan",
 		`{"plan_id":"`+planID+`","patch":{"bogus":{"a":1}}}`)
 	if !isError || !strings.Contains(text, "不允许更新的 plan 字段") {
 		t.Fatalf("unknown patch field not rejected: %s", text)
 	}
 
 	// 领域校验失败：trim 吃掉整段
-	text, _, isError = invokeTimelineTool(t, byName, timelineCreatePlanName,
+	text, _, isError = invokeTimelineTool(t, byName, "create_timeline_plan",
 		`{"script":"episode_1.json","timeline_items":[{"unit_id":"E1S01","duration_seconds":5,"trim":{"start_seconds":5,"end_seconds":null}}]}`)
 	if !isError || !strings.Contains(text, "empty_after_trim") {
 		t.Fatalf("trim-overrun must surface validation log: %s", text)
@@ -270,7 +299,7 @@ func TestTimelineToolsUnconfiguredAreNotRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tools, err := r.timelineTools("demo")
+	tools, err := timeline.NewTools("demo", r.projectRoot("demo"), r.timelinePlans)
 	if err != nil {
 		t.Fatalf("unconfigured runtime must not error: %v", err)
 	}

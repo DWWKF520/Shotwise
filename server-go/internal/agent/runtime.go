@@ -35,6 +35,17 @@ import (
 	"github.com/shotwise/shotwise/internal/agent/policy"
 	"github.com/shotwise/shotwise/internal/agent/skills"
 	"github.com/shotwise/shotwise/internal/agent/subagents"
+	"github.com/shotwise/shotwise/internal/agent/tools"
+	"github.com/shotwise/shotwise/internal/agent/tools/assets"
+	"github.com/shotwise/shotwise/internal/agent/tools/builtin"
+	"github.com/shotwise/shotwise/internal/agent/tools/imageedit"
+	"github.com/shotwise/shotwise/internal/agent/tools/memory"
+	"github.com/shotwise/shotwise/internal/agent/tools/project"
+	"github.com/shotwise/shotwise/internal/agent/tools/review"
+	"github.com/shotwise/shotwise/internal/agent/tools/script"
+	"github.com/shotwise/shotwise/internal/agent/tools/storyboard"
+	"github.com/shotwise/shotwise/internal/agent/tools/timeline"
+	"github.com/shotwise/shotwise/internal/agent/tools/video"
 	"github.com/shotwise/shotwise/internal/agent/workspace"
 	"github.com/shotwise/shotwise/internal/service"
 )
@@ -227,44 +238,48 @@ type Runtime struct {
 	// extraTools 追加在 BuiltinTools 之后的扩展工具（测试 / 后续增量注入位）。
 	extraTools []tool.BaseTool
 	// assetWriter / projectWriter 为 patch_project 的写入依赖（WithProjectWriters 注入）。
-	assetWriter   AssetWriter
-	projectWriter ProjectWriter
+	assetWriter   project.AssetWriter
+	projectWriter project.ProjectWriter
 	// assetQueue / assetProjects 为 generate_assets 的依赖（WithAssetGeneration 注入）。
-	assetQueue    AssetQueue
-	assetProjects AssetProjects
+	assetQueue    tools.AssetQueue
+	assetProjects tools.AssetProjects
 	// videoCaps 为 get_video_capabilities 的能力解析器（WithVideoCapabilities 注入）。
-	videoCaps VideoCapabilityReader
+	videoCaps tools.VideoCapabilityReader
 	// relationGenerator / relationProjects 为 analyze_character_relations 的依赖（WithRelationAnalysis 注入）。
-	relationGenerator RelationGeneratorFactory
-	relationProjects  RelationProjects
+	relationGenerator assets.RelationGeneratorFactory
+	relationProjects  assets.RelationProjects
 	// scriptStore / assetRenamer 为剧本编辑与级联改名工具的依赖（WithScriptEditing / WithAssetRename 注入）。
-	scriptStore  ScriptStore
-	assetRenamer AssetRenamer
+	scriptStore  tools.ScriptStore
+	assetRenamer assets.AssetRenamer
 	// generationQueue / generationProjects 为生成类工具（分镜图 / 旁白配音）的依赖。
-	generationQueue    AssetQueue
-	generationProjects GenerationProjects
+	generationQueue    tools.AssetQueue
+	generationProjects tools.GenerationProjects
 	// imageEditQueue / imageEditProjects / imageEditCaps 为 edit_images 的依赖（WithImageEditTools 注入）。
-	imageEditQueue    AssetQueue
-	imageEditProjects GenerationProjects
-	imageEditCaps     ImageEditCapabilityReader
+	imageEditQueue    tools.AssetQueue
+	imageEditProjects tools.GenerationProjects
+	imageEditCaps     imageedit.ImageEditCapabilityReader
 	// gridQueue / gridProjects / gridCaps / gridSplitter 为 generate_grid 的依赖（WithGridTools 注入）。
-	gridQueue    AssetQueue
-	gridProjects GenerationProjects
+	gridQueue    tools.AssetQueue
+	gridProjects tools.GenerationProjects
 	gridCaps     service.ImageCapabilityResolver
-	gridSplitter GridSplitter
+	gridSplitter storyboard.GridSplitter
 	// episodeStore / episodeTextGen 为分集规划工具的依赖（WithEpisodePlanning 注入）。
 	episodeStore   service.EpisodeStore
 	episodeTextGen service.TextCompletionFactory
 	// textGen / scriptProjects 为剧本生成类工具（说书片段拆分 / 剧本规范化等）的依赖
 	// （WithTextGenerationTools 注入）。
 	textGen        service.TextCompletionFactory
-	scriptProjects TextGenerationProjects
+	scriptProjects tools.TextGenerationProjects
 	// reviewProjects 为 step1 审核确认工具的依赖（WithScriptReviewTools 注入）。
-	reviewProjects ScriptReviewProjects
+	reviewProjects script.ScriptReviewProjects
 	// memoryStore 为 propose_memory_candidate 的依赖（WithMemoryProposals 注入）。
 	memoryStore service.MemoryCandidateStore
+	// videoGen 为视频生成工具的依赖组（WithVideoGeneration 注入）；四项齐备时注册 4 个视频生成工具。
+	videoGen video.Deps
+	// timelinePlans 为时间线工具的计划持久化依赖（WithTimelineTools 注入）；nil 时不注册。
+	timelinePlans timeline.TimelinePlanService
 	// textGate 记录各项目最近一次文本清单签名，供 read_project_text 门禁使用。
-	textGate textFileGate
+	textGate tools.TextFileGate
 
 	mu                sync.Mutex
 	active            map[string]*sessionLoop
@@ -300,6 +315,148 @@ func WithChatModel(m model.ToolCallingChatModel) RuntimeOption {
 // 凭证从下一轮起生效，无需重启；解析失败当场报错不缓存。override 仍优先于解析器。
 func WithModelResolver(resolve func(ctx context.Context) (ModelConfig, error)) RuntimeOption {
 	return func(r *Runtime) { r.modelResolver = resolve }
+}
+
+// RelationTextGenerator 是角色关系分析所需的文本生成能力（assets.RelationTextGenerator 别名，
+// 供接线方在闭包签名中引用）。
+type RelationTextGenerator = assets.RelationTextGenerator
+
+// --- 业务工具依赖注入（各工具分类子包的构造器由 buildTools 装配） ---
+
+// WithProjectWriters 注入 patch_project 的资产与项目写入依赖；任一缺失则不注册该工具。
+func WithProjectWriters(assetWriter project.AssetWriter, projectWriter project.ProjectWriter) RuntimeOption {
+	return func(r *Runtime) {
+		r.assetWriter = assetWriter
+		r.projectWriter = projectWriter
+	}
+}
+
+// WithAssetProjects 注入 list_pending_assets / generate_assets 的项目读取依赖。
+func WithAssetProjects(projects tools.AssetProjects) RuntimeOption {
+	return func(r *Runtime) { r.assetProjects = projects }
+}
+
+// WithVideoCapabilities 注入 get_video_capabilities 的能力解析器（*config.Resolver 满足）。
+func WithVideoCapabilities(reader tools.VideoCapabilityReader) RuntimeOption {
+	return func(r *Runtime) { r.videoCaps = reader }
+}
+
+// WithRelationAnalysis 注入 analyze_character_relations 的生成工厂与项目依赖；任一缺失则不注册。
+func WithRelationAnalysis(factory assets.RelationGeneratorFactory, projects assets.RelationProjects) RuntimeOption {
+	return func(r *Runtime) {
+		r.relationGenerator = factory
+		r.relationProjects = projects
+	}
+}
+
+// WithScriptEditing 注入剧本编辑工具的锁内读-改-写依赖；未注入时不注册这组工具。
+func WithScriptEditing(scripts tools.ScriptStore) RuntimeOption {
+	return func(r *Runtime) { r.scriptStore = scripts }
+}
+
+// WithAssetRename 注入 rename_asset 的改名服务；未注入时不注册该工具。
+func WithAssetRename(renamer assets.AssetRenamer) RuntimeOption {
+	return func(r *Runtime) { r.assetRenamer = renamer }
+}
+
+// WithTextGenerationTools 注入剧本生成类工具的文本模型工厂与项目依赖；任一缺失则不注册。
+func WithTextGenerationTools(gen service.TextCompletionFactory, projects tools.TextGenerationProjects) RuntimeOption {
+	return func(r *Runtime) {
+		r.textGen = gen
+		r.scriptProjects = projects
+	}
+}
+
+// WithScriptReviewTools 注入 step1 审核确认工具的依赖；未注入时不注册该工具。
+func WithScriptReviewTools(projects script.ScriptReviewProjects) RuntimeOption {
+	return func(r *Runtime) { r.reviewProjects = projects }
+}
+
+// WithReferenceTools 注入参考生视频工具链依赖；复用剧本生成类工具已注入的 textGen / scriptProjects，
+// 并确保视频能力解析器在场。未注入时参考工具不注册。
+func WithReferenceTools(
+	gen service.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
+) RuntimeOption {
+	return func(r *Runtime) {
+		if gen != nil {
+			r.textGen = gen
+		}
+		if projects != nil {
+			r.scriptProjects = projects
+		}
+		if caps != nil {
+			r.videoCaps = caps
+		}
+	}
+}
+
+// WithMemoryProposals 注入 propose_memory_candidate 的记忆候选存储；未注入时不注册该工具。
+func WithMemoryProposals(store service.MemoryCandidateStore) RuntimeOption {
+	return func(r *Runtime) { r.memoryStore = store }
+}
+
+// WithAssetGeneration 注入 generate_assets / list_pending_assets 的队列与项目依赖。
+func WithAssetGeneration(q tools.AssetQueue, projects tools.AssetProjects) RuntimeOption {
+	return func(r *Runtime) {
+		r.assetQueue = q
+		r.assetProjects = projects
+	}
+}
+
+// WithGenerationTools 注入分镜图 / 旁白配音生成工具的队列与项目依赖；任一缺失则不注册。
+func WithGenerationTools(q tools.AssetQueue, projects tools.GenerationProjects) RuntimeOption {
+	return func(r *Runtime) {
+		r.generationQueue = q
+		r.generationProjects = projects
+	}
+}
+
+// WithImageEditTools 注入 edit_images 的队列、项目与能力解析依赖；任一缺失则不注册。
+func WithImageEditTools(q tools.AssetQueue, projects tools.GenerationProjects, caps imageedit.ImageEditCapabilityReader) RuntimeOption {
+	return func(r *Runtime) {
+		r.imageEditQueue = q
+		r.imageEditProjects = projects
+		r.imageEditCaps = caps
+	}
+}
+
+// WithGridTools 注入 generate_grid 的队列、项目、能力解析与切分依赖；任一缺失则不注册。
+func WithGridTools(
+	q tools.AssetQueue, projects tools.GenerationProjects, caps service.ImageCapabilityResolver, splitter storyboard.GridSplitter,
+) RuntimeOption {
+	return func(r *Runtime) {
+		r.gridQueue = q
+		r.gridProjects = projects
+		r.gridCaps = caps
+		r.gridSplitter = splitter
+	}
+}
+
+// WithEpisodePlanning 注入分集规划工具的账本存储与文本模型工厂；store 缺失时不注册。
+func WithEpisodePlanning(store service.EpisodeStore, gen service.TextCompletionFactory) RuntimeOption {
+	return func(r *Runtime) {
+		r.episodeStore = store
+		r.episodeTextGen = gen
+	}
+}
+
+// WithVideoGeneration 注入视频生成工具的队列/项目/能力解析/剧本锁依赖；任一缺失则不注册这组工具。
+func WithVideoGeneration(
+	q video.VideoGenerationQueue, projects tools.GenerationProjects, caps service.VideoCapabilityResolver, scripts tools.ScriptStore,
+) RuntimeOption {
+	return func(r *Runtime) {
+		r.videoGen = video.Deps{Queue: q, Projects: projects, Caps: caps, Scripts: scripts}
+	}
+}
+
+// WithTimelineTools 注入时间线内部工具的计划持久化依赖；plans 为 nil 时不注册这组工具。
+func WithTimelineTools(plans timeline.TimelinePlanService) RuntimeOption {
+	return func(r *Runtime) {
+		if plans == nil {
+			return
+		}
+		r.timelinePlans = plans
+	}
 }
 
 // NewRuntime 构造运行时。cpStore / evStore 传 nil 时使用内存实现（演示用）。
@@ -783,8 +940,8 @@ func (r *Runtime) prepareAgent(sessionID, project string) func(context.Context, 
 //
 // 独立于 buildAgent：注册校验（如「37 个工具全部在册」的断言）只需这一层，不必构造 chat model
 // 与 middleware 链。
-func (r *Runtime) buildTools(ctx context.Context, sessionID, project string) ([]tool.BaseTool, error) {
-	tools, err := BuiltinTools(r.dataDir, project)
+func (r *Runtime) buildTools(ctx context.Context, sessionID, projectName string) ([]tool.BaseTool, error) {
+	built, err := builtin.Tools(r.dataDir, projectName)
 	if err != nil {
 		return nil, err
 	}
@@ -792,70 +949,72 @@ func (r *Runtime) buildTools(ctx context.Context, sessionID, project string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("agent: build ask_user: %w", err)
 	}
-	tools = append(tools, askUser)
-	tools = append(tools, r.extraTools...)
-	listTextFiles, err := newListProjectTextFilesTool(project, r.projectRoot(project), &r.textGate)
+	built = append(built, askUser)
+	built = append(built, r.extraTools...)
+	listTextFiles, err := project.NewListProjectTextFilesTool(projectName, r.projectRoot(projectName), &r.textGate)
 	if err != nil {
 		return nil, fmt.Errorf("agent: build list_project_text_files: %w", err)
 	}
-	readText, err := newReadProjectTextTool(project, r.projectRoot(project), &r.textGate)
+	readText, err := project.NewReadProjectTextTool(projectName, r.projectRoot(projectName), &r.textGate)
 	if err != nil {
 		return nil, fmt.Errorf("agent: build read_project_text: %w", err)
 	}
-	tools = append(tools, listTextFiles, readText)
+	built = append(built, listTextFiles, readText)
 	if r.assetProjects != nil {
-		pending, err := newListPendingAssetsTool(project, r.assetProjects)
+		pending, err := assets.NewListPendingAssetsTool(projectName, r.assetProjects)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build list_pending_assets: %w", err)
 		}
-		tools = append(tools, pending)
+		built = append(built, pending)
 	}
 	if r.videoCaps != nil && r.assetProjects != nil {
-		caps, err := newGetVideoCapabilitiesTool(project, r.videoCaps, r.assetProjects)
+		caps, err := video.NewGetVideoCapabilitiesTool(projectName, r.videoCaps, r.assetProjects)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build get_video_capabilities: %w", err)
 		}
-		tools = append(tools, caps)
+		built = append(built, caps)
 	}
 	if r.relationGenerator != nil && r.relationProjects != nil {
-		relations, err := newAnalyzeCharacterRelationsTool(project, r.relationGenerator, r.relationProjects)
+		relations, err := assets.NewAnalyzeCharacterRelationsTool(projectName, r.relationGenerator, r.relationProjects)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build analyze_character_relations: %w", err)
 		}
-		tools = append(tools, relations)
+		built = append(built, relations)
 	}
 	if r.assetProjects != nil {
-		review, err := newInspectDirectorReviewTool(project, r.assetProjects)
+		inspector, err := review.NewInspectDirectorReviewTool(projectName, r.assetProjects)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build inspect_director_review: %w", err)
 		}
-		tools = append(tools, review)
+		built = append(built, inspector)
 	}
 	if r.scriptStore != nil {
 		builders := []struct {
 			name string
 			ctor func() (tool.InvokableTool, error)
 		}{
-			{"patch_episode_script", func() (tool.InvokableTool, error) { return newPatchEpisodeScriptTool(project, r.scriptStore) }},
-			{"insert_segment", func() (tool.InvokableTool, error) { return newInsertSegmentTool(project, r.scriptStore) }},
-			{"remove_segment", func() (tool.InvokableTool, error) { return newRemoveSegmentTool(project, r.scriptStore) }},
-			{"split_segment", func() (tool.InvokableTool, error) { return newSplitSegmentTool(project, r.scriptStore) }},
-			{"patch_episode_meta", func() (tool.InvokableTool, error) { return newPatchEpisodeMetaTool(project, r.scriptStore) }},
+			{"patch_episode_script", func() (tool.InvokableTool, error) {
+				return script.NewPatchEpisodeScriptTool(projectName, r.scriptStore)
+			}},
+			{"insert_segment", func() (tool.InvokableTool, error) { return script.NewInsertSegmentTool(projectName, r.scriptStore) }},
+			{"remove_segment", func() (tool.InvokableTool, error) { return script.NewRemoveSegmentTool(projectName, r.scriptStore) }},
+			{"split_segment", func() (tool.InvokableTool, error) { return script.NewSplitSegmentTool(projectName, r.scriptStore) }},
+			{"patch_episode_meta", func() (tool.InvokableTool, error) { return script.NewPatchEpisodeMetaTool(projectName, r.scriptStore) }},
 		}
 		for _, b := range builders {
-			built, err := b.ctor()
+			builtTool, err := b.ctor()
 			if err != nil {
 				return nil, fmt.Errorf("agent: build %s: %w", b.name, err)
 			}
-			tools = append(tools, built)
+			built = append(built, builtTool)
 		}
 	}
 	if r.assetRenamer != nil {
-		rename, err := newRenameAssetTool(project, r.assetRenamer)
+		rename, err := assets.NewRenameAssetTool(projectName, r.assetRenamer)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build rename_asset: %w", err)
 		}
-		tools = append(tools, rename)
+		built = append(built, rename)
 	}
 	if r.generationQueue != nil && r.generationProjects != nil {
 		generators := []struct {
@@ -863,46 +1022,46 @@ func (r *Runtime) buildTools(ctx context.Context, sessionID, project string) ([]
 			ctor func() (tool.InvokableTool, error)
 		}{
 			{"generate_storyboards", func() (tool.InvokableTool, error) {
-				return newGenerateStoryboardsTool(project, r.generationQueue, r.generationProjects)
+				return storyboard.NewGenerateStoryboardsTool(projectName, r.generationQueue, r.generationProjects)
 			}},
 			{"generate_narration_audio", func() (tool.InvokableTool, error) {
-				return newGenerateNarrationAudioTool(project, r.generationQueue, r.generationProjects)
+				return storyboard.NewGenerateNarrationAudioTool(projectName, r.generationQueue, r.generationProjects)
 			}},
 		}
 		for _, g := range generators {
-			built, err := g.ctor()
+			builtTool, err := g.ctor()
 			if err != nil {
 				return nil, fmt.Errorf("agent: build %s: %w", g.name, err)
 			}
-			tools = append(tools, built)
+			built = append(built, builtTool)
 		}
 	}
 	if r.imageEditQueue != nil && r.imageEditProjects != nil && r.imageEditCaps != nil {
-		edit, err := newEditImagesTool(project, r.imageEditQueue, r.imageEditProjects, r.imageEditCaps)
+		edit, err := imageedit.NewEditImagesTool(projectName, r.imageEditQueue, r.imageEditProjects, r.imageEditCaps)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build edit_images: %w", err)
 		}
-		tools = append(tools, edit)
+		built = append(built, edit)
 	}
 	if r.gridQueue != nil && r.gridProjects != nil && r.gridCaps != nil {
-		grid, err := newGenerateGridTool(project, r.gridQueue, r.gridProjects, r.gridCaps, r.gridSplitter)
+		grid, err := storyboard.NewGenerateGridTool(projectName, r.gridQueue, r.gridProjects, r.gridCaps, r.gridSplitter)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build generate_grid: %w", err)
 		}
-		tools = append(tools, grid)
+		built = append(built, grid)
 	}
 	if r.episodeStore != nil {
-		reset, err := newResetEpisodePlanningTool(project, r.episodeStore)
+		reset, err := script.NewResetEpisodePlanningTool(projectName, r.episodeStore)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build reset_episode_planning: %w", err)
 		}
-		tools = append(tools, reset)
+		built = append(built, reset)
 		if r.episodeTextGen != nil {
-			plan, err := newPlanEpisodesTool(project, r.episodeStore, r.episodeTextGen)
+			plan, err := script.NewPlanEpisodesTool(projectName, r.episodeStore, r.episodeTextGen)
 			if err != nil {
 				return nil, fmt.Errorf("agent: build plan_episodes: %w", err)
 			}
-			tools = append(tools, plan)
+			built = append(built, plan)
 		}
 	}
 	if r.textGen != nil && r.scriptProjects != nil {
@@ -911,85 +1070,85 @@ func (r *Runtime) buildTools(ctx context.Context, sessionID, project string) ([]
 			ctor func() (tool.InvokableTool, error)
 		}{
 			{"split_narration_segments", func() (tool.InvokableTool, error) {
-				return newSplitNarrationSegmentsTool(project, r.textGen, r.scriptProjects, r.videoCaps)
+				return script.NewSplitNarrationSegmentsTool(projectName, r.textGen, r.scriptProjects, r.videoCaps)
 			}},
 			{"normalize_drama_script", func() (tool.InvokableTool, error) {
-				return newNormalizeDramaScriptTool(project, r.textGen, r.scriptProjects, r.videoCaps)
+				return script.NewNormalizeDramaScriptTool(projectName, r.textGen, r.scriptProjects, r.videoCaps)
 			}},
 			{"generate_episode_script", func() (tool.InvokableTool, error) {
-				return newGenerateEpisodeScriptTool(project, r.textGen, r.scriptProjects, r.videoCaps)
+				return script.NewGenerateEpisodeScriptTool(projectName, r.textGen, r.scriptProjects, r.videoCaps)
 			}},
 		}
 		for _, b := range builders {
-			built, err := b.ctor()
+			builtTool, err := b.ctor()
 			if err != nil {
 				return nil, fmt.Errorf("agent: build %s: %w", b.name, err)
 			}
-			tools = append(tools, built)
+			built = append(built, builtTool)
 		}
 	}
 	if r.reviewProjects != nil {
-		confirm, err := newConfirmScriptReviewTool(project, r.reviewProjects)
+		confirm, err := script.NewConfirmScriptReviewTool(projectName, r.reviewProjects)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build confirm_script_review: %w", err)
 		}
-		tools = append(tools, confirm)
+		built = append(built, confirm)
 	}
 	// 参考生视频工具链（拆分 / 取回编辑 / 校验晋升）；依赖与剧本生成类工具同源。
 	if r.textGen != nil && r.scriptProjects != nil {
-		refTools, err := ReferenceTools(project, r.textGen, r.scriptProjects, r.videoCaps)
+		refTools, err := video.ReferenceTools(projectName, r.textGen, r.scriptProjects, r.videoCaps)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build reference tools: %w", err)
 		}
-		for _, built := range refTools {
-			tools = append(tools, built)
+		for _, builtTool := range refTools {
+			built = append(built, builtTool)
 		}
 	}
 	if r.memoryStore != nil {
-		memory, err := newProposeMemoryCandidateTool(project, sessionID, r.memoryStore)
+		memoryTool, err := memory.NewProposeMemoryCandidateTool(projectName, sessionID, r.memoryStore)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build propose_memory_candidate: %w", err)
 		}
-		tools = append(tools, memory)
+		built = append(built, memoryTool)
 	}
-	if deps, ok := r.VideoGenerationDeps(); ok {
+	if r.videoGen.Ready() {
 		videoBuilders := []struct {
 			name string
 			ctor func() (tool.InvokableTool, error)
 		}{
-			{"generate_video_episode", func() (tool.InvokableTool, error) { return newGenerateVideoEpisodeTool(project, deps) }},
-			{"generate_video_scene", func() (tool.InvokableTool, error) { return newGenerateVideoSceneTool(project, deps) }},
-			{"generate_video_all", func() (tool.InvokableTool, error) { return newGenerateVideoAllTool(project, deps) }},
-			{"generate_video_selected", func() (tool.InvokableTool, error) { return newGenerateVideoSelectedTool(project, deps) }},
+			{"generate_video_episode", func() (tool.InvokableTool, error) { return video.NewGenerateVideoEpisodeTool(projectName, r.videoGen) }},
+			{"generate_video_scene", func() (tool.InvokableTool, error) { return video.NewGenerateVideoSceneTool(projectName, r.videoGen) }},
+			{"generate_video_all", func() (tool.InvokableTool, error) { return video.NewGenerateVideoAllTool(projectName, r.videoGen) }},
+			{"generate_video_selected", func() (tool.InvokableTool, error) { return video.NewGenerateVideoSelectedTool(projectName, r.videoGen) }},
 		}
 		for _, b := range videoBuilders {
-			built, err := b.ctor()
+			builtTool, err := b.ctor()
 			if err != nil {
 				return nil, fmt.Errorf("agent: build %s: %w", b.name, err)
 			}
-			tools = append(tools, built)
+			built = append(built, builtTool)
 		}
 	}
-	if built, err := r.timelineTools(project); err != nil {
+	timelineBuilt, err := timeline.NewTools(projectName, r.projectRoot(projectName), r.timelinePlans)
+	if err != nil {
 		return nil, err
-	} else {
-		tools = append(tools, built...)
 	}
+	built = append(built, timelineBuilt...)
 	if r.assetWriter != nil && r.projectWriter != nil {
-		patch, err := newPatchProjectTool(project, r.assetWriter, r.projectWriter)
+		patch, err := project.NewPatchProjectTool(projectName, r.assetWriter, r.projectWriter)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build patch_project: %w", err)
 		}
-		tools = append(tools, patch)
+		built = append(built, patch)
 	}
 	if r.assetQueue != nil && r.assetProjects != nil {
-		gen, err := newGenerateAssetsTool(project, r.assetQueue, r.assetProjects)
+		gen, err := assets.NewGenerateAssetsTool(projectName, r.assetQueue, r.assetProjects)
 		if err != nil {
 			return nil, fmt.Errorf("agent: build generate_assets: %w", err)
 		}
-		tools = append(tools, gen)
+		built = append(built, gen)
 	}
-	return tools, nil
+	return built, nil
 }
 
 // buildAgent 装配 ChatModelAgent（设计文档 §11）。

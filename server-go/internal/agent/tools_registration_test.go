@@ -16,7 +16,7 @@ import (
 // 本文件验证「37 个工具在依赖齐备时全部注册」——迁移完成的收口证据。
 // 依赖全部用最小替身（方法集只覆盖注册所需），断言是子集断言，不约束 BuiltinTools 的其它工具。
 
-// regProjects 一次性满足 AssetProjects / GenerationProjects / TextGenerationProjects /
+// regProjects 一次性满足 tools.AssetProjects / tools.GenerationProjects / tools.TextGenerationProjects /
 // ScriptReviewProjects / ProjectWriter / RelationProjects / EpisodeStore。
 type regProjects struct {
 	dir string
@@ -34,7 +34,7 @@ func (p *regProjects) ReadScriptJSON(_, _ string) (map[string]any, error) {
 func (p *regProjects) SaveScript(_, _ string, _ map[string]any) error { return nil }
 func (p *regProjects) ScriptFileNames(string) ([]string, error)       { return nil, nil }
 
-// regVideoCaps 同时满足 VideoCapabilityReader 与 service.VideoCapabilityResolver。
+// regVideoCaps 同时满足 tools.VideoCapabilityReader 与 service.VideoCapabilityResolver。
 type regVideoCaps struct{}
 
 func (regVideoCaps) VideoCapabilitiesForProject(
@@ -77,9 +77,15 @@ func (regGenerator) Generate(context.Context, string, map[string]any, int) (stri
 	return "{}", nil
 }
 
-type regQueue struct {
-	fakeAssetQueue
+type regQueue struct{}
+
+func (regQueue) EnqueueTask(context.Context, repository.EnqueueParams) (repository.EnqueueResult, error) {
+	return repository.EnqueueResult{}, nil
 }
+
+func (regQueue) GetTask(context.Context, string) (*repository.TaskData, error) { return nil, nil }
+
+func (regQueue) IsWorkerOnline(context.Context, string) (bool, error) { return true, nil }
 
 func (regQueue) GetActiveTasksForResources(
 	context.Context, string, string, []string, *string, *string,

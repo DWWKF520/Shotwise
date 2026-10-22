@@ -16,7 +16,8 @@ import (
 )
 
 // bookkeepingTables 是 Go 侧自己维护的表，不属于业务模型清单。
-var bookkeepingTables = map[string]bool{"schema_migrations": true, "alembic_version": true}
+// agent_checkpoints 由 agent/checkpoint 存储经 AutoMigrate 内联建表（DDL 尚未收编进迁移体系）。
+var bookkeepingTables = map[string]bool{"schema_migrations": true, "alembic_version": true, "agent_checkpoints": true}
 
 // TestModelsCoverMigratedSchema 校验模型 ↔ 0001_init 基线双向一致：
 // 每张表都有模型、每个字段都有列。CI 上就能跑，不依赖本地开发库。

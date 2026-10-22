@@ -12,17 +12,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/shotwise/shotwise/internal/agent"
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/agent/tools/assets"
 )
 
 // CharacterRelationsDeps 是角色关系路由的依赖。
 type CharacterRelationsDeps struct {
 	Store *service.ProjectStore
 	// RelationFactory 按项目装配文本生成器（与 agent 工具同源）；nil 时分析端点报 503 语义。
-	RelationFactory agent.RelationGeneratorFactory
+	RelationFactory assets.RelationGeneratorFactory
 }
 
 // relationsFromProject 读项目并归一关系图（characters 必须是对象）。
@@ -170,7 +170,7 @@ func analyzeCharacterRelationsEndpoint(d CharacterRelationsDeps) gin.HandlerFunc
 		}
 		project := c.Param("name")
 		projects := relationProjectsAdapter{store: d.Store}
-		if _, err := agent.AnalyzeCharacterRelations(
+		if _, err := assets.AnalyzeCharacterRelations(
 			c.Request.Context(), project, d.RelationFactory, projects); err != nil {
 			apperr.Abort(c, apperr.NewText(http.StatusUnprocessableEntity,
 				"character_relations_analysis_invalid", map[string]any{"message": err.Error()}))
@@ -192,7 +192,7 @@ func analyzeCharacterRelationsEndpoint(d CharacterRelationsDeps) gin.HandlerFunc
 	}
 }
 
-// relationProjectsAdapter 把 ProjectStore 适配成 agent.RelationProjects。
+// relationProjectsAdapter 把 ProjectStore 适配成 assets.RelationProjects。
 type relationProjectsAdapter struct{ store *service.ProjectStore }
 
 func (a relationProjectsAdapter) Get(name string) (*domain.ProjectFile, error) {
