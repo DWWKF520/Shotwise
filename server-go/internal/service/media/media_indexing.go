@@ -1,5 +1,5 @@
 // 把遗留项目媒体路径回填进可选的 MediaAsset 索引（对应 server/services/media_indexing.py）。
-package service
+package media
 
 import (
 	"encoding/json"
@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // mediaDirectoryNames 是扫描时用于识别预期媒体目录（出现不支持文件即告警）。
@@ -150,9 +152,9 @@ func originForPath(relativePath string) string {
 	case parts["edited"]:
 		return MediaOriginEdited
 	case parts["extracted"] || parts["frames"]:
-		return MediaOriginExtracted
+		return service.MediaOriginExtracted
 	case parts["generated"] || parts["renders"] || parts["storyboards"]:
-		return MediaOriginGenerated
+		return service.MediaOriginGenerated
 	default:
 		return MediaOriginImported
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
 )
 
 func TestRegisterCreativeContextRoutes(t *testing.T) {
@@ -44,7 +45,7 @@ func newCreativeContextHandlerEnv(t *testing.T) (*gin.Engine, string) {
 	}
 	ctx := context.Background()
 	user := repository.DefaultUserID
-	boards := service.NewCreativeBoardService(gdb)
+	boards := creative.NewCreativeBoardService(gdb)
 	board, err := boards.CreateBoard(ctx, user, "p1", "Board", nil, nil)
 	if err != nil {
 		t.Fatalf("create board: %v", err)
@@ -64,7 +65,7 @@ func newCreativeContextHandlerEnv(t *testing.T) (*gin.Engine, string) {
 
 	r := gin.New()
 	RegisterCreativeContext(r.Group("/api/v1"), CreativeContextDeps{
-		Context: service.NewCreativeContextService(gdb, store),
+		Context: creative.NewCreativeContextService(gdb, store),
 		Store:   store,
 	})
 	return r, boardID

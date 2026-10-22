@@ -3,6 +3,7 @@ package script
 import "github.com/shotwise/shotwise/internal/agent/tools"
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"errors"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
 )
 
 // fakeTextCompletion 按序返回预置输出。
@@ -107,7 +107,7 @@ func TestPlanEpisodesToolReportsSummaryAndLedgerStats(t *testing.T) {
 	completion := &fakeTextCompletion{outputs: []string{
 		`{"episodes":[{"title":"第一集","hook":"留个悬念","end_anchor":"丙丁"}]}`,
 	}}
-	factory := func(context.Context, *domain.ProjectFile) (service.TextCompletion, error) {
+	factory := func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
 		return completion, nil
 	}
 	tl, err := NewPlanEpisodesTool("p1", projects, factory)

@@ -1,6 +1,7 @@
 package http
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"errors"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 )
 
 // ProjectDeps 是项目 handler 的依赖。
@@ -55,7 +57,7 @@ func projectSummaryItem(store *service.ProjectStore, name string) gin.H {
 	}
 
 	preloaded := preloadProjectScripts(store, name, project)
-	calculator := service.NewStatusCalculator(store)
+	calculator := servicescript.NewStatusCalculator(store)
 	status := calculator.CalculateProjectStatus(name, project, nil, preloaded)
 	thumbnail := service.ResolveProjectCover(store, name, project, preloaded)
 
@@ -108,12 +110,12 @@ func preloadProjectScripts(store *service.ProjectStore, name string, project map
 }
 
 // projectMediaSummary 读取持久化的媒体索引摘要；缺失或损坏时返回空摘要。
-func projectMediaSummary(store *service.ProjectStore, name string) service.MediaIndexSummary {
+func projectMediaSummary(store *service.ProjectStore, name string) media.MediaIndexSummary {
 	dir, err := store.Dir(name)
 	if err != nil {
 		return emptyMediaSummary()
 	}
-	summary, err := service.ProjectMediaCatalog(dir).Summary()
+	summary, err := media.ProjectMediaCatalog(dir).Summary()
 	if err != nil {
 		return emptyMediaSummary()
 	}
@@ -121,8 +123,8 @@ func projectMediaSummary(store *service.ProjectStore, name string) service.Media
 }
 
 // emptyMediaSummary 对应 Python _empty_project_media_summary。
-func emptyMediaSummary() service.MediaIndexSummary {
-	return service.MediaIndexSummary{Status: "stale", SummaryVersion: 1}
+func emptyMediaSummary() media.MediaIndexSummary {
+	return media.MediaIndexSummary{Status: "stale", SummaryVersion: 1}
 }
 
 // CreateProjectRequest 创建项目的请求体。
@@ -204,7 +206,7 @@ func GetProject(d ProjectDeps) gin.HandlerFunc {
 			return
 		}
 
-		calculator := service.NewStatusCalculator(d.Store)
+		calculator := servicescript.NewStatusCalculator(d.Store)
 		project = calculator.EnrichProject(name, project)
 
 		generationMode, _ := project["generation_mode"].(string)

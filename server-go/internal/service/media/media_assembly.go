@@ -1,14 +1,14 @@
 // 媒体装配计划的持久化服务（对应 server/services/media_assembly.py）：
 // 计划/不可变 revision 的创建与读取，以及在服务边界归一 source snapshot。
-package service
+package media
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
@@ -356,31 +356,31 @@ func newAssemblyRevision(
 	audio, subtitle, packaging, outputProfile map[string]any,
 	fingerprint string, validation map[string]any,
 ) (*repository.AssemblyPlanRevision, error) {
-	sourceSnapshotJSON, err := canonicalString(snapshot)
+	sourceSnapshotJSON, err := service.CanonicalString(snapshot)
 	if err != nil {
 		return nil, err
 	}
-	timelineJSON, err := canonicalString(timeline)
+	timelineJSON, err := service.CanonicalString(timeline)
 	if err != nil {
 		return nil, err
 	}
-	audioJSON, err := canonicalString(audio)
+	audioJSON, err := service.CanonicalString(audio)
 	if err != nil {
 		return nil, err
 	}
-	subtitleJSON, err := canonicalString(subtitle)
+	subtitleJSON, err := service.CanonicalString(subtitle)
 	if err != nil {
 		return nil, err
 	}
-	packagingJSON, err := canonicalString(packaging)
+	packagingJSON, err := service.CanonicalString(packaging)
 	if err != nil {
 		return nil, err
 	}
-	outputProfileJSON, err := canonicalString(outputProfile)
+	outputProfileJSON, err := service.CanonicalString(outputProfile)
 	if err != nil {
 		return nil, err
 	}
-	validationJSON, err := canonicalString(validation)
+	validationJSON, err := service.CanonicalString(validation)
 	if err != nil {
 		return nil, err
 	}
@@ -408,15 +408,15 @@ func revisionPayload(revision *repository.AssemblyPlanRevision) map[string]any {
 		"plan_id":            revision.PlanID,
 		"version_number":     revision.VersionNumber,
 		"source_fingerprint": revision.SourceFingerprint,
-		"source_snapshot":    parseJSONValue(revision.SourceSnapshotJSON),
-		"timeline":           parseJSONValue(revision.TimelineJSON),
-		"audio":              parseJSONValue(revision.AudioJSON),
-		"subtitle":           parseJSONValue(revision.SubtitleJSON),
-		"packaging":          parseJSONValue(revision.PackagingJSON),
-		"output_profile":     parseJSONValue(revision.OutputProfileJSON),
-		"validation":         parseJSONValue(revision.ValidationJSON),
+		"source_snapshot":    service.ParseJSONValue(revision.SourceSnapshotJSON),
+		"timeline":           service.ParseJSONValue(revision.TimelineJSON),
+		"audio":              service.ParseJSONValue(revision.AudioJSON),
+		"subtitle":           service.ParseJSONValue(revision.SubtitleJSON),
+		"packaging":          service.ParseJSONValue(revision.PackagingJSON),
+		"output_profile":     service.ParseJSONValue(revision.OutputProfileJSON),
+		"validation":         service.ParseJSONValue(revision.ValidationJSON),
 		"created_by":         revision.CreatedBy,
-		"created_at":         isoformatTime(revision.CreatedAt.Time),
+		"created_at":         service.IsoformatTime(revision.CreatedAt.Time),
 	}
 }
 
@@ -433,13 +433,13 @@ func assemblyPlanPayload(plan *repository.AssemblyPlan, revision *repository.Ass
 		"current_revision_number":    plan.CurrentRevisionNumber,
 		"current_source_fingerprint": plan.CurrentSourceFingerprint,
 		"preview_revision_number":    plan.PreviewRevisionNumber,
-		"preview_ready_at":           nullableISO(plan.PreviewReadyAt),
+		"preview_ready_at":           service.NullableISO(plan.PreviewReadyAt),
 		"preview_confirmed_by":       plan.PreviewConfirmedBy,
-		"preview_confirmed_at":       nullableISO(plan.PreviewConfirmedAt),
+		"preview_confirmed_at":       service.NullableISO(plan.PreviewConfirmedAt),
 		"render_confirmed_by":        plan.RenderConfirmedBy,
-		"render_confirmed_at":        nullableISO(plan.RenderConfirmedAt),
-		"created_at":                 isoformatTime(plan.CreatedAt.Time),
-		"updated_at":                 isoformatTime(plan.UpdatedAt.Time),
+		"render_confirmed_at":        service.NullableISO(plan.RenderConfirmedAt),
+		"created_at":                 service.IsoformatTime(plan.CreatedAt.Time),
+		"updated_at":                 service.IsoformatTime(plan.UpdatedAt.Time),
 	}
 	if revision != nil {
 		payload["current_revision"] = revisionPayload(revision)
@@ -447,35 +447,9 @@ func assemblyPlanPayload(plan *repository.AssemblyPlan, revision *repository.Ass
 	return payload
 }
 
-func canonicalString(v any) (string, error) {
-	b, err := domain.CanonicalJSON(v)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
 
-// parseJSONValue 把库里的 JSON 文本解析回对象；解析失败时返回 nil（列内容由本服务写入，视为可信）。
-func parseJSONValue(raw string) any {
-	var v any
-	if err := json.Unmarshal([]byte(raw), &v); err != nil {
-		return nil
-	}
-	return v
-}
 
-// isoformatTime 近似 Python datetime.isoformat()：小数秒按微秒输出，为 0 时省略。
-func isoformatTime(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05.999999-07:00")
-}
 
-// nullableISO 可空时间列的时间戳；未设置时返回 nil。
-func nullableISO(ft db.FlexibleTime) any {
-	if !ft.Valid {
-		return nil
-	}
-	return isoformatTime(ft.Time)
-}
 
 func orEmptyMap(m map[string]any) map[string]any {
 	if m == nil {

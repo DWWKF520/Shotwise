@@ -5,9 +5,10 @@
 //   - 多选枚举字段不在 prompt 里写「如何选」判据，让模型按画面内容自行决定。
 //   - 不写无法被 LLM 自检的字数硬限制；用示例隐性表达节奏。
 //   - 节奏建议由 RenderPacingSection 注入，跨 subagent 与 builder 共享。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"sort"
 	"strconv"
@@ -240,7 +241,7 @@ func formatNarrationStep1Segments(step1Segments []map[string]any) string {
 	}
 	lines := make([]string, 0, len(step1Segments))
 	for _, seg := range step1Segments {
-		sid := neutralizeTags(stringValue(seg["segment_id"], "?"))
+		sid := neutralizeTags(service.StringValue(seg["segment_id"], "?"))
 		dur := fmt.Sprint(seg["duration_seconds"])
 		brk := ""
 		if truthy(seg["segment_break"]) {
@@ -249,7 +250,7 @@ func formatNarrationStep1Segments(step1Segments []map[string]any) string {
 		chars := neutralizeTags(joinOr(listStrings(seg["characters_in_segment"]), "无"))
 		sceneNames := neutralizeTags(joinOr(listStrings(seg["scenes"]), "无"))
 		propNames := neutralizeTags(joinOr(listStrings(seg["props"]), "无"))
-		novelBlock := strings.ReplaceAll(neutralizeTags(stringValue(seg["novel_text"], "")), "\n", "\n  ")
+		novelBlock := strings.ReplaceAll(neutralizeTags(service.StringValue(seg["novel_text"], "")), "\n", "\n  ")
 		lines = append(lines, fmt.Sprintf("- %s（时长 %ss%s）｜出场角色：%s｜场景：%s｜道具：%s\n  原文：%s",
 			sid, dur, brk, chars, sceneNames, propNames, novelBlock))
 	}
@@ -338,9 +339,9 @@ func RenderDramaContentForStep2(contentScenes []any) string {
 		if !ok {
 			continue
 		}
-		sid := neutralizeTags(stringValue(scene["scene_id"], "?"))
+		sid := neutralizeTags(service.StringValue(scene["scene_id"], "?"))
 		header := "### " + sid
-		if duration, ok := positiveIntValue(scene["duration_seconds"]); ok {
+		if duration, ok := service.PositiveIntValue(scene["duration_seconds"]); ok {
 			header += fmt.Sprintf("（时长 %d 秒）", duration)
 		}
 		lines := []string{header}
@@ -359,16 +360,16 @@ func RenderDramaContentForStep2(contentScenes []any) string {
 				if !ok {
 					continue
 				}
-				text := strings.ReplaceAll(neutralizeTags(stringValue(u["text"], "")), "\n", "\n    ")
-				if stringValue(u["kind"], "") == "dialogue" {
-					speaker := neutralizeTags(stringValue(u["speaker"], ""))
+				text := strings.ReplaceAll(neutralizeTags(service.StringValue(u["text"], "")), "\n", "\n    ")
+				if service.StringValue(u["kind"], "") == "dialogue" {
+					speaker := neutralizeTags(service.StringValue(u["speaker"], ""))
 					lines = append(lines, "  - [台词] "+speaker+"："+text)
 				} else {
 					lines = append(lines, "  - [画外音] "+text)
 				}
 			}
 		}
-		if sourceText := stringValue(scene["source_text"], ""); sourceText != "" {
+		if sourceText := service.StringValue(scene["source_text"], ""); sourceText != "" {
 			lines = append(lines, "原文锚："+strings.ReplaceAll(neutralizeTags(sourceText), "\n", "\n  "))
 		}
 		blocks = append(blocks, strings.Join(lines, "\n"))
@@ -510,11 +511,11 @@ func BuildNormalizePrompt(opts NormalizePromptOptions) (string, error) {
 			"speaker 沿用 characters_in_scene 中登记的角色名原文，群演沿用原文称呼。"
 	}
 
-	normalizedDurations := normalizeDurations(opts.SupportedDurations)
+	normalizedDurations := service.NormalizeDurations(opts.SupportedDurations)
 	if len(normalizedDurations) == 0 {
 		return "", fmt.Errorf("supported_durations 不能为空：必须提供模型支持的秒数集合")
 	}
-	if opts.DefaultDuration != nil && !containsInt(normalizedDurations, *opts.DefaultDuration) {
+	if opts.DefaultDuration != nil && !service.ContainsInt(normalizedDurations, *opts.DefaultDuration) {
 		return "", fmt.Errorf("default_duration=%d 不在 supported_durations=%v 内", *opts.DefaultDuration, normalizedDurations)
 	}
 
@@ -530,8 +531,8 @@ func BuildNormalizePrompt(opts NormalizePromptOptions) (string, error) {
 	}
 
 	sourceLanguage := opts.SourceLanguage
-	speechRate := SpeechRateUnitsPerSecond(sourceLanguage, opts.SpeechRateOverride)
-	unitLabel := ReadingUnitNoun(sourceLanguage)
+	speechRate := service.SpeechRateUnitsPerSecond(sourceLanguage, opts.SpeechRateOverride)
+	unitLabel := service.ReadingUnitNoun(sourceLanguage)
 	durationLowerBoundRule := "再按台词口播长度设下界：先估算该场 utterances（台词 + 画外音）念完约需的秒数" +
 		fmt.Sprintf("（口播语速约 %s %s/秒），在上述档位里取**不低于**这个秒数的最接近档位；", formatFloat(speechRate), unitLabel) +
 		"这是单向下界——画面 / 情绪留白可在此之上取更长档位，但台词永不把时长压到念不完的短档，" +
@@ -599,12 +600,12 @@ func BuildNarrationSplitPrompt(opts NarrationSplitPromptOptions) (string, error)
 	if targetLanguage == "" {
 		targetLanguage = "中文"
 	}
-	normalizedDurations := normalizeDurations(opts.SupportedDurations)
+	normalizedDurations := service.NormalizeDurations(opts.SupportedDurations)
 	if len(normalizedDurations) == 0 {
 		return "", fmt.Errorf("supported_durations 不能为空：必须提供模型支持的秒数集合")
 	}
 	defaultDuration := opts.DefaultDuration
-	if defaultDuration != nil && !containsInt(normalizedDurations, *defaultDuration) {
+	if defaultDuration != nil && !service.ContainsInt(normalizedDurations, *defaultDuration) {
 		defaultDuration = nil
 	}
 	durationsStr := joinInts(normalizedDurations, ", ")
@@ -703,29 +704,7 @@ func overviewValue(ov *domain.Overview, field string) string {
 	return ""
 }
 
-// normalizeDurations 去重并升序；非正整数忽略。
-func normalizeDurations(durations []int) []int {
-	seen := map[int]bool{}
-	out := make([]int, 0, len(durations))
-	for _, d := range durations {
-		if d <= 0 || seen[d] {
-			continue
-		}
-		seen[d] = true
-		out = append(out, d)
-	}
-	sort.Ints(out)
-	return out
-}
 
-func containsInt(list []int, value int) bool {
-	for _, item := range list {
-		if item == value {
-			return true
-		}
-	}
-	return false
-}
 
 func joinInts(list []int, sep string) string {
 	parts := make([]string, 0, len(list))
@@ -747,12 +726,6 @@ func joinOr(items []string, fallback string) string {
 	return strings.Join(items, "、")
 }
 
-func stringValue(value any, fallback string) string {
-	if s, ok := value.(string); ok {
-		return s
-	}
-	return fallback
-}
 
 func defaultString(value any, fallback string) string {
 	if s, ok := value.(string); ok && s != "" {
@@ -784,18 +757,3 @@ func listStrings(value any) []string {
 // filterStrings 与 listStrings 同义（语义化别名，供 step2 渲染使用）。
 func filterStrings(value any) []string { return listStrings(value) }
 
-// positiveIntValue 取正整数语义的值（JSON 数字的整数值算整数；布尔不算）。
-func positiveIntValue(value any) (int, bool) {
-	switch v := value.(type) {
-	case int:
-		return v, v > 0
-	case int64:
-		return int(v), v > 0
-	case float64:
-		if v != float64(int(v)) || int(v) <= 0 {
-			return 0, false
-		}
-		return int(v), true
-	}
-	return 0, false
-}

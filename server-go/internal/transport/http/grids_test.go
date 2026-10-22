@@ -1,6 +1,7 @@
 package http
 
 import (
+	servicegeneration "github.com/shotwise/shotwise/internal/service/generation"
 	"bytes"
 	"encoding/json"
 	"image"
@@ -88,7 +89,7 @@ func newGridFixture(t *testing.T) gridFixture {
 	v1 := r.Group("/api/v1")
 	RegisterGrids(v1, GridDeps{
 		Store: store,
-		Grids: service.NewGridTaskService(
+		Grids: servicegeneration.NewGridTaskService(
 			store, queue.NewQueue(gdb), config.NewResolver(gdb), service.NewGridService(store)),
 	})
 	return gridFixture{router: r, store: store, repo: repository.NewTaskRepo(gdb), db: gdb}

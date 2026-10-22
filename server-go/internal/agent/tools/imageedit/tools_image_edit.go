@@ -13,14 +13,14 @@ import (
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/fs"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 // edit_images（对应 Python sdk_tools/enqueue_image_edits.py）：对已生成的设计图/分镜图做
 // 指令式局部编辑，批量下发后逐个等待终态。
 //
 // 编辑与重新生成的区别由 prompt 语义承担（不改 image_prompt、只按指令微调当前图）；
-// 资源解析与「当前图是否存在」的校验复用执行层 service.ResolveCurrentImageRel，
+// 资源解析与「当前图是否存在」的校验复用执行层 generation.ResolveCurrentImageRel，
 // 工具层与 worker 层不各判一次。
 
 // ImageEditCapabilityReader 判定项目图片 i2i 槽是否解析出可用供应商
@@ -66,9 +66,9 @@ func NewEditImagesTool(
 			"resource_type 支持 character/scene/prop/product/storyboard 五类，storyboard 必须带 script_file。"+
 			"编辑必然走图生图（i2i）；当前项目图片供应商不支持 i2i 时直接返回错误，不创建任何任务。",
 		func(ctx context.Context, in editImagesIn) (string, error) {
-			if !service.IsEditableResourceType(in.ResourceType) {
+			if !generation.IsEditableResourceType(in.ResourceType) {
 				return tools.DenyEnvelope(fmt.Sprintf("resource_type 必须是以下之一: %s",
-					strings.Join(service.EditableResourceTypes, ", "))), nil
+					strings.Join(generation.EditableResourceTypes, ", "))), nil
 			}
 			if len(in.Edits) == 0 {
 				return tools.DenyEnvelope("edits 不能为空"), nil
@@ -91,7 +91,7 @@ func runEditImages(
 	ctx context.Context, project string, in editImagesIn, q tools.AssetQueue,
 	projects tools.GenerationProjects, caps ImageEditCapabilityReader,
 ) (string, bool, error) {
-	isStoryboard := in.ResourceType == service.StoryboardResourceType
+	isStoryboard := in.ResourceType == generation.StoryboardResourceType
 	scriptFile := ""
 	var script map[string]any
 	if isStoryboard {
@@ -144,7 +144,7 @@ func runEditImages(
 			warnings = append(warnings, fmt.Sprintf("⚠️  %s '%s' 缺少编辑指令，跳过", label, resourceID))
 			continue
 		}
-		currentRel, found := service.ResolveCurrentImageRel(pf, in.ResourceType, resourceID, script)
+		currentRel, found := generation.ResolveCurrentImageRel(pf, in.ResourceType, resourceID, script)
 		if !found {
 			warnings = append(warnings, fmt.Sprintf("⚠️  %s '%s' 不存在，跳过", label, resourceID))
 			continue

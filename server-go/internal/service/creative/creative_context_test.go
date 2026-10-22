@@ -1,4 +1,6 @@
-package service
+package creative
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -15,7 +17,7 @@ import (
 func newCreativeContextEnv(t *testing.T) (*CreativeContextService, *CreativeBoardService, *gorm.DB) {
 	t.Helper()
 	gdb := newServiceTestDB(t)
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "Project One", domain.ContentDrama, domain.GenerationStoryboard, ""); err != nil {
 		t.Fatalf("create project: %v", err)
 	}

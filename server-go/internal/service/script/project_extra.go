@@ -9,9 +9,10 @@
 //     报错跳过写回——「锁内 raise」是消除「先写一半再回滚」的根；
 //   - 分集 title 以剧本顶层 title 为唯一真相源：走「脚本锁 → 项目锁」改剧本并内联同步
 //     project.json 镜像，不产生第二真相源。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 )
@@ -47,13 +49,13 @@ type OverviewInput struct {
 
 // ProjectExtraService 承载项目扩展端点。
 type ProjectExtraService struct {
-	store    *ProjectStore
-	queue    GridQueue
+	store    *service.ProjectStore
+	queue    service.GridQueue
 	resolver *config.Resolver
 }
 
 // NewProjectExtraService 构造。
-func NewProjectExtraService(store *ProjectStore, queue GridQueue, resolver *config.Resolver) *ProjectExtraService {
+func NewProjectExtraService(store *service.ProjectStore, queue service.GridQueue, resolver *config.Resolver) *ProjectExtraService {
 	return &ProjectExtraService{store: store, queue: queue, resolver: resolver}
 }
 
@@ -81,7 +83,7 @@ func (s *ProjectExtraService) UpdateScriptScene(
 			if !ok {
 				continue
 			}
-			if pythonStrLike(scene["scene_id"]) == sceneID {
+			if service.PythonStrLike(scene["scene_id"]) == sceneID {
 				matched = scene
 				break
 			}
@@ -146,7 +148,7 @@ func (s *ProjectExtraService) UpdateScriptShot(
 			return err
 		}
 		for _, shot := range shots {
-			if pythonStrLike(shot["shot_id"]) == shotID {
+			if service.PythonStrLike(shot["shot_id"]) == shotID {
 				matched = shot
 				break
 			}
@@ -175,20 +177,20 @@ func (s *ProjectExtraService) ReorderScriptShots(
 		}
 		existing := make([]string, 0, len(shots))
 		for _, shot := range shots {
-			existing = append(existing, pythonStrLike(shot["shot_id"]))
+			existing = append(existing, service.PythonStrLike(shot["shot_id"]))
 		}
 		// 全排列校验失败在锁内报错跳过写回，损坏的 shots 不会被空列表覆盖。
-		switch FullPermutationError(existing, shotIDs) {
+		switch reference.FullPermutationError(existing, shotIDs) {
 		case "length":
-			return &ValueError{Msg: "shot_ids_length_mismatch"}
+			return &service.ValueError{Msg: "shot_ids_length_mismatch"}
 		case "duplicate":
-			return &ValueError{Msg: "duplicate_shot_ids"}
+			return &service.ValueError{Msg: "duplicate_shot_ids"}
 		case "mismatch":
-			return &ValueError{Msg: "shot_ids_mismatch"}
+			return &service.ValueError{Msg: "shot_ids_mismatch"}
 		}
 		byID := map[string]map[string]any{}
 		for _, shot := range shots {
-			byID[pythonStrLike(shot["shot_id"])] = shot
+			byID[service.PythonStrLike(shot["shot_id"])] = shot
 		}
 		for _, id := range shotIDs {
 			reordered = append(reordered, byID[id])
@@ -208,31 +210,31 @@ func (s *ProjectExtraService) ReorderScriptShots(
 // 覆盖成 []，直接丢数据。shot_id 是单镜头身份键，重复值会让 PATCH 静默更新首个命中项。
 func requireADScript(script map[string]any) ([]map[string]any, error) {
 	if mode, _ := script["content_mode"].(string); mode != string(domain.ContentAd) {
-		return nil, &ValueError{Msg: "ad_mode_required"}
+		return nil, &service.ValueError{Msg: "ad_mode_required"}
 	}
 	if _, present := script["shots"]; !present {
-		return nil, &ValueError{Msg: "ad_mode_required"}
+		return nil, &service.ValueError{Msg: "ad_mode_required"}
 	}
 	rawShots, ok := script["shots"].([]any)
 	if !ok {
-		return nil, &ValueError{Msg: "ad script field 'shots' must be a list"}
+		return nil, &service.ValueError{Msg: "ad script field 'shots' must be a list"}
 	}
 	shots := make([]map[string]any, 0, len(rawShots))
 	for _, raw := range rawShots {
 		shot, ok := raw.(map[string]any)
 		if !ok {
-			return nil, &ValueError{Msg: "ad script field 'shots' contains non-object elements"}
+			return nil, &service.ValueError{Msg: "ad script field 'shots' contains non-object elements"}
 		}
 		if id, _ := shot["shot_id"].(string); id == "" {
-			return nil, &ValueError{Msg: "ad script field 'shots' contains elements missing valid 'shot_id'"}
+			return nil, &service.ValueError{Msg: "ad script field 'shots' contains elements missing valid 'shot_id'"}
 		}
 		shots = append(shots, shot)
 	}
 	seen := map[string]bool{}
 	for _, shot := range shots {
-		id := pythonStrLike(shot["shot_id"])
+		id := service.PythonStrLike(shot["shot_id"])
 		if seen[id] {
-			return nil, &ValueError{Msg: "ad script field 'shots' contains duplicate 'shot_id' values"}
+			return nil, &service.ValueError{Msg: "ad script field 'shots' contains duplicate 'shot_id' values"}
 		}
 		seen[id] = true
 	}
@@ -247,10 +249,10 @@ func (s *ProjectExtraService) UpdateScriptSegment(
 	err := s.store.UpdateScript(projectName, scriptFile, func(script map[string]any) error {
 		// 模式守卫：仅 narration 且含 segments 才放行；drama 即使残留 segments 也拒绝。
 		if mode, _ := script["content_mode"].(string); mode != string(domain.ContentNarration) {
-			return &ValueError{Msg: "narration_mode_required"}
+			return &service.ValueError{Msg: "narration_mode_required"}
 		}
 		if _, present := script["segments"]; !present {
-			return &ValueError{Msg: "narration_mode_required"}
+			return &service.ValueError{Msg: "narration_mode_required"}
 		}
 		rawSegments, _ := script["segments"].([]any)
 		for _, raw := range rawSegments {
@@ -258,7 +260,7 @@ func (s *ProjectExtraService) UpdateScriptSegment(
 			if !ok {
 				continue
 			}
-			if pythonStrLike(segment["segment_id"]) == segmentID {
+			if service.PythonStrLike(segment["segment_id"]) == segmentID {
 				matched = segment
 				break
 			}
@@ -409,7 +411,7 @@ func (s *ProjectExtraService) UpdateEpisodeDisplayNumber(
 			return episodeDisplayKey(ordered[i]) < episodeDisplayKey(ordered[j])
 		})
 		if displayEpisode > len(ordered) {
-			return &ValueError{Msg: fmt.Sprintf("episode_display_number_invalid: max %d", len(ordered))}
+			return &service.ValueError{Msg: fmt.Sprintf("episode_display_number_invalid: max %d", len(ordered))}
 		}
 		index := -1
 		for i, meta := range ordered {
@@ -546,7 +548,7 @@ func composeCapabilitySummary(view config.VideoCapabilityView, requestedGenerate
 	}
 	if info, ok := provider.ModelInfoFor(view.ProviderID, view.ModelID); ok {
 		summary.GenerateAudio = provider.ModelHasAudioTrack(view.ProviderID, info)
-		summary.VoiceConsistency = voiceConsistencyForCaps(caps, config.ProviderModel{
+		summary.VoiceConsistency = service.VoiceConsistencyForCaps(caps, config.ProviderModel{
 			ProviderID: view.ProviderID, ModelID: view.ModelID,
 		}, "")
 	}

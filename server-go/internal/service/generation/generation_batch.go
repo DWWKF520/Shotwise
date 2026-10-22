@@ -5,7 +5,7 @@
 //   - 批次不持有任何 worker 状态；执行真相源仍是 generation_tasks，批次只投影出展示状态；
 //   - 准入是原子的：所有任务在**一个事务**里插入，任一去重冲突则整批回滚；
 //   - 入参归一先于事务：TaskSpec 校验与载荷构造都在开事务之前完成，失败不留半批数据。
-package service
+package generation
 
 import (
 	"context"

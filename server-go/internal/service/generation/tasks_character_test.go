@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -28,7 +30,7 @@ func characterTask(resourceID string, payload map[string]any) *repository.TaskDa
 }
 
 // seedCharacter 往项目角色桶写入一条最小条目（description 是「不更坏」守卫的必填字段）。
-func seedCharacter(t *testing.T, store *ProjectStore, projectName, name string, fields map[string]string) {
+func seedCharacter(t *testing.T, store *service.ProjectStore, projectName, name string, fields map[string]string) {
 	t.Helper()
 	if err := store.Update(projectName, func(p *domain.ProjectFile) error {
 		bucket, ok := p.BucketRef(domain.AssetCharacter)
@@ -182,7 +184,7 @@ func TestShouldRetirePreviousAvatar(t *testing.T) {
 	}
 }
 
-func mustProjectDir(t *testing.T, store *ProjectStore, projectName string) string {
+func mustProjectDir(t *testing.T, store *service.ProjectStore, projectName string) string {
 	t.Helper()
 	dir, err := store.Dir(projectName)
 	if err != nil {

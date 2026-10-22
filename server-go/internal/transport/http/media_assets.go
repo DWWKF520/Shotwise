@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 )
 
 // MediaAssetsDeps 是媒体库 handler 的依赖。
@@ -133,7 +134,7 @@ func listMediaAssets(d MediaAssetsDeps) gin.HandlerFunc {
 			archived = &parsed
 		}
 		projectID := c.Param("name")
-		result, err := service.ListProjectMediaAssets(service.ListProjectMediaAssetsParams{
+		result, err := media.ListProjectMediaAssets(media.ListProjectMediaAssetsParams{
 			ProjectID:     &projectID,
 			ProjectRoot:   root,
 			Kind:          kind,
@@ -169,7 +170,7 @@ func uploadMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 		if filename == "" {
 			filename = "upload"
 		}
-		if service.ClassifyMediaPath(filename) == "" {
+		if media.ClassifyMediaPath(filename) == "" {
 			apperr.Abort(c, apperr.NewLiteral(http.StatusUnsupportedMediaType, "unsupported_media"))
 			return
 		}
@@ -184,11 +185,11 @@ func uploadMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 			return
 		}
 		originalName := filename
-		asset, err := service.RegisterMediaAsset(service.RegisterMediaAssetParams{
+		asset, err := media.RegisterMediaAsset(media.RegisterMediaAssetParams{
 			ProjectID:    c.Param("name"),
 			ProjectRoot:  root,
 			RelativePath: relativePath,
-			Origin:       service.MediaOriginUpload,
+			Origin:       media.MediaOriginUpload,
 			OriginalName: &originalName,
 		})
 		if err != nil {
@@ -196,10 +197,10 @@ func uploadMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 			return
 		}
 		if asset == nil {
-			catalog := service.ProjectMediaCatalog(root)
+			catalog := media.ProjectMediaCatalog(root)
 			reason := "upload_registration_unavailable"
-			origin := service.MediaOriginUpload
-			if _, enqErr := catalog.EnqueueReconciliation(service.EnqueueMediaReconciliationParams{
+			origin := media.MediaOriginUpload
+			if _, enqErr := catalog.EnqueueReconciliation(media.EnqueueMediaReconciliationParams{
 				ProjectID:    c.Param("name"),
 				RelativePath: relativePath,
 				Reason:       reason,
@@ -211,7 +212,7 @@ func uploadMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 			apperr.Abort(c, apperr.NewLiteral(http.StatusServiceUnavailable, "media_index_unavailable"))
 			return
 		}
-		result, err := service.GetProjectMediaAsset(root, asset.ID)
+		result, err := media.GetProjectMediaAsset(root, asset.ID)
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return
@@ -251,7 +252,7 @@ func getMediaAssetContent(d MediaAssetsDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		asset, err := service.GetProjectMediaAsset(root, c.Param("media_asset_id"))
+		asset, err := media.GetProjectMediaAsset(root, c.Param("media_asset_id"))
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return
@@ -322,7 +323,7 @@ func getMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := service.GetProjectMediaAsset(root, c.Param("media_asset_id"))
+		result, err := media.GetProjectMediaAsset(root, c.Param("media_asset_id"))
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return
@@ -368,7 +369,7 @@ func bindMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 			abortFieldConstraint(c, "target_id", "string_too_long")
 			return
 		}
-		result, err := service.BindProjectMediaAsset(
+		result, err := media.BindProjectMediaAsset(
 			root, c.Param("name"), c.Param("media_asset_id"), bindingKind, targetID, purpose,
 		)
 		if err != nil {
@@ -401,7 +402,7 @@ func archiveMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 			}})
 			return
 		}
-		result, err := service.ArchiveProjectMediaAsset(root, c.Param("media_asset_id"), archived)
+		result, err := media.ArchiveProjectMediaAsset(root, c.Param("media_asset_id"), archived)
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return
@@ -425,7 +426,7 @@ func scanMediaAssets(d MediaAssetsDeps) gin.HandlerFunc {
 			}
 			dryRun = parsed
 		}
-		result, err := service.ScanProjectMediaAssets(c.Param("name"), root, dryRun)
+		result, err := media.ScanProjectMediaAssets(c.Param("name"), root, dryRun)
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return
@@ -444,7 +445,7 @@ func retryMediaAssets(d MediaAssetsDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := service.RetryProjectMediaReconciliation(c.Param("name"), root, itemID)
+		result, err := media.RetryProjectMediaReconciliation(c.Param("name"), root, itemID)
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return
@@ -459,7 +460,7 @@ func deleteMediaAsset(d MediaAssetsDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := service.DeleteProjectMediaAsset(root, c.Param("media_asset_id"))
+		result, err := media.DeleteProjectMediaAsset(root, c.Param("media_asset_id"))
 		if err != nil {
 			abortMediaAssetErr(c, err)
 			return
@@ -484,7 +485,7 @@ func parseQueryBool(raw string) (bool, error) {
 func abortMediaAssetErr(c *gin.Context, err error) {
 	var (
 		notFound   *service.MediaAssetNotFoundError
-		referenced *service.MediaAssetReferencedError
+		referenced *media.MediaAssetReferencedError
 		valueErr   *service.ValueError
 	)
 	switch {

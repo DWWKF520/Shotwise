@@ -11,6 +11,7 @@ import (
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/service"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 )
 
 // fakeTextGenCaps 是剧本生成类工具的时长能力替身。
@@ -35,8 +36,8 @@ func (f *fakeGenerationProjects) SaveScript(_, scriptFilename string, script map
 	return os.WriteFile(filepath.Join(scriptsDir, scriptFilename), raw, 0o644)
 }
 
-func staticGenFactory(out string) service.TextCompletionFactory {
-	return func(context.Context, *domain.ProjectFile) (service.TextCompletion, error) {
+func staticGenFactory(out string) servicescript.TextCompletionFactory {
+	return func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
 		return &fakeTextCompletion{outputs: []string{out}}, nil
 	}
 }

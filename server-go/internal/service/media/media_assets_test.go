@@ -1,4 +1,6 @@
-package service
+package media
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"errors"
@@ -23,7 +25,7 @@ func TestMediaCatalogRegisterListBindDelete(t *testing.T) {
 	writeTestFile(t, filepath.Join(root, "images", "a.png"), "hello")
 
 	asset, err := RegisterMediaAsset(RegisterMediaAssetParams{
-		ProjectID: "p1", ProjectRoot: root, RelativePath: "images/a.png", Origin: MediaOriginGenerated,
+		ProjectID: "p1", ProjectRoot: root, RelativePath: "images/a.png", Origin: service.MediaOriginGenerated,
 	})
 	if err != nil {
 		t.Fatalf("register: %v", err)
@@ -43,7 +45,7 @@ func TestMediaCatalogRegisterListBindDelete(t *testing.T) {
 
 	// 重复登记同一路径同内容应返回既有条目。
 	again, err := RegisterMediaAsset(RegisterMediaAssetParams{
-		ProjectID: "p1", ProjectRoot: root, RelativePath: "images/a.png", Origin: MediaOriginGenerated,
+		ProjectID: "p1", ProjectRoot: root, RelativePath: "images/a.png", Origin: service.MediaOriginGenerated,
 	})
 	if err != nil {
 		t.Fatalf("re-register: %v", err)
@@ -98,7 +100,7 @@ func TestMediaCatalogArchiveAndGet(t *testing.T) {
 	writeTestFile(t, filepath.Join(root, "a.mp4"), "video")
 
 	asset, err := RegisterMediaAsset(RegisterMediaAssetParams{
-		ProjectID: "p1", ProjectRoot: root, RelativePath: "a.mp4", Origin: MediaOriginGenerated,
+		ProjectID: "p1", ProjectRoot: root, RelativePath: "a.mp4", Origin: service.MediaOriginGenerated,
 	})
 	if err != nil || asset == nil {
 		t.Fatalf("register: %v asset=%v", err, asset)
@@ -123,9 +125,9 @@ func TestMediaCatalogArchiveAndGet(t *testing.T) {
 	if _, err := GetProjectMediaAsset(root, "missing"); err == nil {
 		t.Fatal("expected not found error")
 	} else {
-		var notFound *MediaAssetNotFoundError
+		var notFound *service.MediaAssetNotFoundError
 		if !errors.As(err, &notFound) {
-			t.Fatalf("err = %v, want MediaAssetNotFoundError", err)
+			t.Fatalf("err = %v, want service.MediaAssetNotFoundError", err)
 		}
 	}
 }
@@ -157,11 +159,11 @@ func TestMediaRejectsEscapingRelativePath(t *testing.T) {
 		ProjectID: "p1", ProjectRoot: root, RelativePath: "../outside.png", Origin: MediaOriginUpload,
 	})
 	if err == nil {
-		t.Fatal("expected ValueError for escaping path")
+		t.Fatal("expected service.ValueError for escaping path")
 	}
-	var valueErr *ValueError
+	var valueErr *service.ValueError
 	if !errors.As(err, &valueErr) {
-		t.Fatalf("err = %v, want ValueError", err)
+		t.Fatalf("err = %v, want service.ValueError", err)
 	}
 }
 
@@ -209,7 +211,7 @@ func TestDeleteProjectMediaAssetDetectsLegacyReference(t *testing.T) {
 	writeTestFile(t, filepath.Join(root, "project.json"), `{"style_image": "images/x.png"}`)
 
 	asset, err := RegisterMediaAsset(RegisterMediaAssetParams{
-		ProjectID: "p1", ProjectRoot: root, RelativePath: "images/x.png", Origin: MediaOriginGenerated,
+		ProjectID: "p1", ProjectRoot: root, RelativePath: "images/x.png", Origin: service.MediaOriginGenerated,
 	})
 	if err != nil || asset == nil {
 		t.Fatalf("register: %v asset=%v", err, asset)

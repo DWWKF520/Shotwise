@@ -3,11 +3,13 @@
 // 审阅读取、内容编辑、确认动作、隔离草稿呈现与待编写推导的可测状态流转。
 //
 // Python 侧「存在性检查与读取之间隔离草稿被清除」的竞态用例经 monkeypatch read_quarantine
-// 实现；Go 侧 ReadQuarantine 是包级函数、无注入缝，该竞态分支由 service.GetQuarantineInfo
+// 实现；Go 侧 ReadQuarantine 是包级函数、无注入缝，该竞态分支由 servicescript.GetQuarantineInfo
 // 的二次存在性检查兜住（读跨越清除那一刻按「无隔离草稿」处理），不在本层重复覆盖。
 package http
 
 import (
+	servicereference "github.com/shotwise/shotwise/internal/service/reference"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -84,7 +86,7 @@ func newReviewRouterEnv(
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviews := service.NewScriptReviewService(store, resolver)
+	reviews := servicescript.NewScriptReviewService(store, resolver)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	RegisterScriptReview(r.Group("/api/v1"), ScriptReviewDeps{Store: store, Reviews: reviews})
@@ -98,7 +100,7 @@ func (e *reviewRouterEnv) gateBlocks(t *testing.T) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return service.GateBlocksStep2(e.dir, pf, 1)
+	return servicescript.GateBlocksStep2(e.dir, pf, 1)
 }
 
 // reviewQuarantinePath 返回第 1 集 step1 隔离草稿路径并确保父目录存在。
@@ -108,7 +110,7 @@ func (e *reviewRouterEnv) reviewQuarantinePath(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, ok := service.Step1QuarantinePath(e.dir, pf, 1)
+	path, ok := servicescript.Step1QuarantinePath(e.dir, pf, 1)
 	if !ok {
 		t.Fatal("reference_video 变体下隔离草稿路径应可解析")
 	}
@@ -502,9 +504,9 @@ func TestScriptReviewRVQuarantineSurfacedWithRecomputedViolations(t *testing.T) 
 		"duration_seconds": float64(4), "source_text": novel,
 		"text": "镜头1：门开了\n@[阿离]：｛我来了。｝",
 	}}
-	if _, err := service.WriteQuarantine(env.dir, 1, service.QuarantineKindStep1,
+	if _, err := servicereference.WriteQuarantine(env.dir, 1, servicereference.QuarantineKindStep1,
 		map[string]any{"units": flatUnits},
-		[]service.DraftViolation{{
+		[]servicereference.DraftViolation{{
 			Code: "fullwidth_braces", Label: "unit E1U01", Message: "stale", Line: reviewLinePtr(1),
 		}},
 		map[string]any{"source": "source/episode_1.txt"}, nil,
@@ -550,9 +552,9 @@ func TestScriptReviewRVQuarantineSchemaInvalidKeepsRawContent(t *testing.T) {
 		},
 	})
 	writeRouterSourceText(t, env.dir, "阿离站在屋檐下。")
-	if _, err := service.WriteQuarantine(env.dir, 1, service.QuarantineKindStep1,
+	if _, err := servicereference.WriteQuarantine(env.dir, 1, servicereference.QuarantineKindStep1,
 		map[string]any{"units": "被改坏了"},
-		[]service.DraftViolation{{Code: "schema_invalid", Message: "stale"}},
+		[]servicereference.DraftViolation{{Code: "schema_invalid", Message: "stale"}},
 		map[string]any{"source": "source/episode_1.txt"}, nil,
 	); err != nil {
 		t.Fatal(err)
@@ -579,11 +581,11 @@ func TestScriptReviewRVQuarantineSchemaInvalidKeepsRawContent(t *testing.T) {
 func TestScriptReviewRVQuarantineMetaBrokenReportsRecomputeFailure(t *testing.T) {
 	// meta.source 缺失 → 无从重算：报「无法重算」本身，而不是退回草稿里那份上一轮快照。
 	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
-	if _, err := service.WriteQuarantine(env.dir, 1, service.QuarantineKindStep1,
+	if _, err := servicereference.WriteQuarantine(env.dir, 1, servicereference.QuarantineKindStep1,
 		map[string]any{"units": []any{map[string]any{
 			"duration_seconds": float64(4), "source_text": "原文", "text": "镜头1：门开了",
 		}}},
-		[]service.DraftViolation{{
+		[]servicereference.DraftViolation{{
 			Code: "fullwidth_braces", Label: "unit E1U01", Message: "stale", Line: reviewLinePtr(1),
 		}},
 		map[string]any{}, nil,
@@ -667,8 +669,8 @@ func TestScriptReviewRVFutureQuarantineSchemaReported(t *testing.T) {
 	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
 	writeRouterStep1File(t, env.dir, service.ReferenceVideoStep1Filename, routerRVStep1())
 	envelope := map[string]any{
-		"schema_version": service.QuarantineSchemaVersion + 1,
-		"kind":           service.QuarantineKindStep1,
+		"schema_version": servicereference.QuarantineSchemaVersion + 1,
+		"kind":           servicereference.QuarantineKindStep1,
 		"episode":        1,
 		"content":        map[string]any{"units": []any{}},
 	}
@@ -697,7 +699,7 @@ func TestScriptReviewRVFutureQuarantineSchemaReported(t *testing.T) {
 	if len(violations) != 1 || violations[0]["code"] != "quarantine_schema_unsupported" {
 		t.Fatalf("violations = %v", violations)
 	}
-	if version, _ := violations[0]["schema_version"].(float64); int(version) != service.QuarantineSchemaVersion+1 {
+	if version, _ := violations[0]["schema_version"].(float64); int(version) != servicereference.QuarantineSchemaVersion+1 {
 		t.Fatalf("schema_version = %v", violations[0]["schema_version"])
 	}
 	if message, _ := violations[0]["message"].(string); !strings.Contains(message, "unsupported schema version") {
@@ -785,7 +787,7 @@ func TestScriptReviewRVDurationTiersResolvedForCustomProvider(t *testing.T) {
 func TestScriptReviewRVQuarantineNonStringMetaSourceDegrades(t *testing.T) {
 	// meta.source 被改成非字符串：重算链路按「无法重算」降级，不让类型错误冒穿成 500。
 	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
-	if _, err := service.WriteQuarantine(env.dir, 1, service.QuarantineKindStep1,
+	if _, err := servicereference.WriteQuarantine(env.dir, 1, servicereference.QuarantineKindStep1,
 		map[string]any{"units": []any{map[string]any{
 			"duration_seconds": float64(4), "source_text": "x", "text": "镜头1：门开了",
 		}}},
@@ -812,7 +814,7 @@ func TestScriptReviewRVQuarantineDirectoryMetaSourceDegrades(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(env.dir, "source"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.WriteQuarantine(env.dir, 1, service.QuarantineKindStep1,
+	if _, err := servicereference.WriteQuarantine(env.dir, 1, servicereference.QuarantineKindStep1,
 		map[string]any{"units": []any{map[string]any{
 			"duration_seconds": float64(4), "source_text": "x", "text": "镜头1：门开了",
 		}}},
@@ -842,11 +844,11 @@ func TestScriptReviewRVPutResponseIncludesQuarantine(t *testing.T) {
 	})
 	writeRouterSourceText(t, env.dir, "阿离站在屋檐下。")
 	writeRouterStep1File(t, env.dir, service.ReferenceVideoStep1Filename, routerRVStep1())
-	if _, err := service.WriteQuarantine(env.dir, 1, service.QuarantineKindStep1,
+	if _, err := servicereference.WriteQuarantine(env.dir, 1, servicereference.QuarantineKindStep1,
 		map[string]any{"units": []any{map[string]any{
 			"duration_seconds": float64(4), "source_text": "x", "text": "镜头1：门开了",
 		}}},
-		[]service.DraftViolation{{Code: "empty_text", Label: "unit E1U01", Message: "坏"}},
+		[]servicereference.DraftViolation{{Code: "empty_text", Label: "unit E1U01", Message: "坏"}},
 		map[string]any{"source": "source/episode_1.txt"}, nil,
 	); err != nil {
 		t.Fatal(err)

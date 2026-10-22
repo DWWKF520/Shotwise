@@ -10,7 +10,7 @@ import (
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
 	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 // rename_asset 工具（对应 server/agent_runtime/sdk_tools/rename_asset.py）。
@@ -19,9 +19,9 @@ import (
 // + step1 草稿 + 文件系统的级联事务（ADR 0057），经 AssetService.Rename 在项目锁内一次完成。
 // 改名不影响全局资产库。
 
-// AssetRenamer 是级联改名能力（*service.AssetService 满足）。
+// AssetRenamer 是级联改名能力（*asset.AssetService 满足）。
 type AssetRenamer interface {
-	Rename(project string, kind domain.AssetKind, oldName, newName string, dryRun bool) (service.RenameReport, error)
+	Rename(project string, kind domain.AssetKind, oldName, newName string, dryRun bool) (asset.RenameReport, error)
 }
 
 type renameAssetIn struct {

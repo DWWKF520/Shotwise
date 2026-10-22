@@ -1,4 +1,6 @@
-package service
+package asset
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -16,7 +18,7 @@ import (
 // globalAssetFixture 造一个项目资产 + 全局库服务。
 type globalAssetFixture struct {
 	svc   *GlobalAssetService
-	store *ProjectStore
+	store *service.ProjectStore
 }
 
 func newGlobalAssetFixture(t *testing.T) globalAssetFixture {
@@ -33,7 +35,7 @@ func newGlobalAssetFixture(t *testing.T) globalAssetFixture {
 			_ = pool.Close()
 		}
 	})
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}

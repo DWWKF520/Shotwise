@@ -16,7 +16,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 )
 
-// AssetWriter 是 patch_project 资产分支所需的写入能力（由 service.AssetService 满足）。
+// AssetWriter 是 patch_project 资产分支所需的写入能力（由 asset.AssetService 满足）。
 type AssetWriter interface {
 	Upsert(project string, kind domain.AssetKind, rawName string, fields map[string]any) (created bool, err error)
 }

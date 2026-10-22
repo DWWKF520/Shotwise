@@ -14,12 +14,13 @@ import (
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 // EndFrameDeps 是尾帧路由的依赖。
 type EndFrameDeps struct {
 	Store    *service.ProjectStore
-	EndFrame *service.EndFrameService
+	EndFrame *asset.EndFrameService
 }
 
 // RegisterEndFrames 注册尾帧路由。
@@ -50,11 +51,11 @@ func uploadEndFrame(d EndFrameDeps) gin.HandlerFunc {
 			return
 		}
 		defer func() { _ = opened.Close() }()
-		content, err := img.ReadAllBounded(opened, service.EndFrameUploadMaxBytes)
+		content, err := img.ReadAllBounded(opened, asset.EndFrameUploadMaxBytes)
 		if err != nil {
 			if errors.Is(err, img.ErrTooLarge) {
 				apperr.Abort(c, apperr.NewText(http.StatusRequestEntityTooLarge, "upload_too_large", map[string]any{
-					"max_megabytes": service.EndFrameUploadMaxBytes / (1024 * 1024),
+					"max_megabytes": asset.EndFrameUploadMaxBytes / (1024 * 1024),
 				}))
 				return
 			}
@@ -119,7 +120,7 @@ func deleteEndFrame(d EndFrameDeps) gin.HandlerFunc {
 
 // abortEndFrameErr 把尾帧领域错误映射成统一 {"detail": ...} 信封。
 func abortEndFrameErr(c *gin.Context, err error) {
-	var endFrameErr *service.EndFrameError
+	var endFrameErr *asset.EndFrameError
 	if !errors.As(err, &endFrameErr) {
 		apperr.Abort(c, apperr.Internal(err))
 		return

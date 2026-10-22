@@ -2,7 +2,7 @@
 // 预览/成片的任务入队与生命周期、产物读取、成片审查流水线与字幕导出。
 // worker 侧的 run_preview_job / run_final_job / render_*_pipeline 由渲染
 // worker 调用，不在本文件范围。
-package service
+package media
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/fs"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
 )
@@ -83,11 +84,11 @@ func (e *RenderJobConflictError) Error() string { return e.Code }
 // MediaRenderingService 承载渲染任务的持久化与审查。
 type MediaRenderingService struct {
 	db    *gorm.DB
-	store *ProjectStore
+	store *service.ProjectStore
 }
 
 // NewMediaRenderingService 构造服务。
-func NewMediaRenderingService(gdb *gorm.DB, store *ProjectStore) *MediaRenderingService {
+func NewMediaRenderingService(gdb *gorm.DB, store *service.ProjectStore) *MediaRenderingService {
 	return &MediaRenderingService{db: gdb, store: store}
 }
 
@@ -107,14 +108,14 @@ func renderJobPayload(job *repository.RenderJob) map[string]any {
 		"input_fingerprint":   job.InputFingerprint,
 		"progress":            job.Progress,
 		"progress_stage":      job.ProgressStage,
-		"heartbeat_at":        nullableISO(job.HeartbeatAt),
-		"cancel_requested_at": nullableISO(job.CancelRequestedAt),
+		"heartbeat_at":        service.NullableISO(job.HeartbeatAt),
+		"cancel_requested_at": service.NullableISO(job.CancelRequestedAt),
 		"error_code":          job.ErrorCode,
 		"error_message":       job.ErrorMessage,
-		"created_at":          isoformatTime(job.CreatedAt.Time),
-		"started_at":          nullableISO(job.StartedAt),
-		"completed_at":        nullableISO(job.CompletedAt),
-		"updated_at":          isoformatTime(job.UpdatedAt.Time),
+		"created_at":          service.IsoformatTime(job.CreatedAt.Time),
+		"started_at":          service.NullableISO(job.StartedAt),
+		"completed_at":        service.NullableISO(job.CompletedAt),
+		"updated_at":          service.IsoformatTime(job.UpdatedAt.Time),
 	}
 }
 
@@ -134,7 +135,7 @@ func renderArtifactPayload(artifact *repository.RenderArtifact) map[string]any {
 		"width":            artifact.Width,
 		"height":           artifact.Height,
 		"fingerprint":      artifact.Fingerprint,
-		"created_at":       isoformatTime(artifact.CreatedAt.Time),
+		"created_at":       service.IsoformatTime(artifact.CreatedAt.Time),
 	}
 }
 
@@ -149,10 +150,10 @@ func reviewSnapshotPayload(snapshot *repository.RenderReviewSnapshot) map[string
 		"source_fingerprint":   snapshot.SourceFingerprint,
 		"artifact_fingerprint": snapshot.ArtifactFingerprint,
 		"status":               snapshot.Status,
-		"checks":               parseJSONValue(snapshot.ChecksJSON),
-		"created_at":           isoformatTime(snapshot.CreatedAt.Time),
+		"checks":               service.ParseJSONValue(snapshot.ChecksJSON),
+		"created_at":           service.IsoformatTime(snapshot.CreatedAt.Time),
 		"confirmed_by":         snapshot.ConfirmedBy,
-		"confirmed_at":         nullableISO(snapshot.ConfirmedAt),
+		"confirmed_at":         service.NullableISO(snapshot.ConfirmedAt),
 	}
 }
 
@@ -729,7 +730,7 @@ func (s *MediaRenderingService) ReviewFinalArtifact(ctx context.Context, planID,
 		return nil, err
 	}
 	if existing != nil {
-		checks, _ := parseJSONValue(existing.ChecksJSON).(map[string]any)
+		checks, _ := service.ParseJSONValue(existing.ChecksJSON).(map[string]any)
 		if checks == nil {
 			checks = map[string]any{}
 		}
@@ -814,10 +815,10 @@ func (s *MediaRenderingService) ReviewFinalArtifact(ctx context.Context, planID,
 		"within_metadata_tolerance": math.Abs(durationDelta) <= 0.05,
 	}
 	var timelineList []any
-	if list, ok := parseJSONValue(revision.TimelineJSON).([]any); ok {
+	if list, ok := service.ParseJSONValue(revision.TimelineJSON).([]any); ok {
 		timelineList = list
 	}
-	packaging := parseJSONValue(revision.PackagingJSON)
+	packaging := service.ParseJSONValue(revision.PackagingJSON)
 	expectedDuration, err := domain.ExpectedTimelineDuration(timelineList, packaging)
 	if err != nil {
 		return nil, err
@@ -844,7 +845,7 @@ func (s *MediaRenderingService) ReviewFinalArtifact(ctx context.Context, planID,
 	if err != nil {
 		return nil, err
 	}
-	subtitleCheck, err := domain.SubtitleBoundsCheck(parseJSONValue(revision.SubtitleJSON), duration)
+	subtitleCheck, err := domain.SubtitleBoundsCheck(service.ParseJSONValue(revision.SubtitleJSON), duration)
 	if err != nil {
 		return nil, err
 	}
@@ -952,7 +953,7 @@ func (s *MediaRenderingService) ReviewFinalArtifact(ctx context.Context, planID,
 		"warning_reasons":   warningReasons,
 		"info_reasons":      infoReasons,
 	}
-	checksJSON, err := canonicalString(checksPayload)
+	checksJSON, err := service.CanonicalString(checksPayload)
 	if err != nil {
 		return nil, err
 	}

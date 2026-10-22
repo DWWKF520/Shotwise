@@ -22,6 +22,7 @@ import (
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	serviceref "github.com/shotwise/shotwise/internal/service/reference"
 )
 
 // 视频生成工具（对应 server/agent_runtime/sdk_tools/enqueue_videos.py 的 4 个工具）：
@@ -678,7 +679,7 @@ func generateReferenceUnits(
 	}
 
 	skipSet := stringSet(alreadyDone)
-	if message, err := service.ValidateReferenceUnitsPreflight(pf, projectDir, units, preflightScript, skipSet); err != nil {
+	if message, err := serviceref.ValidateReferenceUnitsPreflight(pf, projectDir, units, preflightScript, skipSet); err != nil {
 		return nil, nil, err
 	} else if message != "" {
 		return nil, nil, errors.New(message)

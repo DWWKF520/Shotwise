@@ -7,7 +7,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/agent/tools/assets"
 	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 // fakeScriptStore 在内存剧本上执行 mutate，记录成功写盘次数。
@@ -206,21 +206,21 @@ func TestPatchEpisodeMetaWhitelistAndTitle(t *testing.T) {
 type fakeRenamer struct {
 	calls  int
 	kind   domain.AssetKind
-	report service.RenameReport
+	report asset.RenameReport
 	err    error
 }
 
-func (f *fakeRenamer) Rename(_ string, kind domain.AssetKind, _, _ string, _ bool) (service.RenameReport, error) {
+func (f *fakeRenamer) Rename(_ string, kind domain.AssetKind, _, _ string, _ bool) (asset.RenameReport, error) {
 	f.calls++
 	f.kind = kind
 	if f.err != nil {
-		return service.RenameReport{}, f.err
+		return asset.RenameReport{}, f.err
 	}
 	return f.report, nil
 }
 
 func TestRenameAssetReportsCascadeAndRejectsUnknownTable(t *testing.T) {
-	renamer := &fakeRenamer{report: service.RenameReport{
+	renamer := &fakeRenamer{report: asset.RenameReport{
 		Table: "characters", OldName: "阿明", NewName: "小明", Episodes: 3, References: 7, Files: 2,
 	}}
 	tl, err := assets.NewRenameAssetTool("proj", renamer)
@@ -248,7 +248,7 @@ func TestRenameAssetReportsCascadeAndRejectsUnknownTable(t *testing.T) {
 	}
 
 	// 改名失败以信封回灌。
-	failing := &fakeRenamer{err: &service.RenameFileCollisionError{Path: "characters/小明.png"}}
+	failing := &fakeRenamer{err: &asset.RenameFileCollisionError{Path: "characters/小明.png"}}
 	tl, _ = assets.NewRenameAssetTool("proj", failing)
 	out, _ = tl.InvokableRun(context.Background(), `{"table":"characters","old_name":"阿明","new_name":"小明"}`)
 	if !strings.Contains(out, "rename target occupied") {

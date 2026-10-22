@@ -1,8 +1,9 @@
 // step1 时长收编迁移测试（对应 tests/lib/test_reference_video_duration_migration.py
 // 的纯函数部分 + tests/test_script_review.py 的确认平移部分）。
-package service
+package reference
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/domain"
@@ -40,7 +41,7 @@ func TestMigrateUnitDurationsSumsAndStrips(t *testing.T) {
 		t.Fatalf("changed=%v warnings=%v", changed, warnings)
 	}
 	unit := units[0].(map[string]any)
-	if intValueOrZero(unit["duration_seconds"]) != 8 {
+	if service.IntValueOrZero(unit["duration_seconds"]) != 8 {
 		t.Fatalf("duration_seconds = %v", unit["duration_seconds"])
 	}
 	shots := unit["shots"].([]any)
@@ -62,7 +63,7 @@ func TestMigrateUnitDurationsManualDurationWins(t *testing.T) {
 	if !changed {
 		t.Fatalf("expected change")
 	}
-	if intValueOrZero(unit["duration_seconds"]) != 12 {
+	if service.IntValueOrZero(unit["duration_seconds"]) != 12 {
 		t.Fatalf("duration_seconds = %v, 手填值不得被镜头和改写", unit["duration_seconds"])
 	}
 }
@@ -71,7 +72,7 @@ func TestMigrateUnitDurationsFallsBackToShotSumWhenDirty(t *testing.T) {
 	unit := legacyStep1Unit("E1U1", []int{4, 6}, nil)
 	unit["duration_seconds"] = nil
 	MigrateUnitDurations([]any{unit}, nil)
-	if intValueOrZero(unit["duration_seconds"]) != 10 {
+	if service.IntValueOrZero(unit["duration_seconds"]) != 10 {
 		t.Fatalf("duration_seconds = %v", unit["duration_seconds"])
 	}
 }
@@ -80,7 +81,7 @@ func TestMigrateUnitDurationsClampsOutOfRange(t *testing.T) {
 	unit := legacyStep1Unit("E1U1", []int{15, 15, 15, 15}, float64(9999))
 	_, warnings := MigrateUnitDurations([]any{unit}, nil)
 	_, high := domain.ReferenceUnitDurationRange()
-	if intValueOrZero(unit["duration_seconds"]) != high {
+	if service.IntValueOrZero(unit["duration_seconds"]) != high {
 		t.Fatalf("duration_seconds = %v, want clamp 到区间上界 %d", unit["duration_seconds"], high)
 	}
 	found := false
@@ -97,7 +98,7 @@ func TestMigrateUnitDurationsClampsOutOfRange(t *testing.T) {
 func TestMigrateUnitDurationsKeepsSlotMemberBeyondShotSum(t *testing.T) {
 	unit := legacyStep1Unit("E1U1", []int{15, 15}, float64(120))
 	_, warnings := MigrateUnitDurations([]any{unit}, []int{8, 120})
-	if intValueOrZero(unit["duration_seconds"]) != 120 {
+	if service.IntValueOrZero(unit["duration_seconds"]) != 120 {
 		t.Fatalf("duration_seconds = %v", unit["duration_seconds"])
 	}
 	if len(warnings) != 0 {
@@ -108,7 +109,7 @@ func TestMigrateUnitDurationsKeepsSlotMemberBeyondShotSum(t *testing.T) {
 func TestMigrateUnitDurationsTakesSlot(t *testing.T) {
 	unit := legacyStep1Unit("E1U1", []int{3, 5}, nil)
 	_, warnings := MigrateUnitDurations([]any{unit}, []int{4, 6, 12})
-	if intValueOrZero(unit["duration_seconds"]) != 12 {
+	if service.IntValueOrZero(unit["duration_seconds"]) != 12 {
 		t.Fatalf("duration_seconds = %v", unit["duration_seconds"])
 	}
 	found := false
@@ -125,7 +126,7 @@ func TestMigrateUnitDurationsTakesSlot(t *testing.T) {
 func TestMigrateUnitDurationsSlotClampsDown(t *testing.T) {
 	unit := legacyStep1Unit("E1U1", []int{15, 15}, nil)
 	MigrateUnitDurations([]any{unit}, []int{4, 8})
-	if intValueOrZero(unit["duration_seconds"]) != 8 {
+	if service.IntValueOrZero(unit["duration_seconds"]) != 8 {
 		t.Fatalf("duration_seconds = %v", unit["duration_seconds"])
 	}
 }
@@ -133,12 +134,12 @@ func TestMigrateUnitDurationsSlotClampsDown(t *testing.T) {
 func TestMigrateUnitDurationsIdempotent(t *testing.T) {
 	units := []any{legacyStep1Unit("E1U1", []int{3, 5}, nil)}
 	MigrateUnitDurations(units, nil)
-	first := ContentFingerprintOfData(map[string]any{"units": units})
+	first := service.ContentFingerprintOfData(map[string]any{"units": units})
 	changed, _ := MigrateUnitDurations(units, nil)
 	if changed {
 		t.Fatalf("second run should not change")
 	}
-	if ContentFingerprintOfData(map[string]any{"units": units}) != first {
+	if service.ContentFingerprintOfData(map[string]any{"units": units}) != first {
 		t.Fatalf("second run altered content")
 	}
 }

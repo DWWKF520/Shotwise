@@ -1,4 +1,4 @@
-package service
+package creative
 
 import (
 	"context"
@@ -171,7 +171,7 @@ func TestCreativeBoardSnapshotVersionAndCopy(t *testing.T) {
 	boardID, _ := board["id"].(string)
 
 	snapshot := map[string]any{
-		"name": "Snapshot Board",
+		"name": "service.Snapshot Board",
 		"items": []any{
 			map[string]any{"id": "i1", "item_type": "character", "resource_type": "character", "resource_id": "A"},
 			map[string]any{"id": "i2", "item_type": "scene", "resource_type": "scene", "resource_id": "B"},
@@ -185,7 +185,7 @@ func TestCreativeBoardSnapshotVersionAndCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replace snapshot: %v", err)
 	}
-	if replaced["name"] != "Snapshot Board" || replaced["revision"] != int64(2) {
+	if replaced["name"] != "service.Snapshot Board" || replaced["revision"] != int64(2) {
 		t.Fatalf("replaced board = %v", replaced)
 	}
 
@@ -218,7 +218,7 @@ func TestCreativeBoardSnapshotVersionAndCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("copy board: %v", err)
 	}
-	if copied["name"] != "Snapshot Board copy" {
+	if copied["name"] != "service.Snapshot Board copy" {
 		t.Fatalf("copy name = %v", copied["name"])
 	}
 	copiedItems, _ := copied["items"].([]map[string]any)

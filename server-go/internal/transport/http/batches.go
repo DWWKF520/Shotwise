@@ -18,13 +18,14 @@ import (
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 // BatchDeps 是批次路由的依赖。
 type BatchDeps struct {
 	Store *service.ProjectStore
 	// NewOrchestrator 按「项目 + 调用者」构造编排器（仓储带 user/project 围栏）。
-	NewOrchestrator func(projectName, userID string) *service.BatchOrchestrator
+	NewOrchestrator func(projectName, userID string) *generation.BatchOrchestrator
 }
 
 // RegisterBatches 注册批量生成路由。
@@ -180,7 +181,7 @@ func readRawJSON(c *gin.Context) (map[string]json.RawMessage, bool) {
 }
 
 // decodeBatchItems 逐条解析 items，并复刻 pydantic 的严格校验（extra=forbid / 长度 / 枚举）。
-func decodeBatchItems(c *gin.Context, envelope map[string]json.RawMessage) ([]service.GenerationBatchItem, bool) {
+func decodeBatchItems(c *gin.Context, envelope map[string]json.RawMessage) ([]generation.GenerationBatchItem, bool) {
 	rawItems, present := envelope["items"]
 	if !present {
 		apperr.Abort(c, &apperr.Validation{Items: []apperr.ValidationItem{
@@ -206,7 +207,7 @@ func decodeBatchItems(c *gin.Context, envelope map[string]json.RawMessage) ([]se
 		add([]string{"body", "items"}, "List should have at most 500 items after validation", "too_long")
 	}
 
-	out := make([]service.GenerationBatchItem, 0, len(entries))
+	out := make([]generation.GenerationBatchItem, 0, len(entries))
 	for index, entry := range entries {
 		itemLoc := []string{"body", "items", itoaInt(index)}
 		for key := range entry {
@@ -281,7 +282,7 @@ func decodeBatchItems(c *gin.Context, envelope map[string]json.RawMessage) ([]se
 			add(append(append([]string{}, taskLoc...), ""), "invalid task body", "value_error")
 			continue
 		}
-		out = append(out, service.GenerationBatchItem{ItemID: itemID, Task: taskBodyToMap(task)})
+		out = append(out, generation.GenerationBatchItem{ItemID: itemID, Task: taskBodyToMap(task)})
 	}
 	if len(items) > 0 {
 		apperr.Abort(c, &apperr.Validation{Items: items})
@@ -318,7 +319,7 @@ func taskBodyToMap(body batchTaskBody) map[string]any {
 }
 
 // loadBatchResponse 读批次并投影。
-func loadBatchResponse(c *gin.Context, o *service.BatchOrchestrator, batchID string) (map[string]any, error) {
+func loadBatchResponse(c *gin.Context, o *generation.BatchOrchestrator, batchID string) (map[string]any, error) {
 	batch, err := o.GetBatch(c.Request.Context(), batchID)
 	if err != nil {
 		return nil, err
@@ -328,7 +329,7 @@ func loadBatchResponse(c *gin.Context, o *service.BatchOrchestrator, batchID str
 
 // batchResponse 组装响应：状态由任务状态派生，逐条任务带 occupied / reason。
 func batchResponse(
-	c *gin.Context, o *service.BatchOrchestrator, batch service.GenerationBatch,
+	c *gin.Context, o *generation.BatchOrchestrator, batch generation.GenerationBatch,
 ) (map[string]any, error) {
 	status, err := o.Status(c.Request.Context(), batch)
 	if err != nil {
@@ -386,8 +387,8 @@ func batchResponse(
 // 字符串 detail，避免把内部错误文本透给客户端。
 func abortBatchErr(c *gin.Context, err error, admissionCode string) {
 	var (
-		notFound  *service.BatchNotFoundError
-		admission *service.BatchAdmissionError
+		notFound  *generation.BatchNotFoundError
+		admission *generation.BatchAdmissionError
 	)
 	switch {
 	case errors.As(err, &notFound):

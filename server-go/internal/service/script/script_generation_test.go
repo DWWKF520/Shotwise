@@ -1,6 +1,9 @@
-package service
+package script
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -127,7 +130,7 @@ func TestMergeVisualLayers(t *testing.T) {
 func TestContentFingerprintIgnoresKeyOrder(t *testing.T) {
 	a := map[string]any{"b": 1, "a": []any{1, 2}}
 	b := map[string]any{"a": []any{1, 2}, "b": 1}
-	if ContentFingerprintOfData(a) != ContentFingerprintOfData(b) {
+	if service.ContentFingerprintOfData(a) != service.ContentFingerprintOfData(b) {
 		t.Fatal("fingerprint should be stable across key order")
 	}
 }
@@ -135,7 +138,7 @@ func TestContentFingerprintIgnoresKeyOrder(t *testing.T) {
 func TestReviewStatusAndConfirmation(t *testing.T) {
 	dir := t.TempDir()
 	episode := 1
-	drafts := EpisodeDraftsDir(dir, episode)
+	drafts := service.EpisodeDraftsDir(dir, episode)
 	if err := os.MkdirAll(drafts, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -163,8 +166,8 @@ func TestReviewStatusAndConfirmation(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &content); err != nil {
 		t.Fatal(err)
 	}
-	fingerprint := ContentFingerprintOfData(content)
-	if !ApplyConfirmation(pf, episode, fingerprint, "2026-01-01T00:00:00Z") {
+	fingerprint := service.ContentFingerprintOfData(content)
+	if !service.ApplyConfirmation(pf, episode, fingerprint, "2026-01-01T00:00:00Z") {
 		t.Fatal("apply confirmation should succeed")
 	}
 	if got := ReviewStatus(dir, pf, episode); got != ReviewStatusConfirmed {
@@ -185,18 +188,18 @@ func TestQuarantineRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	episode := 2
 	content := map[string]any{"units": []any{map[string]any{"text": "镜头1：他推开门"}}}
-	violations := []DraftViolation{{Code: "schema_invalid", Label: "unit E2U01", Message: "坏"}}
-	path, err := WriteQuarantine(dir, episode, QuarantineKindStep1, content, violations, map[string]any{"source": nil}, nil)
+	violations := []reference.DraftViolation{{Code: "schema_invalid", Label: "unit E2U01", Message: "坏"}}
+	path, err := reference.WriteQuarantine(dir, episode, reference.QuarantineKindStep1, content, violations, map[string]any{"source": nil}, nil)
 	if err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if path == "" {
 		t.Fatal("quarantine path should not be empty")
 	}
-	if !QuarantineExists(dir, episode, QuarantineKindStep1) {
+	if !reference.QuarantineExists(dir, episode, reference.QuarantineKindStep1) {
 		t.Fatal("quarantine should exist")
 	}
-	draft, err := ReadQuarantine(dir, episode, QuarantineKindStep1)
+	draft, err := reference.ReadQuarantine(dir, episode, reference.QuarantineKindStep1)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -206,13 +209,13 @@ func TestQuarantineRoundTrip(t *testing.T) {
 	if _, hasSource := draft.Meta["source"]; !hasSource {
 		t.Fatal("meta.source 键应一律写出（未指定时 null）")
 	}
-	if _, err := os.Stat(filepath.Join(EpisodeDraftsDir(dir, episode), ReferenceVideoStep1QuarantineName)); err != nil {
+	if _, err := os.Stat(filepath.Join(service.EpisodeDraftsDir(dir, episode), service.ReferenceVideoStep1QuarantineName)); err != nil {
 		t.Fatalf("expected quarantine file at fixed name: %v", err)
 	}
-	if err := ClearQuarantine(dir, episode, QuarantineKindStep1); err != nil {
+	if err := reference.ClearQuarantine(dir, episode, reference.QuarantineKindStep1); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
-	if QuarantineExists(dir, episode, QuarantineKindStep1) {
+	if reference.QuarantineExists(dir, episode, reference.QuarantineKindStep1) {
 		t.Fatal("quarantine should be cleared")
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -153,14 +154,14 @@ func TestP4AssemblySmoke(t *testing.T) {
 	}
 
 	ledger := service.NewLedger(gdb, pricing.NewCalculator(pricing.BuiltinCatalog()))
-	images := service.NewImageGenerator(gdb, ledger)
-	dispatcher := service.NewTaskDispatcher(store, images)
-	dispatcher.SetVideoGenerator(service.NewVideoGenerator(gdb, ledger))
+	images := generation.NewImageGenerator(gdb, ledger)
+	dispatcher := generation.NewTaskDispatcher(store, images)
+	dispatcher.SetVideoGenerator(generation.NewVideoGenerator(gdb, ledger))
 
 	hub := service.NewEventHub()
 	q := queue.NewQueue(gdb,
 		queue.WithProjectLoader(store),
-		queue.WithTerminalEmitter(service.NewTerminalEmitter(hub, store, gdb)))
+		queue.WithTerminalEmitter(generation.NewTerminalEmitter(hub, store, gdb)))
 
 	exec := &smokeExecutor{
 		block:  map[string]chan struct{}{},
@@ -172,13 +173,13 @@ func TestP4AssemblySmoke(t *testing.T) {
 			map[string]map[string]int{"p1": {"image": 1, "video": 1, "audio": 1}},
 			map[string]int{"image": 1, "video": 1, "audio": 1},
 		)),
-		queue.WithInterruptedSettler(service.NewLedgerSettler(ledger)),
-		queue.WithFailureEncoder(service.EncodeTaskFailure),
-		queue.WithTaskErrorEncoder(service.EncodeTaskError),
-		queue.WithTransientClassifier(service.IsTransientTaskError),
-		queue.WithProviderExtractor(service.NewProviderExtractor(store, config.NewResolver(gdb))),
-		queue.WithPreflight(service.NewWorkerPreflight(store)),
-		queue.WithResumeExecutor(service.NewResumeExecutor(dispatcher)))
+		queue.WithInterruptedSettler(generation.NewLedgerSettler(ledger)),
+		queue.WithFailureEncoder(generation.EncodeTaskFailure),
+		queue.WithTaskErrorEncoder(generation.EncodeTaskError),
+		queue.WithTransientClassifier(generation.IsTransientTaskError),
+		queue.WithProviderExtractor(generation.NewProviderExtractor(store, config.NewResolver(gdb))),
+		queue.WithPreflight(generation.NewWorkerPreflight(store)),
+		queue.WithResumeExecutor(generation.NewResumeExecutor(dispatcher)))
 	q.SetCancelCallback(worker.RequestCancel)
 
 	// 启动收口的对象：本进程构造之前发起的 pending 行，必须在 worker 起来后被翻失败。

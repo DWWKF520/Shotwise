@@ -1,4 +1,6 @@
-package service
+package script
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -10,14 +12,14 @@ import (
 
 // durationFixture 造一个含 3 个分镜的剧集，档位 [4,6,8]。
 type durationFixture struct {
-	store  *ProjectStore
+	store  *service.ProjectStore
 	svc    *EpisodeDurationService
 	script map[string]any
 }
 
 func newDurationFixture(t *testing.T) durationFixture {
 	t.Helper()
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}

@@ -1,4 +1,4 @@
-package service
+package creative
 
 // 模板市场、审核、预算与智能体 patch（对应 server/services/workflows.py 的下半部分）。
 //

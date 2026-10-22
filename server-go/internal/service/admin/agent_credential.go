@@ -7,9 +7,10 @@
 // 两条不变式：
 //   - 每个 (user, sdk_type) 至多一条 active，由部分唯一索引保证；切换必须「先清后置」；
 //   - api_key 只进不出：读路径一律回 mask，明文只在写入方向出现。
-package service
+package admin
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -178,16 +179,16 @@ func (s *AgentCredentialService) Create(
 		sdkType = AgentSDKClaude
 	}
 	if sdkType != AgentSDKClaude && sdkType != AgentSDKOpenAI {
-		return AgentCredentialView{}, &ValueError{Msg: "invalid sdk_type"}
+		return AgentCredentialView{}, &service.ValueError{Msg: "invalid sdk_type"}
 	}
 	if in.PresetID == nil || strings.TrimSpace(*in.PresetID) == "" {
-		return AgentCredentialView{}, &ValueError{Msg: "preset_id is required"}
+		return AgentCredentialView{}, &service.ValueError{Msg: "preset_id is required"}
 	}
 	if in.APIKey == nil || strings.TrimSpace(*in.APIKey) == "" {
-		return AgentCredentialView{}, &ValueError{Msg: "api_key is required"}
+		return AgentCredentialView{}, &service.ValueError{Msg: "api_key is required"}
 	}
 	if in.BaseURL == nil || strings.TrimSpace(*in.BaseURL) == "" {
-		return AgentCredentialView{}, &ValueError{Msg: "base_url is required"}
+		return AgentCredentialView{}, &service.ValueError{Msg: "base_url is required"}
 	}
 
 	presetID := strings.TrimSpace(*in.PresetID)
@@ -389,7 +390,7 @@ func (s *AgentCredentialService) TestDraft(
 	ctx context.Context, in AgentCredentialInput,
 ) (ConnectionTest, error) {
 	if in.BaseURL == nil || in.APIKey == nil {
-		return ConnectionTest{}, &ValueError{Msg: "base_url and api_key are required"}
+		return ConnectionTest{}, &service.ValueError{Msg: "base_url and api_key are required"}
 	}
 	protocol := ""
 	if in.Protocol != nil {
@@ -435,7 +436,7 @@ func (s *AgentCredentialService) ResolveActiveModel(ctx context.Context) (Resolv
 		if strings.TrimSpace(row.BaseURL) == "" || strings.TrimSpace(row.APIKey) == "" {
 			continue
 		}
-		model := strings.TrimSpace(derefString(row.Model))
+		model := strings.TrimSpace(service.DerefString(row.Model))
 		if model == "" {
 			if preset, ok := AgentPresetByID(row.PresetID); ok {
 				model = preset.DefaultModel

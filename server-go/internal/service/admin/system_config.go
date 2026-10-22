@@ -1,6 +1,6 @@
 // 系统配置（非供应商专项）：默认后端、旁白、Agent 文本模型档位与版本检查。
 // 对应 server/routers/system_config.py。供应商专项（密钥 / 限速 / 连接测试）在 provider_admin。
-package service
+package admin
 
 import (
 	"context"
@@ -82,7 +82,7 @@ func (s *SystemConfigService) enumerateCandidates(ctx context.Context) ([]modelC
 }
 
 // builtinModelBuckets 把能力声明翻译成桶（t2i / i2i / i2v / r2v），不新增第二份声明。
-// 文本 / 音频模型恒为空集；视频桶由 backend 的 VideoCapabilities 推导。
+// 文本 / 音频模型恒为空集；视频桶由 backend 的 service.VideoCapabilities 推导。
 func builtinModelBuckets(providerID, modelID string, info provider.ModelInfo) map[string]bool {
 	buckets := map[string]bool{}
 	switch info.MediaType {

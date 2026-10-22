@@ -4,9 +4,10 @@
 // 参考路径：LLM 只出书写层正文，unit 数与顺序、台词行逐字、镜头数都由 step1 定稿；保结构
 // diff 违约时把已付费的产出连同报告落隔离草稿，由晋升工具重判。ad 路径：单视频平铺 shots[]，
 // 供应商 storyboard 路径枚举单镜头时长、reference 路径取 1-15 自由整数。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,14 +16,15 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
 // ScriptReferenceContext 是参考路径 step2 所需的运行时能力上下文。
 type ScriptReferenceContext struct {
 	// Caps 是参考拆分档位与上限（含两套逐 unit 档位）。
-	Caps ReferenceSplitCaps
+	Caps reference.ReferenceSplitCaps
 	// DurationCtx 是项目能力 context（provider/model/resolution/全集档位），用于逐 unit 取档。
-	DurationCtx ProjectDurationContext
+	DurationCtx service.ProjectDurationContext
 }
 
 // WithReferenceContext 注入参考路径能力上下文。
@@ -72,7 +74,7 @@ func (g *ScriptGenerator) buildADPrompt(episode int, genMode string, supported [
 		Episode:            episode,
 		AspectRatio:        g.aspectRatio(),
 		TargetLanguage:     targetLanguageOf(g.pf),
-		SpeechRateOverride: ProjectSpeechRateOverride(g.pf),
+		SpeechRateOverride: service.ProjectSpeechRateOverride(g.pf),
 	})
 }
 
@@ -101,7 +103,7 @@ func (g *ScriptGenerator) generateAD(ctx context.Context, episode int, instructi
 //
 // 校验失败降级返回原始数据，与 Python `_parse_response` 同口径——落盘前的结构校验由写盘入口把关。
 func parseEpisodeScriptResponse(responseText string, episode int) (map[string]any, error) {
-	root, err := parseJSONObject(responseText)
+	root, err := service.ParseJSONObject(responseText)
 	if err != nil {
 		return nil, fmt.Errorf("JSON 解析失败: %w", err)
 	}
@@ -151,13 +153,13 @@ func (g *ScriptGenerator) generateReferenceStep2(ctx context.Context, episode in
 	if err := g.assertReferenceStep1Ready(units, rc); err != nil {
 		return "", err
 	}
-	response, err := g.gen.Generate(ctx, prompt, ReferenceStep2FlatScriptSchema(), defaultMaxOutputTokens)
+	response, err := g.gen.Generate(ctx, prompt, reference.ReferenceStep2FlatScriptSchema(), defaultMaxOutputTokens)
 	if err != nil {
 		return "", err
 	}
-	script, err := MergeReferenceVisual(units, response, episode, g.pf, rc.Caps.MaxRefs)
+	script, err := reference.MergeReferenceVisual(units, response, episode, g.pf, rc.Caps.MaxRefs)
 	if err != nil {
-		if len(violationItems(err)) > 0 {
+		if len(reference.ViolationItems(err)) > 0 {
 			return "", quarantineReferenceStep2(g.dir, episode, response, err)
 		}
 		return "", err
@@ -165,7 +167,7 @@ func (g *ScriptGenerator) generateReferenceStep2(ctx context.Context, episode in
 	unitDurations := referenceUnitDurationMap(units, episode)
 	resultPath, err := g.finish(script, episode, unitDurations, rc)
 	if err != nil {
-		if len(violationItems(err)) > 0 {
+		if len(reference.ViolationItems(err)) > 0 {
 			return "", quarantineReferenceStep2(g.dir, episode, response, err)
 		}
 		return "", err
@@ -178,38 +180,38 @@ func referenceUnitDurationMap(units []map[string]any, episode int) map[string]in
 	out := map[string]int{}
 	for _, unit := range units {
 		id, _ := unit["unit_id"].(string)
-		out[fmt.Sprint(rewriteEpisodePrefix(id, episode))] = intValueOrZero(unit["duration_seconds"])
+		out[fmt.Sprint(rewriteEpisodePrefix(id, episode))] = service.IntValueOrZero(unit["duration_seconds"])
 	}
 	return out
 }
 
 // quarantineReferenceStep2 把违约的 step2 产出与报告落隔离草稿，返回携带报告的违约异常。
 func quarantineReferenceStep2(projectDir string, episode int, responseText string, err error) error {
-	content, contentErr := ReferenceStep2FlatContent(responseText, episode)
+	content, contentErr := reference.ReferenceStep2FlatContent(responseText, episode)
 	if contentErr != nil {
 		return contentErr
 	}
-	report, reportErr := QuarantineAndReport(projectDir, episode, QuarantineKindStep2, content, violationItems(err), nil, nil)
+	report, reportErr := reference.QuarantineAndReport(projectDir, episode, reference.QuarantineKindStep2, content, reference.ViolationItems(err), nil, nil)
 	if reportErr != nil {
 		return reportErr
 	}
-	return &DraftViolation{Code: "quarantined", Message: report}
+	return &reference.DraftViolation{Code: "quarantined", Message: report}
 }
 
 // loadReferenceStep1 加载并校验 reference_video step1 结构化中间文件 step1_reference_units.json。
 func (g *ScriptGenerator) loadReferenceStep1(episode int, supportedDurations []int) ([]map[string]any, error) {
-	drafts := EpisodeDraftsDir(g.dir, episode)
-	step1JSON := filepath.Join(drafts, ReferenceVideoStep1Filename)
-	if QuarantineExists(g.dir, episode, QuarantineKindStep1) {
+	drafts := service.EpisodeDraftsDir(g.dir, episode)
+	step1JSON := filepath.Join(drafts, service.ReferenceVideoStep1Filename)
+	if reference.QuarantineExists(g.dir, episode, reference.QuarantineKindStep1) {
 		return nil, fmt.Errorf("第 %d 集 step1 有违约产物待处置（%s），step2 生成已中止；"+
 			"请先修复该草稿并经 %s 晋升为正式 step1",
-			episode, QuarantinePath(g.dir, episode, QuarantineKindStep1), PromoteToolName)
+			episode, reference.QuarantinePath(g.dir, episode, reference.QuarantineKindStep1), reference.PromoteToolName)
 	}
 	if _, err := os.Stat(step1JSON); err != nil {
-		legacy := filepath.Join(drafts, ReferenceVideoStep1LegacyFilename)
+		legacy := filepath.Join(drafts, service.ReferenceVideoStep1LegacyFilename)
 		if _, legacyErr := os.Stat(legacy); legacyErr == nil {
 			return nil, fmt.Errorf("仅找到结构化前的旧拆分表 %s，未找到 %s；请重跑 split_reference_video_units 产出结构化 %s",
-				legacy, step1JSON, ReferenceVideoStep1Filename)
+				legacy, step1JSON, service.ReferenceVideoStep1Filename)
 		}
 		return nil, fmt.Errorf("未找到 Step 1 中间文件: %s；generation_mode=reference_video 期望该文件，请先完成 video_unit 拆分", step1JSON)
 	}
@@ -217,8 +219,8 @@ func (g *ScriptGenerator) loadReferenceStep1(episode int, supportedDurations []i
 	// 与 Web 端保存 / 确认共享同一把 per-path 锁：迁移的读改写与它们相互互斥。
 	var root map[string]any
 	var migratedProject *domain.ProjectFile
-	var migrationWarnings []MigrationWarning
-	migrateErr := Step1WriteLock(g.dir, episode, func(step1Path string) error {
+	var migrationWarnings []service.MigrationWarning
+	migrateErr := reference.Step1WriteLock(g.dir, episode, func(step1Path string) error {
 		// 顺序不变量：审阅 gate 的判定在更早的 step2 工具入口完成，迁移在其后运行且可能
 		// 改写时长。先记下迁移前的放行状态，供迁移后判断放行依据是否已失效。放行状态与
 		// 草稿在同一临界区内读取，两者才描述同一时刻——锁外读则并发的保存/确认会让它
@@ -230,7 +232,7 @@ func (g *ScriptGenerator) loadReferenceStep1(episode int, supportedDurations []i
 		}
 		// 存量草稿的 per-shot 时长一次性收编到 unit 级并回写落盘（二次加载不再触发）。
 		// 此处持有模型档位，收编结果直接取档，与下方的枚举校验对齐。
-		migratedProject, migrationWarnings, err = MigrateStep1DraftInPlace(
+		migratedProject, migrationWarnings, err = reference.MigrateStep1DraftInPlace(
 			g.store, g.projectName, content, episode, supportedDurations,
 		)
 		if err != nil {
@@ -247,7 +249,7 @@ func (g *ScriptGenerator) loadReferenceStep1(episode int, supportedDurations []i
 			GateBlocksStep2(g.dir, migratedProject, episode) {
 			return fmt.Errorf("第 %d 集 step1 时长已按当前模型档位收编改写（%s），"+
 				"改写后的内容尚未经审阅确认，step2 生成已中止；请在 Web 端审阅确认本集 step1 后重新生成",
-				episode, renderMigrationWarnings(migrationWarnings))
+				episode, reference.RenderMigrationWarnings(migrationWarnings))
 		}
 		return nil
 	})
@@ -284,14 +286,14 @@ func (g *ScriptGenerator) loadReferenceStep1(episode int, supportedDurations []i
 	}
 	var bad []int
 	for _, unit := range units {
-		duration := intValueOrZero(unit["duration_seconds"])
+		duration := service.IntValueOrZero(unit["duration_seconds"])
 		if !allowed[duration] {
 			bad = append(bad, duration)
 		}
 	}
 	if len(bad) > 0 {
 		bad = uniqueSortedInts(bad)
-		return nil, fmt.Errorf("step1_reference_units.json unit 时长非法（不在 %v 内）: %v", normalizeDurations(supportedDurations), bad)
+		return nil, fmt.Errorf("step1_reference_units.json unit 时长非法（不在 %v 内）: %v", service.NormalizeDurations(supportedDurations), bad)
 	}
 	return units, nil
 }
@@ -309,8 +311,8 @@ func normalizeReferenceStep1Units(rawUnits []any) ([]map[string]any, error) {
 			return nil, fmt.Errorf("units.%d.unit_id 必填且非空", index)
 		}
 		shots, ok := unit["shots"].([]any)
-		if !ok || len(shots) == 0 || len(shots) > MaxShotsPerUnit {
-			return nil, fmt.Errorf("units.%d.shots 必须是 1-%d 个镜头对象", index, MaxShotsPerUnit)
+		if !ok || len(shots) == 0 || len(shots) > reference.MaxShotsPerUnit {
+			return nil, fmt.Errorf("units.%d.shots 必须是 1-%d 个镜头对象", index, reference.MaxShotsPerUnit)
 		}
 		normalizedShots := make([]any, 0, len(shots))
 		for si, rawShot := range shots {
@@ -323,7 +325,7 @@ func normalizeReferenceStep1Units(rawUnits []any) ([]map[string]any, error) {
 			}
 			normalizedShots = append(normalizedShots, map[string]any{"text": shot["text"]})
 		}
-		duration, ok := intValueOK(unit["duration_seconds"])
+		duration, ok := reference.IntValueOK(unit["duration_seconds"])
 		if !ok || duration < 1 || duration > 300 {
 			return nil, fmt.Errorf("units.%d.duration_seconds 必须是 1-300 的整数", index)
 		}
@@ -336,7 +338,7 @@ func normalizeReferenceStep1Units(rawUnits []any) ([]map[string]any, error) {
 			"shots":            normalizedShots,
 			"duration_seconds": duration,
 			"references":       refs,
-			"source_text":      stringValue(unit["source_text"], ""),
+			"source_text":      service.StringValue(unit["source_text"], ""),
 		})
 	}
 	return units, nil
@@ -345,7 +347,7 @@ func normalizeReferenceStep1Units(rawUnits []any) ([]map[string]any, error) {
 // assertReferenceStep1Ready 对 step1 现值做全部预判：时长档位仍生效 + 正文按机器口径合法。
 func (g *ScriptGenerator) assertReferenceStep1Ready(units []map[string]any, rc *ScriptReferenceContext) error {
 	for _, unit := range units {
-		duration := intValueOrZero(unit["duration_seconds"])
+		duration := service.IntValueOrZero(unit["duration_seconds"])
 		offTiers := g.unitDurationOffEveryTier(duration, rc)
 		if offTiers != nil {
 			return fmt.Errorf("unit %v 已确认时长 %ds 不在当前生效档位 %v 内；通常是模型或分辨率配置变化让档位收窄导致，"+
@@ -359,32 +361,32 @@ func (g *ScriptGenerator) assertReferenceStep1Ready(units []map[string]any, rc *
 // assertReferenceStep1TextValid 按机器产物的严格口径预判 step1 各 unit 正文，违约时把定位指回 step1。
 func (g *ScriptGenerator) assertReferenceStep1TextValid(units []map[string]any, maxRefs *int) error {
 	sourceLanguage := g.pf.SourceLanguage
-	speechRateOverride := ProjectSpeechRateOverride(g.pf)
+	speechRateOverride := service.ProjectSpeechRateOverride(g.pf)
 	for _, unit := range units {
 		label := fmt.Sprintf("step1 的 unit %v", unit["unit_id"])
 		storedShots, _ := unit["shots"].([]any)
-		text := renderShotsTextList(storedShots)
+		text := reference.RenderShotsTextList(storedShots)
 		err := func() error {
-			parsedShots, _, err := validateUnitText(label, text, g.pf, maxRefs)
+			parsedShots, _, err := reference.ValidateUnitText(label, text, g.pf, maxRefs)
 			if err != nil {
 				return err
 			}
 			if len(parsedShots) != len(storedShots) {
-				return violation(label, "shot_count_changed", nil,
+				return reference.Violation(label, "shot_count_changed", nil,
 					"%s 落盘的 %d 个镜头在书写层解析回 %d 个；镜头正文里不能再嵌 `镜头N：` 行，请把它拆成独立镜头",
 					label, len(storedShots), len(parsedShots))
 			}
-			return validateDialogueLoad(label, text, intValueOrZero(unit["duration_seconds"]), sourceLanguage, speechRateOverride)
+			return reference.ValidateDialogueLoad(label, text, service.IntValueOrZero(unit["duration_seconds"]), sourceLanguage, speechRateOverride)
 		}()
 		if err != nil {
-			violations := violationItems(err)
+			violations := reference.ViolationItems(err)
 			message := ""
 			code := ""
 			if len(violations) > 0 {
 				message = violations[0].Message
 				code = violations[0].Code
 			}
-			return violation(label, code, nil,
+			return reference.Violation(label, code, nil,
 				"%s；这段正文来自 step1（拆分产出或手工编辑），step2 会逐字保留它，"+
 					"请先在 Web 端修正该 unit 的 step1 正文或时长并重新审阅确认", message)
 		}
@@ -400,7 +402,7 @@ func (g *ScriptGenerator) unitDurationOffEveryTier(duration int, rc *ScriptRefer
 	if g.unitDurationOffTier(duration, false, rc) == nil {
 		return nil
 	}
-	return EffectiveReferenceDurations(
+	return service.EffectiveReferenceDurations(
 		rc.DurationCtx.ProviderID, rc.DurationCtx.ModelName, rc.DurationCtx.SupportedDurations,
 		rc.DurationCtx.Resolution, true,
 	)
@@ -408,14 +410,14 @@ func (g *ScriptGenerator) unitDurationOffEveryTier(duration int, rc *ScriptRefer
 
 // unitDurationOffTier 时长落在该 unit 生效档位之外时返回该档位集，落在内则返回 nil。
 func (g *ScriptGenerator) unitDurationOffTier(duration int, hasReferences bool, rc *ScriptReferenceContext) []int {
-	tiers := EffectiveReferenceDurations(
+	tiers := service.EffectiveReferenceDurations(
 		rc.DurationCtx.ProviderID, rc.DurationCtx.ModelName, rc.DurationCtx.SupportedDurations,
 		rc.DurationCtx.Resolution, hasReferences,
 	)
 	if len(tiers) == 0 {
 		return nil
 	}
-	if ResolveDurationSlot(float64(duration), tiers).Seconds == duration {
+	if service.ResolveDurationSlot(float64(duration), tiers).Seconds == duration {
 		return nil
 	}
 	return tiers
@@ -429,7 +431,7 @@ func (g *ScriptGenerator) overrideReferenceUnitDurations(
 	if dupes := duplicateStrings(rewrittenOutputIDs); len(dupes) > 0 {
 		return fmt.Errorf("reference_video 输出 unit_id 重复: %v", dupes)
 	}
-	outputSet := stringSet(rewrittenOutputIDs)
+	outputSet := service.StringSet(rewrittenOutputIDs)
 	expectedSet := map[string]bool{}
 	for id := range refDurations {
 		expectedSet[id] = true
@@ -464,9 +466,9 @@ func (g *ScriptGenerator) overrideReferenceUnitDurations(
 		if !ok {
 			continue
 		}
-		hasRefs := refPresenceTruthy(unit["references"])
+		hasRefs := service.RefPresenceTruthy(unit["references"])
 		if unitTiers := g.unitDurationOffTier(target, hasRefs, rc); unitTiers != nil {
-			return violation("unit "+id, "duration_off_tier", nil,
+			return reference.Violation("unit "+id, "duration_off_tier", nil,
 				"unit %s 已确认时长 %ds 不在当前生效档位 %v 内；通常是该次生成给该 unit 新增/去掉了引用"+
 					"导致，请调整该 unit 正文里的 `@` 引用使其回到该档位；若引用本就该是这样，"+
 					"说明模型能力已变化，需要重新拆分该集 step1",
@@ -479,19 +481,19 @@ func (g *ScriptGenerator) overrideReferenceUnitDurations(
 
 // PromoteReferenceStep2Draft 按产出时那套校验器全量重判 step2 隔离草稿，通过则晋升为正式剧本并清除草稿。
 //
-// 重判用的是 MergeReferenceVisual 本身，不是它的简化副本：晋升口径与产出口径必须同一份代码。
+// 重判用的是 reference.MergeReferenceVisual 本身，不是它的简化副本：晋升口径与产出口径必须同一份代码。
 func (g *ScriptGenerator) PromoteReferenceStep2Draft(episode int) (string, error) {
 	rc, err := g.requireReferenceContext()
 	if err != nil {
 		return "", err
 	}
-	draft, err := ReadQuarantine(g.dir, episode, QuarantineKindStep2)
+	draft, err := reference.ReadQuarantine(g.dir, episode, reference.QuarantineKindStep2)
 	if err != nil {
 		return "", err
 	}
 	if draft == nil {
 		return "", fmt.Errorf("第 %d 集没有可晋升的 step2 隔离草稿（%s 缺失或内容不是合法信封）",
-			episode, QuarantinePath(g.dir, episode, QuarantineKindStep2))
+			episode, reference.QuarantinePath(g.dir, episode, reference.QuarantineKindStep2))
 	}
 	units, err := g.loadReferenceStep1(episode, rc.Caps.RawDurations)
 	if err != nil {
@@ -504,7 +506,7 @@ func (g *ScriptGenerator) PromoteReferenceStep2Draft(episode int) (string, error
 	if err != nil {
 		return "", err
 	}
-	script, mergeErr := MergeReferenceVisual(units, string(contentJSON), episode, g.pf, rc.Caps.MaxRefs)
+	script, mergeErr := reference.MergeReferenceVisual(units, string(contentJSON), episode, g.pf, rc.Caps.MaxRefs)
 	if mergeErr == nil {
 		script, mergeErr = func() (map[string]any, error) {
 			if err := g.addMetadata(script, episode, referenceUnitDurationMap(units, episode), rc); err != nil {
@@ -514,22 +516,22 @@ func (g *ScriptGenerator) PromoteReferenceStep2Draft(episode int) (string, error
 		}()
 	}
 	if mergeErr != nil {
-		violations := violationItems(mergeErr)
+		violations := reference.ViolationItems(mergeErr)
 		if len(violations) == 0 {
-			violations = []DraftViolation{{Code: "schema_invalid",
+			violations = []reference.DraftViolation{{Code: "schema_invalid",
 				Message: fmt.Sprintf("隔离草稿的 content 不符合 step2 产出结构：%s", mergeErr.Error())}}
 		}
-		report, qerr := QuarantineAndReport(g.dir, episode, QuarantineKindStep2, draft.Content, violations, nil, draft.Extra)
+		report, qerr := reference.QuarantineAndReport(g.dir, episode, reference.QuarantineKindStep2, draft.Content, violations, nil, draft.Extra)
 		if qerr != nil {
 			return "", qerr
 		}
-		return "", &DraftViolation{Code: "quarantined", Message: report}
+		return "", &reference.DraftViolation{Code: "quarantined", Message: report}
 	}
 	filename := EpisodeScriptFilename(episode)
 	if err := g.store.SaveScript(g.projectName, filename, script); err != nil {
 		return "", err
 	}
-	if err := ClearQuarantine(g.dir, episode, QuarantineKindStep2); err != nil {
+	if err := reference.ClearQuarantine(g.dir, episode, reference.QuarantineKindStep2); err != nil {
 		return "", err
 	}
 	return filepath.Join(g.dir, "scripts", filename), nil

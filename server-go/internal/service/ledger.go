@@ -443,8 +443,8 @@ func (l *Ledger) settle(
 	return l.calc.Settle(pricing.SettleRow{
 		CallType:        row.CallType,
 		Model:           row.Model,
-		Resolution:      derefText(row.Resolution),
-		AspectRatio:     derefText(row.AspectRatio),
+		Resolution:      DerefText(row.Resolution),
+		AspectRatio:     DerefText(row.AspectRatio),
 		DurationSeconds: intPtrOf(row.DurationSeconds),
 		GenerateAudio:   row.GenerateAudio,
 		Provider:        row.Provider,
@@ -484,8 +484,8 @@ func optionalText(s string) *string {
 	return &s
 }
 
-// derefText 读可选字符串，nil 按空串。
-func derefText(s *string) string {
+// DerefText 读可选字符串，nil 按空串。
+func DerefText(s *string) string {
 	if s == nil {
 		return ""
 	}

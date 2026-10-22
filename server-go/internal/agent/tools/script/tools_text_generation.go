@@ -3,6 +3,7 @@ package script
 import "github.com/shotwise/shotwise/internal/agent/tools"
 
 import (
+	serviceref "github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 )
 
 // 剧本生成类文本工具（对应 server/agent_runtime/sdk_tools/text_generation.py）。
@@ -35,7 +37,7 @@ type narrationSplitIn struct {
 
 // NewSplitNarrationSegmentsTool 构造 split_narration_segments。
 func NewSplitNarrationSegmentsTool(
-	project string, gen service.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
+	project string, gen servicescript.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
 ) (tool.InvokableTool, error) {
 	return toolutils.InferTool("split_narration_segments",
 		"把本集小说原文按朗读节奏拆分为说书片段表（逐字 novel_text + 时长 + segment_break + 出场资产），"+
@@ -68,7 +70,7 @@ func NewSplitNarrationSegmentsTool(
 				return tools.DenyEnvelope("❌ 无法解析视频模型能力：" + err.Error()), nil
 			}
 
-			prompt, err := service.BuildNarrationSplitPrompt(service.NarrationSplitPromptOptions{
+			prompt, err := servicescript.BuildNarrationSplitPrompt(servicescript.NarrationSplitPromptOptions{
 				NovelText:          source.Text,
 				ProjectOverview:    pf.Overview,
 				Characters:         &pf.Characters,
@@ -82,7 +84,7 @@ func NewSplitNarrationSegmentsTool(
 			if err != nil {
 				return tools.DenyEnvelope("❌ 构建 prompt 失败：" + err.Error()), nil
 			}
-			prompt = service.AppendUserInstructions(prompt, instructions)
+			prompt = servicescript.AppendUserInstructions(prompt, instructions)
 
 			if in.DryRun {
 				return tools.OKEnvelope(fmt.Sprintf("DRY RUN — 以下是将发送给文本模型的 Prompt:\n\n%s\n\nPrompt 长度: %d 字符",
@@ -93,26 +95,26 @@ func NewSplitNarrationSegmentsTool(
 			if err != nil {
 				return tools.DenyEnvelope("❌ 文本生成器未就绪：" + err.Error()), nil
 			}
-			result, err := generator.Generate(ctx, prompt, service.NarrationStep1DraftSchema(), tools.TextMaxOutputTokens)
+			result, err := generator.Generate(ctx, prompt, servicescript.NarrationStep1DraftSchema(), tools.TextMaxOutputTokens)
 			if err != nil {
 				return tools.DenyEnvelope("❌ 文本生成失败：" + err.Error()), nil
 			}
-			segments, err := service.ParseNarrationStep1Draft(result)
+			segments, err := servicescript.ParseNarrationStep1Draft(result)
 			if err != nil {
 				return tools.DenyEnvelope("❌ " + err.Error()), nil
 			}
-			if err := service.ValidateNarrationSegments(segments, supportedDurations); err != nil {
+			if err := servicescript.ValidateNarrationSegments(segments, supportedDurations); err != nil {
 				return tools.DenyEnvelope("❌ " + err.Error()), nil
 			}
-			if err := service.ValidateNarrationAssetReferences(segments,
+			if err := servicescript.ValidateNarrationAssetReferences(segments,
 				assetNamesOf(&pf.Characters), assetNamesOf(&pf.Scenes), assetNamesOf(&pf.Props)); err != nil {
 				return tools.DenyEnvelope("❌ " + err.Error()), nil
 			}
-			if err := service.ValidateNarrationNovelTextCoverage(segments, source.Text); err != nil {
+			if err := servicescript.ValidateNarrationNovelTextCoverage(segments, source.Text); err != nil {
 				return tools.DenyEnvelope("❌ " + err.Error()), nil
 			}
 
-			step1Name, _ := service.Step1Filename("narration")
+			step1Name, _ := servicescript.Step1Filename("narration")
 			step1Path := filepath.Join(service.EpisodeDraftsDir(dir, in.Episode), step1Name)
 			if err := os.MkdirAll(filepath.Dir(step1Path), 0o755); err != nil {
 				return tools.DenyEnvelope("❌ 创建草稿目录失败：" + err.Error()), nil
@@ -167,7 +169,7 @@ type normalizeDramaScriptIn struct {
 
 // NewNormalizeDramaScriptTool 构造 normalize_drama_script。
 func NewNormalizeDramaScriptTool(
-	project string, gen service.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
+	project string, gen servicescript.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
 ) (tool.InvokableTool, error) {
 	return toolutils.InferTool("normalize_drama_script",
 		"把 source/ 小说原文（或指定 source 文件）抽取为结构化分镜内容（场景边界、出场资产、"+
@@ -200,12 +202,12 @@ func NewNormalizeDramaScriptTool(
 			}
 			defaultDuration = memberOrNil(defaultDuration, supportedDurations)
 
-			episodeOutline, nextEpisodeOutline := service.EpisodeOutlineContext(pf, in.Episode)
+			episodeOutline, nextEpisodeOutline := servicescript.EpisodeOutlineContext(pf, in.Episode)
 			sourceKind := pf.SourceKind
 			if sourceKind == "" {
 				sourceKind = "novel"
 			}
-			prompt, err := service.BuildNormalizePrompt(service.NormalizePromptOptions{
+			prompt, err := servicescript.BuildNormalizePrompt(servicescript.NormalizePromptOptions{
 				NovelText:          source.Text,
 				ProjectOverview:    pf.Overview,
 				Style:              pf.Style,
@@ -225,14 +227,14 @@ func NewNormalizeDramaScriptTool(
 			if err != nil {
 				return tools.DenyEnvelope("❌ 构建 prompt 失败：" + err.Error()), nil
 			}
-			prompt = service.AppendUserInstructions(prompt, instructions)
+			prompt = servicescript.AppendUserInstructions(prompt, instructions)
 
 			if in.DryRun {
 				return tools.OKEnvelope(fmt.Sprintf("DRY RUN — 以下是将发送给文本模型的 Prompt:\n\n%s\n\nPrompt 长度: %d 字符",
 					prompt, len([]rune(prompt)))), nil
 			}
 
-			schema, err := service.DramaNormalizedScriptSchema(supportedDurations)
+			schema, err := servicescript.DramaNormalizedScriptSchema(supportedDurations)
 			if err != nil {
 				return tools.DenyEnvelope("❌ 构造 schema 失败：" + err.Error()), nil
 			}
@@ -244,12 +246,12 @@ func NewNormalizeDramaScriptTool(
 			if err != nil {
 				return tools.DenyEnvelope("❌ 文本生成失败：" + err.Error()), nil
 			}
-			content, err := service.ParseDramaNormalizedScript(result, supportedDurations)
+			content, err := servicescript.ParseDramaNormalizedScript(result, supportedDurations)
 			if err != nil {
 				return tools.DenyEnvelope("❌ " + err.Error()), nil
 			}
 
-			step1Name, _ := service.Step1Filename("drama")
+			step1Name, _ := servicescript.Step1Filename("drama")
 			step1Path := filepath.Join(service.EpisodeDraftsDir(dir, in.Episode), step1Name)
 			if err := os.MkdirAll(filepath.Dir(step1Path), 0o755); err != nil {
 				return tools.DenyEnvelope("❌ 创建草稿目录失败：" + err.Error()), nil
@@ -308,16 +310,16 @@ func NewConfirmScriptReviewTool(project string, projects ScriptReviewProjects) (
 			if err != nil {
 				return tools.DenyEnvelope("❌ 加载项目失败：" + err.Error()), nil
 			}
-			kind := service.Step1Kind(pf)
+			kind := servicescript.Step1Kind(pf)
 			if kind == "" {
 				return tools.DenyEnvelope("❌ 无法确认 step1 审核（not_applicable）：本项目没有结构化 step1 中间态"), nil
 			}
-			if service.Step1Quarantined(dir, pf, in.Episode) {
-				path, _ := service.Step1QuarantinePath(dir, pf, in.Episode)
+			if servicescript.Step1Quarantined(dir, pf, in.Episode) {
+				path, _ := servicescript.Step1QuarantinePath(dir, pf, in.Episode)
 				return tools.DenyEnvelope(fmt.Sprintf(
 					"❌ 无法确认 step1 审核（quarantined）：step1 违约产物待处置: %s", path)), nil
 			}
-			path, _ := service.Step1Path(dir, pf, in.Episode)
+			path, _ := servicescript.Step1Path(dir, pf, in.Episode)
 			content, readErr := tools.ReadJSONObject(path)
 			if readErr != nil {
 				return tools.DenyEnvelope("❌ 无法确认 step1 审核（invalid_content）：" + readErr.Error()), nil
@@ -345,9 +347,9 @@ func NewConfirmScriptReviewTool(project string, projects ScriptReviewProjects) (
 				return tools.DenyEnvelope("❌ 无法确认 step1 审核（" + err.Error() + "）"), nil
 			}
 			updated, err := projects.Get(project)
-			status := service.ReviewStatusConfirmed
+			status := servicescript.ReviewStatusConfirmed
 			if err == nil {
-				status = service.ReviewStatus(dir, updated, in.Episode)
+				status = servicescript.ReviewStatus(dir, updated, in.Episode)
 			}
 			return tools.OKEnvelope(fmt.Sprintf("✅ 第 %d 集 step1 已确认，step2 视觉生成已放行（status=%s）", in.Episode, status)), nil
 		})
@@ -401,7 +403,7 @@ type generateEpisodeScriptIn struct {
 
 // NewGenerateEpisodeScriptTool 构造 generate_episode_script。
 func NewGenerateEpisodeScriptTool(
-	project string, gen service.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
+	project string, gen servicescript.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
 ) (tool.InvokableTool, error) {
 	return toolutils.InferTool("generate_episode_script",
 		"调用项目配置的文本模型生成 JSON 剧本。输出固定写入 {project}/scripts/episode_N.json，"+
@@ -425,12 +427,12 @@ func NewGenerateEpisodeScriptTool(
 
 			// 隔离草稿在场先于「缺 step1」与审核 gate 报出：三者都判「未放行」，但出路各不相同。
 			if tools.UsesReferenceVideoUnits(pf) {
-				for _, kind := range []string{service.QuarantineKindStep1, service.QuarantineKindStep2} {
-					if service.QuarantineExists(dir, in.Episode, kind) {
-						path := service.QuarantinePath(dir, in.Episode, kind)
+				for _, kind := range []string{serviceref.QuarantineKindStep1, serviceref.QuarantineKindStep2} {
+					if serviceref.QuarantineExists(dir, in.Episode, kind) {
+						path := serviceref.QuarantinePath(dir, in.Episode, kind)
 						return tools.DenyEnvelope(fmt.Sprintf(
 							"⏸️ 本集有违约产物待处置（%s），step2 视觉生成已中止。"+
-								"请按草稿内 violations 的定位修正 content，再调用 %s 晋升。", path, service.PromoteToolName)), nil
+								"请按草稿内 violations 的定位修正 content，再调用 %s 晋升。", path, serviceref.PromoteToolName)), nil
 					}
 				}
 			}
@@ -447,17 +449,17 @@ func NewGenerateEpisodeScriptTool(
 			}
 
 			// 参考路径额外解析拆分档位与逐 unit 取档 context；非参考路径无需。
-			var genOpts []service.ScriptGenOption
+			var genOpts []servicescript.ScriptGenOption
 			if tools.UsesReferenceVideoUnits(pf) {
 				rc, rcErr := tools.ReferenceContextForTool(ctx, pf, caps)
 				if rcErr != nil {
 					return tools.DenyEnvelope("❌ " + rcErr.Error()), nil
 				}
-				genOpts = append(genOpts, service.WithReferenceContext(rc))
+				genOpts = append(genOpts, servicescript.WithReferenceContext(rc))
 			}
 
 			// dry-run 与真实生成先各自构造一次生成器：dry-run 不调用模型（gen 传 nil）。
-			builder, err := service.NewScriptGenerator(projects, project, nil, supportedDurations, genOpts...)
+			builder, err := servicescript.NewScriptGenerator(projects, project, nil, supportedDurations, genOpts...)
 			if err != nil {
 				return tools.DenyEnvelope("❌ 初始化剧本生成器失败：" + err.Error()), nil
 			}
@@ -470,7 +472,7 @@ func NewGenerateEpisodeScriptTool(
 			}
 
 			// step1→step2 审核 gate：结构化 step1 中间态须经 web 显式确认才放行 step2 视觉生成。
-			if service.GateBlocksStep2(dir, pf, in.Episode) {
+			if servicescript.GateBlocksStep2(dir, pf, in.Episode) {
 				return tools.DenyEnvelope("⏸️ step1 结构化中间态尚未经 web 审核确认，step2 视觉生成被 gate 阻塞。" +
 					"请在 Web 端审阅并确认本集 step1 内容后再生成剧本。"), nil
 			}
@@ -479,7 +481,7 @@ func NewGenerateEpisodeScriptTool(
 			if err != nil {
 				return tools.DenyEnvelope("❌ 文本生成器未就绪：" + err.Error()), nil
 			}
-			scriptGen, err := service.NewScriptGenerator(projects, project, generator, supportedDurations, genOpts...)
+			scriptGen, err := servicescript.NewScriptGenerator(projects, project, generator, supportedDurations, genOpts...)
 			if err != nil {
 				return tools.DenyEnvelope("❌ 初始化剧本生成器失败：" + err.Error()), nil
 			}
@@ -510,11 +512,11 @@ func resolveGenerateStep1(dir string, pf *domain.ProjectFile, episode int) (path
 		return rvJSON, "split_reference_video_units (Step 1)", true
 	}
 	if pf.ContentMode != "narration" {
-		if name, ok := service.Step1Filename(pf.ContentMode); ok {
+		if name, ok := servicescript.Step1Filename(pf.ContentMode); ok {
 			return filepath.Join(drafts, name), "normalize_drama_script tool", true
 		}
 	}
-	candidates := service.Step1ReadCandidates("narration")
+	candidates := servicescript.Step1ReadCandidates("narration")
 	if len(candidates) == 0 {
 		return "", "", false
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -66,7 +67,7 @@ func newQueueFixture(t *testing.T) queueFixture {
 	q := queue.NewQueue(gdb)
 	RegisterTasks(v1, TaskDeps{Queue: q})
 	RegisterQueueObservability(v1, QueueObservabilityDeps{
-		Obs: service.NewQueueObservability(gdb, nil),
+		Obs: generation.NewQueueObservability(gdb, nil),
 	})
 	RegisterVersions(v1, VersionDeps{Versions: service.NewVersionService(store)})
 	return queueFixture{router: r, repo: repository.NewTaskRepo(gdb), store: store, gdb: gdb}

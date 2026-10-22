@@ -3,7 +3,7 @@
 // 这是「一条入队请求在结构上是否合法」的唯一守卫点：WebUI 路由与 SDK 工具都经由这里
 // 构造，规则不会分叉。校验与 provider 无关——能力类校验（duration ↔ supported_durations）
 // 留在执行层，在 provider 解析之后做（见 ADR-0001）。
-package service
+package generation
 
 import (
 	"fmt"

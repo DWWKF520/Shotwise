@@ -1,4 +1,4 @@
-package service
+package reference
 
 // 分镜文稿的读时派生预览（对应 lib/reference_video/script_preview.py 的 build_script_preview）。
 //
@@ -29,7 +29,7 @@ type ScriptPreview struct {
 
 // BuildScriptPreview 把书写文稿派生成 shots / references / utterances + 降级可见性 warning。
 //
-// settings 必填无兜底（同 renderUnitPrompt），须与执行层拿到的同一份声音输入档同步，
+// settings 必填无兜底（同 RenderUnitPrompt），须与执行层拿到的同一份声音输入档同步，
 // 否则预览会显示音频已绑定、实际请求却不带音频段；其中 AudioReady 在预览侧留 nil：
 // 预览不解析文件，按角色资产的 reference_audio 字段非空判定。
 // maxReferenceImages 非 nil 时与执行层「先裁 references 再渲染」同口径先裁再判定纯画外
@@ -71,7 +71,7 @@ func BuildScriptPreview(
 
 	out := ScriptPreview{
 		Shots:      shots,
-		References: renderUnitReferences(refs),
+		References: RenderUnitReferences(refs),
 		Utterances: make([]ScriptPreviewUtterance, 0, len(utterances)),
 		Warnings:   warnings,
 	}

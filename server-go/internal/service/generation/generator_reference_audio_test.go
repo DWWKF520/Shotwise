@@ -6,7 +6,7 @@
 //   - caps 声明总时长约束且参考音频超限时，生成在记账括号前被拦下（backend 不被调用）；
 //   - 探测失败（文件缺失 / ffprobe 不可用）按 nil 传入，跳过该单项校验不阻断请求；
 //   - caps 未声明总时长约束时不探测，超限音频照常放行（省 ffprobe 开销的语义边界）。
-package service
+package generation
 
 import (
 	"context"

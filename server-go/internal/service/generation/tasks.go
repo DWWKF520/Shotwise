@@ -11,11 +11,10 @@
 //   - video / reference_video 已接线（tasks_video.go / tasks_reference_video.go）。
 //   - canvas_image_* 已接线（tasks_canvas.go）：split / crop 确定性几何，其余八个走
 //     项目 i2i（redraw / erase 贴片合成回全图，outpaint 源图回贴画布）。
-package service
+package generation
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,18 +26,19 @@ import (
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // TaskDispatcher 实现 queue.TaskExecutor。
 type TaskDispatcher struct {
-	store  *ProjectStore
+	store  *service.ProjectStore
 	images *ImageGenerator
 	audio  *AudioGenerator
 	videos *VideoGenerator
 }
 
 // NewTaskDispatcher 构造；images 为 nil 时只能处理无需生成的任务类型（当前没有）。
-func NewTaskDispatcher(store *ProjectStore, images *ImageGenerator) *TaskDispatcher {
+func NewTaskDispatcher(store *service.ProjectStore, images *ImageGenerator) *TaskDispatcher {
 	return &TaskDispatcher{store: store, images: images}
 }
 
@@ -109,7 +109,7 @@ func (d *TaskDispatcher) executeStoryboard(ctx context.Context, task *repository
 		return nil, err
 	}
 
-	outRel, err := resourceRelativePath("storyboards", task.ResourceID)
+	outRel, err := service.ResourceRelativePath("storyboards", task.ResourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (d *TaskDispatcher) executeStoryboard(ctx context.Context, task *repository
 
 	request := provider.NewImageGenerationRequest(promptText, outPath)
 	request.ReferenceImages = refs
-	request.AspectRatio = aspectRatioFor(project, "storyboards")
+	request.AspectRatio = service.AspectRatioFor(project, "storyboards")
 	if size := payloadString(task.Payload, "image_size"); size != "" {
 		request.ImageSize = size
 	}
@@ -146,12 +146,12 @@ func (d *TaskDispatcher) executeStoryboard(ctx context.Context, task *repository
 
 // finishImageResult 登记版本并组装 result 契约（对应各 execute_*_task 的返回字典）。
 func finishImageResult(projectDir, resourceType, resourceID, prompt, aspectRatio string) (map[string]any, error) {
-	outRel, err := resourceRelativePath(resourceType, resourceID)
+	outRel, err := service.ResourceRelativePath(resourceType, resourceID)
 	if err != nil {
 		return nil, err
 	}
 	// 版本登记把生成产物复制进 versions/ 快照；created_at 取刚写入的这条。
-	versions := NewVersions(projectDir)
+	versions := service.NewVersions(projectDir)
 	absolute := filepath.Join(projectDir, filepath.FromSlash(outRel))
 	if _, _, err := versions.AddVersion(resourceType, resourceID, prompt, absolute, map[string]any{
 		"aspect_ratio": aspectRatio,
@@ -220,21 +220,6 @@ func collectPayloadReferenceImages(projectDir string, payload map[string]any) ([
 	return refs, nil
 }
 
-// aspectRatioFor 移植 server/services/generation_tasks.py::get_aspect_ratio：
-// 角色与多视图资产固定横版；其余读项目顶层字段（字符串或按资源类型分字典），
-// 缺失时按 content_mode 推导（narration/ad 竖屏，drama 横屏）。
-func aspectRatioFor(project *domain.ProjectFile, resourceType string) string {
-	if resourceType == "characters" || resourceType == "scenes" || resourceType == "props" || resourceType == "products" {
-		return "16:9"
-	}
-	if project.AspectRatio != "" {
-		return project.AspectRatio
-	}
-	if project.ContentMode == string(domain.ContentNarration) || project.ContentMode == string(domain.ContentAd) {
-		return "9:16"
-	}
-	return "16:9"
-}
 
 // normalizeStoryboardPrompt 归一化分镜图 prompt：正文组装 + 统一反向提示词尾巴（尾巴幂等）。
 func normalizeStoryboardPrompt(raw any, style string) (string, error) {
@@ -283,7 +268,7 @@ func BuildImagePromptText(raw any, style, styleDescription string) (string, erro
 		_, structured = m["scene"]
 	}
 	var parts []string
-	normalizedStyle := normalizeStylePrefix(style)
+	normalizedStyle := service.NormalizeStylePrefix(style)
 	if normalizedStyle != "" && !structured {
 		parts = append(parts, "Style: "+normalizedStyle)
 	}
@@ -303,40 +288,19 @@ func BuildImagePromptText(raw any, style, styleDescription string) (string, erro
 
 // promptYAMLScalar 输出单个 YAML 纯量：取值安全（无结构歧义字符）时保持明文，
 // 否则用 JSON 双引号串——YAML 的双引号纯量与 JSON 兼容，等价 PyYAML 的转义行为。
-func promptYAMLScalar(value string) string {
-	if value == "" {
-		return `""`
-	}
-	unsafe := strings.Contains(value, ": ") || strings.Contains(value, " #") ||
-		value != strings.TrimSpace(value) || strings.ContainsAny(value, "\n\r\t") ||
-		strings.HasPrefix(value, "-") || strings.HasPrefix(value, "?") ||
-		strings.HasPrefix(value, "&") || strings.HasPrefix(value, "*") ||
-		strings.HasPrefix(value, "!") || strings.HasPrefix(value, "|") ||
-		strings.HasPrefix(value, ">") || strings.HasPrefix(value, "%") ||
-		strings.HasPrefix(value, "@") || strings.HasPrefix(value, "`") ||
-		strings.HasPrefix(value, "'") || strings.HasPrefix(value, "\"") ||
-		strings.HasPrefix(value, "[") || strings.HasPrefix(value, "{")
-	if !unsafe {
-		return value
-	}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return `""`
-	}
-	return string(encoded)
-}
+
 
 // imagePromptToYAML 把 imagePrompt 结构渲染为 YAML，键序 Style/Scene/Composition/Avoid
 // （对应 lib/prompt_utils.py::image_prompt_to_yaml；PyYAML 宽行不折行，此处逐行手写同形）。
 func imagePromptToYAML(p map[string]string, projectStyle string) string {
 	var b strings.Builder
-	b.WriteString("Style: " + promptYAMLScalar(normalizeStylePrefix(projectStyle)) + "\n")
-	b.WriteString("Scene: " + promptYAMLScalar(p["scene"]) + "\n")
+	b.WriteString("Style: " + service.PromptYAMLScalar(service.NormalizeStylePrefix(projectStyle)) + "\n")
+	b.WriteString("Scene: " + service.PromptYAMLScalar(p["scene"]) + "\n")
 	b.WriteString("Composition:\n")
-	b.WriteString("  shot_type: " + promptYAMLScalar(p["shot_type"]) + "\n")
-	b.WriteString("  lighting: " + promptYAMLScalar(p["lighting"]) + "\n")
-	b.WriteString("  ambiance: " + promptYAMLScalar(p["ambiance"]) + "\n")
-	b.WriteString("Avoid: " + promptYAMLScalar(storyboardAvoidItems) + "\n")
+	b.WriteString("  shot_type: " + service.PromptYAMLScalar(p["shot_type"]) + "\n")
+	b.WriteString("  lighting: " + service.PromptYAMLScalar(p["lighting"]) + "\n")
+	b.WriteString("  ambiance: " + service.PromptYAMLScalar(p["ambiance"]) + "\n")
+	b.WriteString("Avoid: " + service.PromptYAMLScalar(storyboardAvoidItems) + "\n")
 	return b.String()
 }
 
@@ -374,8 +338,8 @@ func payloadString(payload map[string]any, key string) string {
 // 反向提示词：分镜图与视频各自定义，内容相同也不合并（同 Python 侧口径）。
 const (
 	storyboardAvoidItems   = "水印、多余文字、Logo"
-	videoAvoidItems        = "BGM、文字字幕、水印"
 	storyboardNegativeTail = "Avoid: " + storyboardAvoidItems
+	videoAvoidItems        = "BGM、文字字幕、水印"
 	videoNegativeTail      = "Avoid: " + videoAvoidItems
 )
 
@@ -390,15 +354,4 @@ func appendVideoNegativeTail(prompt string) string {
 	return strings.TrimRight(prompt, " \t\n\r") + "\n\n" + videoNegativeTail
 }
 
-// normalizeStylePrefix 去掉风格值开头的「画风：」前缀并 strip 两端空白（幂等）。
-// 存量项目的 style 取自旧版风格模版，不清理会渲染成 Style: 画风：... 的中英混叠。
-func normalizeStylePrefix(style string) string {
-	s := strings.TrimSpace(style)
-	for _, prefix := range []string{"画风：", "画风:"} {
-		if strings.HasPrefix(s, prefix) {
-			s = strings.TrimSpace(strings.TrimPrefix(s, prefix))
-			break
-		}
-	}
-	return s
-}
+

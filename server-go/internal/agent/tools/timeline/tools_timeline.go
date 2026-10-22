@@ -5,7 +5,7 @@ import "github.com/shotwise/shotwise/internal/agent/tools"
 // 时间线计划的 5 个内部工具（对应 server/agent_runtime/sdk_tools/episode_editing.py）。
 //
 // 这组工具只做「读项目/剧本/媒体清单 → 组装计划文档 → 落库」：不修改项目数据、不入队任务、
-// 不调用 FFmpeg、不渲染。计划持久化经 service.MediaAssemblyService 走 assembly_plans /
+// 不调用 FFmpeg、不渲染。计划持久化经 media.MediaAssemblyService 走 assembly_plans /
 // assembly_plan_revisions 两张表。
 //
 // 回包约定：与 Python 的 _result(payload, message) 对齐——message 是给模型看的一句话，
@@ -30,7 +30,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 )
 
 const (
@@ -64,11 +64,11 @@ var timelinePlanPatchOrder = []string{
 	"timeline_items", "audio", "director_review", "subtitles", "intro", "outro", "cover", "render_profile",
 }
 
-// TimelinePlanService 是时间线计划持久化能力（*service.MediaAssemblyService 满足）。
+// TimelinePlanService 是时间线计划持久化能力（*media.MediaAssemblyService 满足）。
 type TimelinePlanService interface {
-	CreatePlan(ctx context.Context, p service.CreatePlanParams) (map[string]any, error)
+	CreatePlan(ctx context.Context, p media.CreatePlanParams) (map[string]any, error)
 	GetPlan(ctx context.Context, planID, userID string) (map[string]any, error)
-	CreateRevision(ctx context.Context, planID string, p service.CreateRevisionParams) (map[string]any, error)
+	CreateRevision(ctx context.Context, planID string, p media.CreateRevisionParams) (map[string]any, error)
 }
 
 
@@ -172,7 +172,7 @@ func newCreateTimelinePlanTool(t timelineToolset) (tool.InvokableTool, error) {
 			if err != nil {
 				return tools.DenyEnvelope(toolFailure(timelineCreatePlanName, err, nil)), nil
 			}
-			payload, err := t.plans.CreatePlan(ctx, service.CreatePlanParams{
+			payload, err := t.plans.CreatePlan(ctx, media.CreatePlanParams{
 				UserID:         t.userID,
 				ProjectName:    t.project,
 				Name:           fmt.Sprintf("%v assembly", manifest["script"]),
@@ -247,7 +247,7 @@ func newUpdateTimelinePlanTool(t timelineToolset) (tool.InvokableTool, error) {
 			if err != nil {
 				return tools.DenyEnvelope(toolFailure(timelineUpdatePlanName, err, nil)), nil
 			}
-			payload, err := t.plans.CreateRevision(ctx, planID, service.CreateRevisionParams{
+			payload, err := t.plans.CreateRevision(ctx, planID, media.CreateRevisionParams{
 				UserID:           t.userID,
 				SourceManifest:   manifest,
 				Timeline:         documentTimeline(document),
@@ -290,7 +290,7 @@ func newValidateTimelinePlanTool(t timelineToolset) (tool.InvokableTool, error) 
 			if err != nil {
 				return tools.DenyEnvelope(toolFailure(timelineValidatePlanName, err, nil)), nil
 			}
-			payload, err := t.plans.CreateRevision(ctx, planID, service.CreateRevisionParams{
+			payload, err := t.plans.CreateRevision(ctx, planID, media.CreateRevisionParams{
 				UserID:             t.userID,
 				SourceManifest:     manifest,
 				Timeline:           documentTimeline(document),

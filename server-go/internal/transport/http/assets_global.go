@@ -15,11 +15,12 @@ import (
 
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 // AssetsDeps 是全局资产路由的依赖。
 type AssetsDeps struct {
-	Assets *service.GlobalAssetService
+	Assets *asset.GlobalAssetService
 }
 
 // RegisterAssetsGlobal 注册全局资产库路由。
@@ -198,7 +199,7 @@ func globalAssetFromProject(d AssetsDeps) gin.HandlerFunc {
 		if body.Overwrite != nil {
 			overwrite = *body.Overwrite
 		}
-		out, err := d.Assets.FromProject(c.Request.Context(), service.FromProjectInput{
+		out, err := d.Assets.FromProject(c.Request.Context(), asset.FromProjectInput{
 			ProjectName:  *body.ProjectName,
 			ResourceType: *body.ResourceType,
 			ResourceID:   *body.ResourceID,
@@ -241,7 +242,7 @@ func globalAssetApplyToProject(d AssetsDeps) gin.HandlerFunc {
 		if body.ConflictPolicy != nil {
 			policy = *body.ConflictPolicy
 		}
-		out, err := d.Assets.ApplyToProject(c.Request.Context(), service.ApplyToProjectInput{
+		out, err := d.Assets.ApplyToProject(c.Request.Context(), asset.ApplyToProjectInput{
 			AssetIDs:       body.AssetIDs,
 			TargetProject:  *body.TargetProject,
 			ConflictPolicy: policy,
@@ -257,10 +258,10 @@ func globalAssetApplyToProject(d AssetsDeps) gin.HandlerFunc {
 // abortAssetsErr 映射全局资产域错误。
 func abortAssetsErr(c *gin.Context, err error) {
 	var (
-		exists    *service.GlobalAssetExistsError
-		conflict  *service.GlobalAssetConflictError
+		exists    *asset.GlobalAssetExistsError
+		conflict  *asset.GlobalAssetConflictError
 		valueErr  *service.ValueError
-		missing   *service.GlobalSourceMissingError
+		missing   *asset.GlobalSourceMissingError
 	)
 	switch {
 	case errors.As(err, &conflict):
@@ -275,12 +276,12 @@ func abortAssetsErr(c *gin.Context, err error) {
 	case errors.As(err, &missing):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "asset_source_resource_not_found",
 			map[string]any{"project": missing.Project, "name": missing.Resource}))
-	case errors.Is(err, service.ErrGlobalTargetProjectNotFound):
+	case errors.Is(err, asset.ErrGlobalTargetProjectNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "asset_target_project_not_found", nil))
-	case errors.Is(err, service.ErrGlobalAssetNotFound):
+	case errors.Is(err, asset.ErrGlobalAssetNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "asset_not_found",
 			map[string]any{"name": c.Param("asset_id")}))
-	case errors.Is(err, service.ErrGlobalInvalidType):
+	case errors.Is(err, asset.ErrGlobalInvalidType):
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "asset_invalid_type", nil))
 	case errors.As(err, &valueErr):
 		code := "request_invalid"

@@ -9,6 +9,7 @@ package http
 // ProjectStore.UpdateEpisodeScript（脚本锁 → 项目锁，锁内复核 episode→script 绑定）。
 
 import (
+	servicereference "github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"errors"
 	"net/http"
@@ -26,13 +27,14 @@ import (
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 // ReferenceVideoResolver 是参考生视频 handler 的解析依赖（*config.Resolver 满足）：
 // 能力视图（时长档位 / 预览声音档 / 音频开关判定）+ 视频后端解析闸。
 type ReferenceVideoResolver interface {
 	service.VideoCapabilityResolver
-	service.VideoBackendResolver
+	servicereference.VideoBackendResolver
 }
 
 // ReferenceVideoDeps 是参考生视频 handler 的依赖。
@@ -183,7 +185,7 @@ func listReferenceUnits(d ReferenceVideoDeps) gin.HandlerFunc {
 			return
 		}
 		if pf.ContentMode == string(domain.ContentAd) {
-			c.JSON(http.StatusOK, gin.H{"units": service.AnnotateAdUnitStaleness(script, script["reference_units"])})
+			c.JSON(http.StatusOK, gin.H{"units": servicereference.AnnotateAdUnitStaleness(script, script["reference_units"])})
 			return
 		}
 		units, _ := script["video_units"].([]any)
@@ -210,17 +212,17 @@ func deriveReferenceUnits(d ReferenceVideoDeps) gin.HandlerFunc {
 			return
 		}
 		if pf.ContentMode != string(domain.ContentAd) {
-			abortReferenceVideoErr(c, &service.AdOnlyDeriveError{})
+			abortReferenceVideoErr(c, &servicereference.AdOnlyDeriveError{})
 			return
 		}
 		maxUnitDuration := service.ResolveMaxUnitDuration(c.Request.Context(), d.Resolver, pf)
 
 		requireAd := true
 		var annotated []any
-		err = d.Store.UpdateEpisodeScript(project, service.EpisodeScriptResolverFor(episode, &requireAd, nil),
+		err = d.Store.UpdateEpisodeScript(project, servicereference.EpisodeScriptResolverFor(episode, &requireAd, nil),
 			func(script map[string]any) error {
 				units := domain.SyncAdReferenceUnits(script, episode, maxUnitDuration)
-				annotated = service.AnnotateAdUnitStaleness(script, service.ToAnyList(units))
+				annotated = servicereference.AnnotateAdUnitStaleness(script, servicereference.ToAnyList(units))
 				return nil
 			})
 		if err != nil {
@@ -285,10 +287,10 @@ func addReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 
 		requireAd := false
 		var unit map[string]any
-		err := d.Store.UpdateEpisodeScript(project, service.EpisodeScriptResolverFor(episode, &requireAd, refs),
+		err := d.Store.UpdateEpisodeScript(project, servicereference.EpisodeScriptResolverFor(episode, &requireAd, refs),
 			func(script map[string]any) error {
-				unit = service.BuildReferenceUnit(
-					service.NextUnitID(script, episode), prompt, refs, finalDuration, transitionValue, note)
+				unit = servicereference.BuildReferenceUnit(
+					servicereference.NextUnitID(script, episode), prompt, refs, finalDuration, transitionValue, note)
 				units, _ := script["video_units"].([]any)
 				script["video_units"] = append(units, unit)
 				return nil
@@ -354,9 +356,9 @@ func patchReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 			resolverRefs = resolvedRefs
 		}
 		var unit map[string]any
-		err := d.Store.UpdateEpisodeScript(project, service.EpisodeScriptResolverFor(episode, &requireAd, resolverRefs),
+		err := d.Store.UpdateEpisodeScript(project, servicereference.EpisodeScriptResolverFor(episode, &requireAd, resolverRefs),
 			func(script map[string]any) error {
-				target, findErr := service.FindUnit(script, unitID)
+				target, findErr := servicereference.FindUnit(script, unitID)
 				if findErr != nil {
 					return findErr
 				}
@@ -368,7 +370,7 @@ func patchReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 					target["references"] = refList
 				}
 				if promptText != nil {
-					shots, _ := service.ParsePrompt(*promptText)
+					shots, _ := servicereference.ParsePrompt(*promptText)
 					shotsAny := make([]any, 0, len(shots))
 					for _, shot := range shots {
 						shotsAny = append(shotsAny, map[string]any{"text": shot["text"]})
@@ -408,7 +410,7 @@ func deleteReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		unitID := c.Param("unit_id")
 
 		requireAd := false
-		err := d.Store.UpdateEpisodeScript(project, service.EpisodeScriptResolverFor(episode, &requireAd, nil),
+		err := d.Store.UpdateEpisodeScript(project, servicereference.EpisodeScriptResolverFor(episode, &requireAd, nil),
 			func(script map[string]any) error {
 				units, _ := script["video_units"].([]any)
 				kept := make([]any, 0, len(units))
@@ -424,7 +426,7 @@ func deleteReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 					kept = append(kept, raw)
 				}
 				if !removed {
-					return &service.ReferenceUnitNotFoundError{UnitID: unitID}
+					return &servicereference.ReferenceUnitNotFoundError{UnitID: unitID}
 				}
 				script["video_units"] = kept
 				return nil
@@ -458,11 +460,11 @@ func reorderReferenceUnits(d ReferenceVideoDeps) gin.HandlerFunc {
 
 		requireAd := false
 		var reordered []any
-		err := d.Store.UpdateEpisodeScript(project, service.EpisodeScriptResolverFor(episode, &requireAd, nil),
+		err := d.Store.UpdateEpisodeScript(project, servicereference.EpisodeScriptResolverFor(episode, &requireAd, nil),
 			func(script map[string]any) error {
 				units, _ := script["video_units"].([]any)
-				if kind := service.FullPermutationError(service.UnitIDs(units), requested); kind != "" {
-					return &service.ReorderValidationError{Kind: kind}
+				if kind := servicereference.FullPermutationError(servicereference.UnitIDs(units), requested); kind != "" {
+					return &servicereference.ReorderValidationError{Kind: kind}
 				}
 				byID := map[string]any{}
 				for _, raw := range units {
@@ -527,7 +529,7 @@ func precheckReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		var unit map[string]any
 		var adShots []map[string]any
 		if pf.ContentMode == string(domain.ContentAd) {
-			unit, err = service.FindAdUnit(script, unitID)
+			unit, err = servicereference.FindAdUnit(script, unitID)
 			if err != nil {
 				abortReferenceVideoErr(c, err)
 				return
@@ -538,7 +540,7 @@ func precheckReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 				return
 			}
 		} else {
-			unit, err = service.FindUnit(script, unitID)
+			unit, err = servicereference.FindUnit(script, unitID)
 			if err != nil {
 				abortReferenceVideoErr(c, err)
 				return
@@ -601,7 +603,7 @@ func previewReferenceScript(d ReferenceVideoDeps) gin.HandlerFunc {
 			limit := caps.View.Caps.MaxReferenceImages
 			maxRefImages = &limit
 		}
-		preview := service.BuildScriptPreview(prompt, pf, service.VoiceRenderSettingsFromCaps(caps, pf), maxRefImages)
+		preview := servicereference.BuildScriptPreview(prompt, pf, servicereference.VoiceRenderSettingsFromCaps(caps, pf), maxRefImages)
 
 		loc := i18n.FromRequest(c.Request)
 		shots := make([]gin.H, 0, len(preview.Shots))
@@ -655,7 +657,7 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		if isAd {
 			// 按持久化索引水合成员镜头（重生成单个 unit 不重新派生，分组可复现）；
 			// 索引悬空（镜头被删后未重新派生）→ 409 提示重新派生
-			unit, err = service.FindAdUnit(script, unitID)
+			unit, err = servicereference.FindAdUnit(script, unitID)
 			if err != nil {
 				abortReferenceVideoErr(c, err)
 				return
@@ -672,7 +674,7 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 			}
 			guardPrompt = domain.RenderAdUnitPrompt(unitShots, style)
 		} else {
-			unit, err = service.FindUnit(script, unitID)
+			unit, err = servicereference.FindUnit(script, unitID)
 			if err != nil {
 				abortReferenceVideoErr(c, err)
 				return
@@ -693,7 +695,7 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		} else {
 			refs = unitTypedReferences(unit)
 		}
-		preflight := service.ValidateTypedReferences(pf, projectDir, refs, !isAd)
+		preflight := servicereference.ValidateTypedReferences(pf, projectDir, refs, !isAd)
 		if len(preflight.Issues) > 0 {
 			var unregistered, missingImages []string
 			for _, issue := range preflight.Issues {
@@ -722,7 +724,7 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		// 无参考图的退化镜头降级 → i2v。解析闸让能力缺失 / 悬空引用在提交入口即返回
 		// 修复指引，而非任务面板里的异步失败。
 		bucket := provider.VideoBucket(domain.ReferenceUnitVideoBucket(unit, unitShots))
-		if err := service.RequireVideoBucketCapability(c.Request.Context(), d.Resolver, pf, bucket); err != nil {
+		if err := servicereference.RequireVideoBucketCapability(c.Request.Context(), d.Resolver, pf, bucket); err != nil {
 			abortReferenceVideoErr(c, err)
 			return
 		}
@@ -773,12 +775,12 @@ func uploadReferenceUnitVideo(d ReferenceVideoDeps) gin.HandlerFunc {
 			}})
 			return
 		}
-		maxBytes, err := service.ValidateUploadVideo(header.Filename, &header.Size)
+		maxBytes, err := servicereference.ValidateUploadVideo(header.Filename, &header.Size)
 		if err != nil {
 			abortReferenceVideoErr(c, err)
 			return
 		}
-		relativePath, err := service.ReferenceVideoRelativePath(unitID)
+		relativePath, err := servicereference.ReferenceVideoRelativePath(unitID)
 		if err != nil {
 			apperr.Abort(c, apperr.Internal(err))
 			return
@@ -789,7 +791,7 @@ func uploadReferenceUnitVideo(d ReferenceVideoDeps) gin.HandlerFunc {
 			abortReferenceVideoErr(c, err)
 			return
 		}
-		if _, err = service.FindUnitForProject(pf, script, unitID); err != nil {
+		if _, err = servicereference.FindUnitForProject(pf, script, unitID); err != nil {
 			abortReferenceVideoErr(c, err)
 			return
 		}
@@ -816,7 +818,7 @@ func uploadReferenceUnitVideo(d ReferenceVideoDeps) gin.HandlerFunc {
 			apperr.Abort(c, apperr.Internal(err))
 			return
 		}
-		err = service.SaveUploadedVideoStream(file, target, maxBytes)
+		err = servicereference.SaveUploadedVideoStream(file, target, maxBytes)
 		file.Close()
 		if err != nil {
 			abortReferenceVideoErr(c, err)
@@ -831,24 +833,24 @@ func uploadReferenceUnitVideo(d ReferenceVideoDeps) gin.HandlerFunc {
 			abortReferenceVideoErr(c, err)
 			return
 		}
-		if _, err = service.FindUnitForProject(pf2, script2, unitID); err != nil {
+		if _, err = servicereference.FindUnitForProject(pf2, script2, unitID); err != nil {
 			abortReferenceVideoErr(c, err)
 			return
 		}
 
-		version, err := service.RecordUploadVersion(versions, unitID, target, header.Filename)
+		version, err := servicereference.RecordUploadVersion(versions, unitID, target, header.Filename)
 		if err != nil {
 			apperr.Abort(c, apperr.Internal(err))
 			return
 		}
-		if err = service.FinalizeUploadedReferenceVideoUnit(
+		if err = servicereference.FinalizeUploadedReferenceVideoUnit(
 			d.Store, project, scriptFile2, projectDir, unitID, target, version, versions,
 		); err != nil {
 			abortReferenceVideoErr(c, err)
 			return
 		}
 		// 上传完成与 AI 生成同源广播项目变更事件；返回的指纹直接复用进响应体。
-		fingerprints := service.EmitGenerationSuccessBatch(d.Hub, d.Store, &repository.TaskData{
+		fingerprints := generation.EmitGenerationSuccessBatch(d.Hub, d.Store, &repository.TaskData{
 			ProjectName: project,
 			TaskType:    "reference_video",
 			ResourceID:  unitID,
@@ -903,11 +905,11 @@ func abortReferenceVideoErr(c *gin.Context, err error) {
 		episodeMissing *service.EpisodeNotFoundError
 		notRefMode     *service.NotReferenceVideoModeError
 		scriptMissing  *service.EpisodeScriptMissingError
-		unregistered   *service.UnregisteredReferencesError
-		adOnly         *service.AdOnlyDeriveError
-		adDerived      *service.AdUnitsDerivedError
-		unitMissing    *service.ReferenceUnitNotFoundError
-		reorderErr     *service.ReorderValidationError
+		unregistered   *servicereference.UnregisteredReferencesError
+		adOnly         *servicereference.AdOnlyDeriveError
+		adDerived      *servicereference.AdUnitsDerivedError
+		unitMissing    *servicereference.ReferenceUnitNotFoundError
+		reorderErr     *servicereference.ReorderValidationError
 		structErr      *service.ScriptStructureValidationError
 		uploadErr      *service.UploadValidationError
 		bucketCapErr   *config.VideoBucketCapabilityError

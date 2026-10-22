@@ -6,9 +6,10 @@
 //     ad / 关闭宫格的项目，但 HTTP 直调能绕过写入边界，所以动作端点必须再设一道；
 //   - 资产 preflight 早于任何「删旧记录 / 写新记录 / 入队计费任务」：入队即计费，先校验；
 //   - 重生成把同一次产出重跑一遍：rows/cols、prompt、单格比例全部沿用记录上冻结的值。
-package service
+package generation
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"errors"
 	"fmt"
@@ -21,27 +22,27 @@ import (
 	"github.com/shotwise/shotwise/internal/repository"
 )
 
-// GridQueue 是宫格入队需要的队列能力。
+// service.GridQueue 是宫格入队需要的队列能力。
 type GridQueue interface {
 	EnqueueTask(ctx context.Context, p repository.EnqueueParams) (repository.EnqueueResult, error)
 }
 
 // GridCapabilityResolver 是「4×4 / 5×5 是否放行」的图像档位解析能力。
 type GridCapabilityResolver interface {
-	ImageCapabilityResolver
+	service.ImageCapabilityResolver
 }
 
 // GridTaskService 承载宫格的生成、查询、重生成与切分。
 type GridTaskService struct {
-	store  *ProjectStore
-	queue  GridQueue
+	store  *service.ProjectStore
+	queue  service.GridQueue
 	images GridCapabilityResolver
-	split  *GridService
+	split  *service.GridService
 }
 
 // NewGridTaskService 构造；split 复用已有的分镜落格服务。
 func NewGridTaskService(
-	store *ProjectStore, queue GridQueue, images GridCapabilityResolver, split *GridService,
+	store *service.ProjectStore, queue service.GridQueue, images GridCapabilityResolver, split *service.GridService,
 ) *GridTaskService {
 	return &GridTaskService{store: store, queue: queue, images: images, split: split}
 }
@@ -51,10 +52,10 @@ func NewGridTaskService(
 // 两个码都是 400，但语义不同：广告项目根本不该有宫格，开关关闭则是「本项目此刻不产宫格」。
 func ensureGridWritable(project *domain.ProjectFile) error {
 	if project.ContentMode == string(domain.ContentAd) {
-		return generateBadRequest("ad_grid_not_supported", nil)
+		return service.GenerateBadRequest("ad_grid_not_supported", nil)
 	}
 	if !domain.GridStoryboardEnabled(project) {
-		return generateBadRequest("grid_storyboard_not_enabled", nil)
+		return service.GenerateBadRequest("grid_storyboard_not_enabled", nil)
 	}
 	return nil
 }
@@ -79,12 +80,12 @@ func (s *GridTaskService) Generate(
 	}
 	script, err := s.store.ReadScriptJSON(projectName, scriptFile)
 	if err != nil {
-		return nil, generateBadRequest("invalid_script_file", map[string]any{"name": scriptFile})
+		return nil, service.GenerateBadRequest("invalid_script_file", map[string]any{"name": scriptFile})
 	}
 	items, idField, fields := domain.StoryboardItems(script)
 	aspectRatio := domain.VideoAspectRatioOf(project)
 	style := project.Style
-	allowLargeGrid := ResolveLargeGridAllowed(ctx, s.images, project)
+	allowLargeGrid := service.ResolveLargeGridAllowed(ctx, s.images, project)
 
 	groups := domain.GroupScenesBySegmentBreak(items, idField)
 	if len(sceneIDs) > 0 {
@@ -114,10 +115,10 @@ func (s *GridTaskService) Generate(
 		toValidate = append(toValidate, group...)
 	}
 	if preflight := validateGridItems(project, projectDir, toValidate, fields); len(preflight.Issues) > 0 {
-		return nil, generateBadRequest("generation_asset_preflight_failed", preflight.I18NParams())
+		return nil, service.GenerateBadRequest("generation_asset_preflight_failed", preflight.I18NParams())
 	}
 
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -196,9 +197,9 @@ func (s *GridTaskService) Generate(
 func (s *GridTaskService) Capability(ctx context.Context, projectName string) (map[string]any, error) {
 	project, err := s.store.Get(projectName)
 	if err != nil {
-		return nil, generateBadRequest("invalid_project_name", map[string]any{"name": projectName})
+		return nil, service.GenerateBadRequest("invalid_project_name", map[string]any{"name": projectName})
 	}
-	allowed := ResolveLargeGridAllowed(ctx, s.images, project)
+	allowed := service.ResolveLargeGridAllowed(ctx, s.images, project)
 	return map[string]any{
 		"large_grid_allowed": allowed,
 		"max_cell_count":     domain.MaxCellCount(allowed),
@@ -209,9 +210,9 @@ func (s *GridTaskService) Capability(ctx context.Context, projectName string) (m
 func (s *GridTaskService) List(projectName string) ([]any, error) {
 	projectDir, err := s.store.Dir(projectName)
 	if err != nil {
-		return nil, generateBadRequest("invalid_project_name", map[string]any{"name": projectName})
+		return nil, service.GenerateBadRequest("invalid_project_name", map[string]any{"name": projectName})
 	}
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +231,7 @@ func (s *GridTaskService) List(projectName string) ([]any, error) {
 func (s *GridTaskService) GridData(projectName, gridID string) (*domain.GridGeneration, error) {
 	projectDir, err := s.store.Dir(projectName)
 	if err != nil {
-		return nil, generateBadRequest("invalid_project_name", map[string]any{"name": projectName})
+		return nil, service.GenerateBadRequest("invalid_project_name", map[string]any{"name": projectName})
 	}
 	return loadGridOrNotFound(projectDir, gridID)
 }
@@ -250,7 +251,7 @@ func (s *GridTaskService) Regenerate(
 	if err != nil {
 		return nil, err
 	}
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +262,7 @@ func (s *GridTaskService) Regenerate(
 	// 重生成也是准入边界：改状态、入队之前先校验冻结记录里的源分镜。
 	script, err := s.store.ReadScriptJSON(projectName, grid.ScriptFile)
 	if err != nil {
-		return nil, generateBadRequest("invalid_script_file", map[string]any{"name": grid.ScriptFile})
+		return nil, service.GenerateBadRequest("invalid_script_file", map[string]any{"name": grid.ScriptFile})
 	}
 	items, idField, fields := domain.StoryboardItems(script)
 	wanted := map[string]bool{}
@@ -279,7 +280,7 @@ func (s *GridTaskService) Regenerate(
 		}
 	}
 	if preflight := validateGridItems(project, projectDir, sourceItems, fields); len(preflight.Issues) > 0 {
-		return nil, generateBadRequest("generation_asset_preflight_failed", preflight.I18NParams())
+		return nil, service.GenerateBadRequest("generation_asset_preflight_failed", preflight.I18NParams())
 	}
 
 	// prompt 里写死了画布比例：换用项目当前比例会让画布描述与下发参数自相矛盾。
@@ -340,7 +341,7 @@ func (s *GridTaskService) Split(ctx context.Context, projectName, gridID string)
 	if err != nil {
 		return nil, err
 	}
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -356,16 +357,16 @@ func (s *GridTaskService) Split(ctx context.Context, projectName, gridID string)
 		return nil, err
 	}
 	if grid.GridImagePath == nil || *grid.GridImagePath == "" || !fileExists(imagePath) {
-		return nil, generateBadRequest("grid_image_not_ready", map[string]any{"grid_id": gridID})
+		return nil, service.GenerateBadRequest("grid_image_not_ready", map[string]any{"grid_id": gridID})
 	}
 	if s.split == nil {
 		return nil, errors.New("grid split service is not configured")
 	}
 	result, err := s.split.ApplySplit(ctx, projectName, grid)
 	if err != nil {
-		if errors.Is(err, GridImageNotReadyError) {
+		if errors.Is(err, service.GridImageNotReadyError) {
 			// 与上方预检之间存在「文件被并发删除」的窗口。
-			return nil, generateBadRequest("grid_image_not_ready", map[string]any{"grid_id": gridID})
+			return nil, service.GenerateBadRequest("grid_image_not_ready", map[string]any{"grid_id": gridID})
 		}
 		return nil, err
 	}
@@ -396,7 +397,7 @@ func (s *GridTaskService) UploadGridImage(
 	if err != nil {
 		return nil, err
 	}
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -411,15 +412,15 @@ func (s *GridTaskService) UploadGridImage(
 	if err != nil {
 		return nil, err
 	}
-	versions := NewVersions(projectDir)
+	versions := service.NewVersions(projectDir)
 	// 旧联合图若从未入版本库（历史迁移等），先补登，避免被覆盖后字节丢失。
 	if _, err := versions.EnsureCurrentTracked("grids", gridID, "", target, nil); err != nil {
 		return nil, err
 	}
-	if err := writeFileAtomic(target, pngBytes); err != nil {
+	if err := service.WriteFileAtomic(target, pngBytes); err != nil {
 		return nil, err
 	}
-	metadata := map[string]any{"source": uploadVersionSource}
+	metadata := map[string]any{"source": service.UploadVersionSource}
 	if originalFilename != "" {
 		metadata["original_filename"] = originalFilename
 	}
@@ -450,7 +451,7 @@ func (s *GridTaskService) UploadGridImage(
 //
 // 跳过 pending/generating：worker 还在用那条记录，删掉会让它执行时找不到资源。
 func (s *GridTaskService) cleanupCheckpointGrids(
-	manager *GridManager, existing []*domain.GridGeneration, scriptFile string, episode int, groupIDs []string,
+	manager *service.GridManager, existing []*domain.GridGeneration, scriptFile string, episode int, groupIDs []string,
 ) {
 	groupSet := map[string]bool{}
 	for _, id := range groupIDs {
@@ -482,17 +483,17 @@ func (s *GridTaskService) cleanupCheckpointGrids(
 // validateGridItems 合并多条分镜的资产引用校验结果。
 func validateGridItems(
 	project *domain.ProjectFile, projectDir string, items []map[string]any, fields domain.StoryboardItemFields,
-) PreflightResult {
-	results := make([]PreflightResult, 0, len(items))
+) service.PreflightResult {
+	results := make([]service.PreflightResult, 0, len(items))
 	for _, item := range items {
-		results = append(results, ValidateItemAssetReferences(project, projectDir, item, fields))
+		results = append(results, service.ValidateItemAssetReferences(project, projectDir, item, fields))
 	}
-	return MergePreflightResults(results...)
+	return service.MergePreflightResults(results...)
 }
 
 // loadGridOrNotFound 按 ID 取宫格记录；格式非法与不存在都是 404。
 func loadGridOrNotFound(projectDir, gridID string) (*domain.GridGeneration, error) {
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -552,7 +553,7 @@ func chunkGroup(group []map[string]any, cellCount int) [][]map[string]any {
 
 // storyboardIDOf 读分镜条目的标识。
 func storyboardIDOf(item map[string]any, idField string) string {
-	return pythonStrLike(item[idField])
+	return service.PythonStrLike(item[idField])
 }
 
 // fileExists 判断路径是否为已存在的普通文件。
@@ -593,27 +594,6 @@ func describeGridRoute(projectName, gridID string) string {
 	return fmt.Sprintf("project=%s grid=%s", projectName, gridID)
 }
 
-// writeFileAtomic 原子落盘：同目录临时文件 + rename，避免半截 PNG 被前端读到。
-func writeFileAtomic(target string, content []byte) error {
-	dir := filepath.Dir(target)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".upload-*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer func() { _ = os.Remove(name) }()
-	if _, err := tmp.Write(content); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(name, target)
-}
 
 // sortedSceneIDsCSV 是错误信息与日志用的稳定拼接。
 func sortedSceneIDsCSV(ids []string) string {

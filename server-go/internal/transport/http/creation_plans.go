@@ -19,12 +19,13 @@ import (
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
 )
 
 // CreationPlanDeps 是创作计划 handler 的依赖。
 type CreationPlanDeps struct {
 	Store *service.ProjectStore
-	Plans *service.CreationPlanService
+	Plans *creative.CreationPlanService
 }
 
 // RegisterCreationPlans 注册创作计划路由。
@@ -166,7 +167,7 @@ func listCreationResources(d CreationPlanDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"items": service.ListCreationResources(project)})
+		c.JSON(http.StatusOK, gin.H{"items": creative.ListCreationResources(project)})
 	}
 }
 
@@ -237,7 +238,7 @@ func previewCreationPlan(d CreationPlanDeps) gin.HandlerFunc {
 		if parameters == nil {
 			parameters = map[string]any{}
 		}
-		result, err := d.Plans.CreateCreationPlanPreview(c.Request.Context(), service.CreationPlanPreviewParams{
+		result, err := d.Plans.CreateCreationPlanPreview(c.Request.Context(), creative.CreationPlanPreviewParams{
 			UserID:                 currentUserID(c),
 			WorkspaceID:            workspaceID,
 			ProjectID:              projectID,
@@ -274,25 +275,25 @@ func getCreationPlan(d CreationPlanDeps) gin.HandlerFunc {
 }
 
 // bindStartRequest 解析 start / restart 的公共请求体。
-func bindStartRequest(c *gin.Context) (service.StartCreationPlanParams, bool) {
+func bindStartRequest(c *gin.Context) (creative.StartCreationPlanParams, bool) {
 	var req creationPlanStartRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		abortBodyBind(c, err)
-		return service.StartCreationPlanParams{}, false
+		return creative.StartCreationPlanParams{}, false
 	}
 	mode := "hybrid"
 	if req.Mode != nil {
 		if !creationPlanModes[*req.Mode] {
 			abortWorkflowField(c, "mode", "string_pattern_mismatch")
-			return service.StartCreationPlanParams{}, false
+			return creative.StartCreationPlanParams{}, false
 		}
 		mode = *req.Mode
 	}
 	if req.BudgetLimit != nil && *req.BudgetLimit < 0 {
 		abortWorkflowField(c, "budget_limit", "greater_than_equal")
-		return service.StartCreationPlanParams{}, false
+		return creative.StartCreationPlanParams{}, false
 	}
-	return service.StartCreationPlanParams{
+	return creative.StartCreationPlanParams{
 		Mode:             mode,
 		ScriptRevisionID: req.ScriptRevisionID,
 		EpisodeID:        req.EpisodeID,
@@ -416,13 +417,13 @@ func recordCompatibilityOutcome(d CreationPlanDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !service.CreationCompatibilityOutcomes[outcome] {
+		if !creative.CreationCompatibilityOutcomes[outcome] {
 			abortWorkflowField(c, "outcome", "string_pattern_mismatch")
 			return
 		}
 		result, err := d.Plans.RecordCompatibilityOutcome(c.Request.Context(), c.Param("event_id"), outcome)
 		if err != nil {
-			var notFound *service.CreationPlanNotFoundError
+			var notFound *creative.CreationPlanNotFoundError
 			switch {
 			case errors.As(err, &notFound):
 				apperr.Abort(c, apperr.NewLiteral(http.StatusNotFound, "compatibility_event_not_found"))
@@ -451,15 +452,15 @@ func getCompatibilityMetrics(d CreationPlanDeps) gin.HandlerFunc {
 // abortCreationErr 把创作计划领域的错误映射成统一 {"detail": ...} 信封。
 func abortCreationErr(c *gin.Context, err error) {
 	var (
-		notFound       *service.CreationPlanNotFoundError
-		startError     *service.CreationPlanStartError
+		notFound       *creative.CreationPlanNotFoundError
+		startError     *creative.CreationPlanStartError
 		planError      *domain.CreationPlanError
-		forbidden      *service.CreationSkillForbiddenError
-		invalidOutcome *service.CreationPlanInvalidOutcomeError
+		forbidden      *creative.CreationSkillForbiddenError
+		invalidOutcome *creative.CreationPlanInvalidOutcomeError
 		validation     *domain.WorkflowValidationError
-		workflowNF     *service.WorkflowNotFoundError
-		workflowCF     *service.WorkflowConflictError
-		manifest       *service.CreationSkillManifestConflictError
+		workflowNF     *creative.WorkflowNotFoundError
+		workflowCF     *creative.WorkflowConflictError
+		manifest       *creative.CreationSkillManifestConflictError
 	)
 	switch {
 	case errors.As(err, &notFound):

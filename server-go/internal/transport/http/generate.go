@@ -19,12 +19,13 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 // GenerateDeps 是生成路由的依赖。
 type GenerateDeps struct {
 	Store    *service.ProjectStore
-	Generate *service.GenerateService
+	Generate *generation.GenerateService
 }
 
 // RegisterGenerate 注册生成入队路由。
@@ -71,12 +72,12 @@ type canvasImageBody struct {
 }
 
 // toRequest 归一为服务层请求。
-func (b canvasImageBody) toRequest() service.CanvasImageRequest {
+func (b canvasImageBody) toRequest() generation.CanvasImageRequest {
 	sourceKind := ""
 	if b.SourceKind != nil {
 		sourceKind = *b.SourceKind
 	}
-	return service.CanvasImageRequest{
+	return generation.CanvasImageRequest{
 		SourceKind:        sourceKind,
 		ResourceType:      b.ResourceType,
 		ResourceID:        b.ResourceID,
@@ -368,7 +369,7 @@ func writeGenerateResult(c *gin.Context, out map[string]any, err error) {
 func abortGenerateErr(c *gin.Context, err error) {
 	var (
 		generateErr *service.GenerateError
-		specErr     *service.TaskSpecValidationError
+		specErr     *generation.TaskSpecValidationError
 	)
 	switch {
 	case errors.As(err, &generateErr):

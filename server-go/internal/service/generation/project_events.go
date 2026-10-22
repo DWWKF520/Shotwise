@@ -8,7 +8,7 @@
 //
 // 变更事件文案的 zh/en/vi 三语化尚未做：本轮按 Python 对齐，文案本身就是中文字面量模板
 // （label_tpl 里的「分镜」「角色」「宫格」等）。三语化需与 Python 侧同步推进，不在此处引入半套 i18n。
-package service
+package generation
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 	"gorm.io/gorm"
 )
 
@@ -69,18 +70,7 @@ var taskChangeSpecs = func() map[string]taskChangeSpec {
 	return specs
 }()
 
-// ProjectFingerprint 按 project.json 的 mtime 计算项目指纹。
-//
-// 口径与 transport/http 里项目事件流首帧的指纹一致：快照序列化差分（Python 侧 sha1 of stable
-// json）尚未迁移，Go 侧以 project.json mtime 作指纹——足以驱动前端「指纹变了就重拉」的刷新语义。
-// 文件不存在时返回空串。
-func ProjectFingerprint(dir string) string {
-	st, err := os.Stat(filepath.Join(dir, "project.json"))
-	if err != nil {
-		return ""
-	}
-	return st.ModTime().UTC().Format(time.RFC3339Nano)
-}
+
 
 // affectedFingerPath 是待算指纹的一对路径：rel 为项目相对路径（指纹 key），abs 为绝对路径（stat 用）。
 type affectedFingerPath struct{ rel, abs string }
@@ -91,7 +81,7 @@ type affectedFingerPath struct{ rel, abs string }
 // frame_chain 里的 cell 路径并做项目内路径安全校验——记录是磁盘上的 JSON，image_path 不可直接
 // 信任（绝对路径或 ../ 会越出项目目录，把任意服务器文件的存在性/mtime 暴露给前端）。
 func ComputeAffectedFingerprints(
-	store *ProjectStore, projectName, taskType, resourceID string,
+	store *service.ProjectStore, projectName, taskType, resourceID string,
 ) map[string]int64 {
 	result := map[string]int64{}
 	if store == nil {
@@ -139,7 +129,7 @@ func ComputeAffectedFingerprints(
 		add("reference_videos/" + resourceID + ".mp4")
 		add("reference_videos/thumbnails/" + resourceID + ".jpg")
 	case "tts":
-		if rel, err := resourceRelativePath("audio", resourceID); err == nil {
+		if rel, err := service.ResourceRelativePath("audio", resourceID); err == nil {
 			add(rel)
 		}
 	}
@@ -154,7 +144,7 @@ func ComputeAffectedFingerprints(
 
 // gridCellFingerPaths 取宫格 frame_chain 里 cell 的项目内相对路径（越界 / 不存在 / 脏数据一概跳过）。
 func gridCellFingerPaths(projectDir, gridID string) []affectedFingerPath {
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil
 	}
@@ -199,9 +189,9 @@ func gridCellFingerPaths(projectDir, gridID string) []affectedFingerPath {
 //
 // batch_id / fingerprint / generated_at 的产生口径：
 //   - batch_id：32 位十六进制（与 Python uuid4().hex 同形，复用 repository.NewTaskID）；
-//   - fingerprint：project.json 的 mtime（ProjectFingerprint，口径与项目事件流首帧一致）；
+//   - fingerprint：project.json 的 mtime（service.ProjectFingerprint，口径与项目事件流首帧一致）；
 //   - generated_at：UTC RFC3339（与 Python _utc_now_iso 的 "%Y-%m-%dT%H:%M:%SZ" 同形）。
-func NewTerminalEmitter(hub *EventHub, store *ProjectStore, db *gorm.DB) queue.TerminalEmitter {
+func NewTerminalEmitter(hub *service.EventHub, store *service.ProjectStore, db *gorm.DB) queue.TerminalEmitter {
 	repo := repository.NewTaskRepo(db)
 	return func(events []repository.TerminalEvent) {
 		for _, event := range events {
@@ -224,7 +214,7 @@ func NewTerminalEmitter(hub *EventHub, store *ProjectStore, db *gorm.DB) queue.T
 // image_edit 完成事件按 payload.resource_type 派发到既有 spec 表（storyboard 走骨架驱动、四类资产
 // 走 ASSET_SPECS 派生表），entity / action / 指纹与生成路径一致，前端既有的 SSE 指纹刷新零改动
 // 即可覆盖编辑完成。认不出的 task_type 不发事件（返回空指纹表）。
-func EmitGenerationSuccessBatch(hub *EventHub, store *ProjectStore, task *repository.TaskData) map[string]int64 {
+func EmitGenerationSuccessBatch(hub *service.EventHub, store *service.ProjectStore, task *repository.TaskData) map[string]int64 {
 	if task == nil {
 		return map[string]int64{}
 	}
@@ -241,7 +231,7 @@ func EmitGenerationSuccessBatch(hub *EventHub, store *ProjectStore, task *reposi
 		}
 	}
 
-	var change Change
+	var change service.Change
 	var includeScriptEpisode bool
 	if action, ok := skeletonDrivenTaskActions[taskType]; ok {
 		kind := "video_units"
@@ -263,7 +253,7 @@ func EmitGenerationSuccessBatch(hub *EventHub, store *ProjectStore, task *reposi
 		if noun == "" {
 			noun = "分镜"
 		}
-		change = Change{
+		change = service.Change{
 			EntityType: entityType,
 			Action:     action,
 			EntityID:   task.ResourceID,
@@ -277,7 +267,7 @@ func EmitGenerationSuccessBatch(hub *EventHub, store *ProjectStore, task *reposi
 		if !ok {
 			return map[string]int64{}
 		}
-		change = Change{
+		change = service.Change{
 			EntityType: spec.entityType,
 			Action:     spec.action,
 			EntityID:   task.ResourceID,
@@ -303,13 +293,13 @@ func EmitGenerationSuccessBatch(hub *EventHub, store *ProjectStore, task *reposi
 			projectDir = dir
 		}
 	}
-	hub.Publish(ChangeBatch{
+	hub.Publish(service.ChangeBatch{
 		ProjectName: task.ProjectName,
 		BatchID:     repository.NewTaskID(),
-		Fingerprint: ProjectFingerprint(projectDir),
+		Fingerprint: service.ProjectFingerprint(projectDir),
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Source:      "worker",
-		Changes:     []Change{change},
+		Changes:     []service.Change{change},
 	})
 	return change.AssetFingerprints
 }

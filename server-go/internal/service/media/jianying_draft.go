@@ -7,7 +7,7 @@
 //   - draft_meta_info.json 从 pyJianYingDraft 0.3.1 的模板原样嵌入（Python 侧同样只复制
 //     模板不补字段，剪映打开时自补）；
 //   - 闪黑/叠化转场元数据已按 pyJianYingDraft 同名字段登记进 vendor 库。
-package service
+package media
 
 import (
 	"archive/zip"
@@ -26,6 +26,7 @@ import (
 	"github.com/shotwise/shotwise/internal/capcut/track"
 	"github.com/shotwise/shotwise/internal/capcut/types"
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
@@ -66,11 +67,11 @@ type jianyingClip struct {
 
 // JianyingDraftService 承载剪映草稿导出。
 type JianyingDraftService struct {
-	store *ProjectStore
+	store *service.ProjectStore
 }
 
 // NewJianyingDraftService 构造服务。
-func NewJianyingDraftService(store *ProjectStore) *JianyingDraftService {
+func NewJianyingDraftService(store *service.ProjectStore) *JianyingDraftService {
 	return &JianyingDraftService{store: store}
 }
 
@@ -299,7 +300,7 @@ func (s *JianyingDraftService) collectVideoClips(
 			VideoClip:       videoClip,
 			AbsPath:         absPath,
 			SubtitleText:    subtitleText,
-			TransitionTo:    stringField(item, "transition_to_next"),
+			TransitionTo:    service.StringField(item, "transition_to_next"),
 			NarrationAudio:  generatedAssetString(item, "narration_audio"),
 		}
 		if clip.TransitionTo == "" {
@@ -314,7 +315,7 @@ func (s *JianyingDraftService) collectVideoClips(
 		}
 		if isDrama {
 			clip.SubtitleSpans = utteranceSubtitleSpans(item["utterances"], pf.SourceLanguage,
-				ProjectSpeechRateOverride(pf))
+				service.ProjectSpeechRateOverride(pf))
 		}
 		clips = append(clips, clip)
 	}
@@ -360,7 +361,7 @@ func collectReferenceUnitClips(
 			DurationSeconds: jyIntField(unit, "duration_seconds", 0),
 			VideoClip:       videoClip,
 			AbsPath:         absPath,
-			TransitionTo:    stringField(unit, "transition_to_next"),
+			TransitionTo:    service.StringField(unit, "transition_to_next"),
 		}
 		if clip.TransitionTo == "" {
 			clip.TransitionTo = "cut"
@@ -410,7 +411,7 @@ func utteranceSubtitleSpans(utterances any, language string, override *float64) 
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		duration := EstimateSpokenSeconds(text, language, override)
+		duration := service.EstimateSpokenSeconds(text, language, override)
 		if duration <= 0 {
 			continue
 		}

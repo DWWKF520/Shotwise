@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -118,7 +120,7 @@ func newImageGeneratorFixtureWithStub(t *testing.T, srv *httptest.Server) (*Imag
 			DefaultModel: map[string]string{"image": "gpt-image-2"},
 		},
 	}
-	ledger := NewLedger(gdb, pricing.NewCalculator(catalog))
+	ledger := service.NewLedger(gdb, pricing.NewCalculator(catalog))
 	return NewImageGenerator(gdb, ledger), gdb, srv.URL
 }
 
@@ -148,7 +150,7 @@ func TestImageGeneratorEndToEndSuccess(t *testing.T) {
 	if err := gdb.Where("project_name = ?", "demo").First(&row).Error; err != nil {
 		t.Fatalf("api_call row missing: %v", err)
 	}
-	if row.Status != StatusSuccess {
+	if row.Status != service.StatusSuccess {
 		t.Fatalf("expected success ledger row, got %s", row.Status)
 	}
 	if row.Provider != "openai" || row.Model != "gpt-image-2" || row.CallType != "image" {
@@ -192,7 +194,7 @@ func TestImageGeneratorFailureSettlesZeroCost(t *testing.T) {
 	if err := gdb.Where("project_name = ?", "demo").First(&row).Error; err != nil {
 		t.Fatalf("api_call row missing: %v", err)
 	}
-	if row.Status != StatusFailed {
+	if row.Status != service.StatusFailed {
 		t.Fatalf("expected failed ledger row, got %s", row.Status)
 	}
 	if row.CostAmount != 0 {

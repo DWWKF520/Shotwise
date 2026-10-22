@@ -2,12 +2,12 @@
 // backend → 能力闸门 → 记账括号 → 生成 → 结算 → 版本登记」。
 //
 // 记账括号不变式：能力闸门与 backend 构造都在开括号之前，失败不落 pending 行；括号一旦
-// 开启，`defer FinishFailure(ctx, call, &err)` 兜底，取消（context.Canceled）穿透不记账。
+// 开启，`defer service.FinishFailure(ctx, call, &err)` 兜底，取消（context.Canceled）穿透不记账。
 //
 // 结算语义转写（对应 Python _settlement_from_result 的 union 分发）：
 //   - video：backend 回报的 duration_seconds 覆盖 start 时的请求时长（BilledDurationSeconds）；
 //   - audio：合成字符数（Characters）进 usage_tokens，驱动按字符计费。
-package service
+package generation
 
 import (
 	"context"
@@ -25,6 +25,7 @@ import (
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 	// 视频 / 音频 backend 在装载期（init）把自己注册进 provider 的 backend registry，
 	// 本文件依赖它以拿到可执行的实现；providers 不反向依赖 service。
 	"github.com/shotwise/shotwise/internal/providers"
@@ -36,12 +37,12 @@ type VideoGenerator struct {
 	db       *gorm.DB
 	resolver *config.Resolver
 	cfg      *config.ConfigService
-	ledger   *Ledger
+	ledger   *service.Ledger
 	tasks    *repository.TaskRepo
 }
 
 // NewVideoGenerator 构造；ledger 为 nil 时只生成不记账（供冒烟 / 诊断路径）。
-func NewVideoGenerator(db *gorm.DB, ledger *Ledger) *VideoGenerator {
+func NewVideoGenerator(db *gorm.DB, ledger *service.Ledger) *VideoGenerator {
 	return &VideoGenerator{
 		db:       db,
 		resolver: config.NewResolver(db),
@@ -257,7 +258,7 @@ func (g *VideoGenerator) Generate(
 		return VideoGenerateResult{}, fmt.Errorf("video target 未解析，先调 Resolve")
 	}
 	backend := target.Backend
-	outRel, err := resourceRelativePath(p.ResourceType, p.ResourceID)
+	outRel, err := service.ResourceRelativePath(p.ResourceType, p.ResourceID)
 	if err != nil {
 		return VideoGenerateResult{}, err
 	}
@@ -284,7 +285,7 @@ func (g *VideoGenerator) Generate(
 			meta[k] = v
 		}
 	}
-	versions := NewVersions(p.ProjectDir)
+	versions := service.NewVersions(p.ProjectDir)
 	if _, err := versions.EnsureCurrentTracked(p.ResourceType, p.ResourceID, p.Prompt, outPath, meta); err != nil {
 		return VideoGenerateResult{}, err
 	}
@@ -337,9 +338,9 @@ func (g *VideoGenerator) Generate(
 	request.Seed = p.Seed
 
 	var out provider.VideoGenerationResult
-	var call *Call
+	var call *service.Call
 	if g.ledger != nil {
-		call, err = g.ledger.Start(ctx, StartParams{
+		call, err = g.ledger.Start(ctx, service.StartParams{
 			ProjectName:     p.ProjectName,
 			CallType:        "video",
 			Model:           backend.Model(),
@@ -370,7 +371,7 @@ func (g *VideoGenerator) Generate(
 	}
 	if call != nil {
 		path := out.VideoPath
-		if err = g.ledger.FinishSuccess(ctx, call, FinishParams{
+		if err = g.ledger.FinishSuccess(ctx, call, service.FinishParams{
 			Settlement: pricing.Settlement{
 				UsageTokens:           int64ToInt(out.UsageTokens),
 				GenerateAudio:         out.GenerateAudio,
@@ -420,12 +421,12 @@ type ResumeGenerateParams struct {
 // submit（重复 submit 等于重复计费，ADR 0007）。
 //
 // 与 Generate 的差异（对齐 Python resume_video_async）：
-//   - 不开记账括号（首次 submit 已落 pending 行），成功经 ResumeSuccess 按 api_call_id 精准翻
-//     success，过期经调用方 ResumeFailed 翻 failed，都不新开 pending。
+//   - 不开记账括号（首次 submit 已落 pending 行），成功经 service.ResumeSuccess 按 api_call_id 精准翻
+//     success，过期经调用方 service.ResumeFailed 翻 failed，都不新开 pending。
 //   - 不读 storyboard / 参考资产、不做能力闸与时长守卫：provider 端 job 已在跑，本地资产缺失
 //     或能力漂移不该把已提交的付费任务卡成幽灵任务。
-//   - 成功后恒 AddVersion：下载的新视频覆盖了 output_path，必须 bump 版本号让 versions.json
-//     与磁盘一致；不做 Generate 的 EnsureCurrentTracked 前置补版本（与 Python 同口径）。
+//   - 成功后恒 service.AddVersion：下载的新视频覆盖了 output_path，必须 bump 版本号让 versions.json
+//     与磁盘一致；不做 Generate 的 service.EnsureCurrentTracked 前置补版本（与 Python 同口径）。
 func (g *VideoGenerator) ResumeGenerate(
 	ctx context.Context, target *VideoTarget, p ResumeGenerateParams, jobID string,
 ) (VideoGenerateResult, error) {
@@ -433,7 +434,7 @@ func (g *VideoGenerator) ResumeGenerate(
 		return VideoGenerateResult{}, fmt.Errorf("video target 未解析，先调 Resolve")
 	}
 	backend := target.Backend
-	outRel, err := resourceRelativePath(p.ResourceType, p.ResourceID)
+	outRel, err := service.ResourceRelativePath(p.ResourceType, p.ResourceID)
 	if err != nil {
 		return VideoGenerateResult{}, err
 	}
@@ -499,7 +500,7 @@ func (g *VideoGenerator) ResumeGenerate(
 		}
 	}
 
-	version, _, err := NewVersions(p.ProjectDir).AddVersion(p.ResourceType, p.ResourceID, p.Prompt, outPath, meta)
+	version, _, err := service.NewVersions(p.ProjectDir).AddVersion(p.ResourceType, p.ResourceID, p.Prompt, outPath, meta)
 	if err != nil {
 		return VideoGenerateResult{}, err
 	}
@@ -527,11 +528,11 @@ type AudioGenerator struct {
 	db       *gorm.DB
 	resolver *config.Resolver
 	cfg      *config.ConfigService
-	ledger   *Ledger
+	ledger   *service.Ledger
 }
 
 // NewAudioGenerator 构造；ledger 为 nil 时只合成不记账。
-func NewAudioGenerator(db *gorm.DB, ledger *Ledger) *AudioGenerator {
+func NewAudioGenerator(db *gorm.DB, ledger *service.Ledger) *AudioGenerator {
 	return &AudioGenerator{
 		db:       db,
 		resolver: config.NewResolver(db),
@@ -555,7 +556,7 @@ type AudioGenerateParams struct {
 	Voice        string
 	LanguageType string // 空串按 Chinese
 	Speed        *float64
-	// Payload 携带历史任务的 audio_provider / audio_model 覆盖（排空场景），无则 nil。
+	// service.Payload 携带历史任务的 audio_provider / audio_model 覆盖（排空场景），无则 nil。
 	Payload         map[string]any
 	VersionMetadata map[string]any
 }
@@ -578,7 +579,7 @@ func (g *AudioGenerator) Generate(
 	if err != nil {
 		return AudioGenerateResult{}, err
 	}
-	outRel, err := resourceRelativePath(p.ResourceType, p.ResourceID)
+	outRel, err := service.ResourceRelativePath(p.ResourceType, p.ResourceID)
 	if err != nil {
 		return AudioGenerateResult{}, err
 	}
@@ -586,7 +587,7 @@ func (g *AudioGenerator) Generate(
 	if err != nil {
 		return AudioGenerateResult{}, fmt.Errorf("非法资源 ID: %s", p.ResourceID)
 	}
-	versions := NewVersions(p.ProjectDir)
+	versions := service.NewVersions(p.ProjectDir)
 	if _, err := versions.EnsureCurrentTracked(p.ResourceType, p.ResourceID, p.Text, outPath, p.VersionMetadata); err != nil {
 		return AudioGenerateResult{}, err
 	}
@@ -608,9 +609,9 @@ func (g *AudioGenerator) Generate(
 	request.Speed = p.Speed
 
 	var out provider.AudioSynthesisResult
-	var call *Call
+	var call *service.Call
 	if g.ledger != nil {
-		call, err = g.ledger.Start(ctx, StartParams{
+		call, err = g.ledger.Start(ctx, service.StartParams{
 			ProjectName: p.ProjectName,
 			CallType:    "audio",
 			Model:       backend.Model(),
@@ -628,7 +629,7 @@ func (g *AudioGenerator) Generate(
 		return AudioGenerateResult{}, err
 	}
 	if call != nil {
-		if err = g.ledger.FinishSuccess(ctx, call, FinishParams{
+		if err = g.ledger.FinishSuccess(ctx, call, service.FinishParams{
 			Settlement: pricing.Settlement{
 				// 合成字符数 → usage_tokens：按字符计费的语义转写唯一落点。
 				UsageTokens: intPtr(out.Characters),

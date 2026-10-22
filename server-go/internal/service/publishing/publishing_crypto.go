@@ -1,6 +1,6 @@
 // 发布 OAuth 凭据的加密存储（对应 server/services/publishing_crypto.py）。
 // 使用 AES-256-GCM，密钥来自 PUBLISHING_ENCRYPTION_KEY（urlsafe-base64，32 字节）。
-package service
+package publishing
 
 import (
 	"crypto/aes"

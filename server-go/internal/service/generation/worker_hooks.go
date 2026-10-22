@@ -3,7 +3,7 @@
 // worker（internal/queue）只负责调度与终态收口，具体能力经这些钩子注入：中断记账收口、
 // 失败结构化编码、瞬态判定、执行身份投影与执行前资产复检。本文件是唯一把 service 层实现
 // 接到 worker 端口上的地方——worker 包不反向依赖 service。
-package service
+package generation
 
 import (
 	"context"
@@ -18,20 +18,22 @@ import (
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
 // ----------------------------------------------------------------------
 // 中断记账收口
 // ----------------------------------------------------------------------
 
-// LedgerSettler 把 *Ledger 的中断收口能力适配成 queue.InterruptedSettler。
+// LedgerSettler 把 *service.Ledger 的中断收口能力适配成 queue.InterruptedSettler。
 //
-// Ledger 的同名方法语义与 worker 端口一致（启动收口 + 取消收口），只是返回签名不同：
-// Ledger.ResumeFailed 额外回报受影响行数，端口只要求 error。
-type LedgerSettler struct{ ledger *Ledger }
+// service.Ledger 的同名方法语义与 worker 端口一致（启动收口 + 取消收口），只是返回签名不同：
+// service.Ledger.ResumeFailed 额外回报受影响行数，端口只要求 error。
+type LedgerSettler struct{ ledger *service.Ledger }
 
 // NewLedgerSettler 构造中断记账收口适配器。
-func NewLedgerSettler(l *Ledger) *LedgerSettler { return &LedgerSettler{ledger: l} }
+func NewLedgerSettler(l *service.Ledger) *LedgerSettler { return &LedgerSettler{ledger: l} }
 
 // SettleInterruptedCalls 把 startedBefore 之前仍 pending 的记账行翻失败，返回条数。
 func (s *LedgerSettler) SettleInterruptedCalls(ctx context.Context, startedBefore time.Time) (int, error) {
@@ -139,7 +141,7 @@ func IsTransientTaskError(err error) bool {
 //
 // 解析失败返回空串（worker 会回退 DefaultProvider），绝不 panic、绝不冒泡阻断认领循环——队列里
 // 可能残留指向已删除 / 不可读项目的任务，claim 过滤不能因此停摆。
-func NewProviderExtractor(store *ProjectStore, resolver *config.Resolver) queue.ProviderExtractor {
+func NewProviderExtractor(store *service.ProjectStore, resolver *config.Resolver) queue.ProviderExtractor {
 	return func(ctx context.Context, task *repository.TaskData) (providerID string) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -180,7 +182,7 @@ func NewProviderExtractor(store *ProjectStore, resolver *config.Resolver) queue.
 // loadProjectForExtraction 取项目上下文；无项目名或读取失败时返回 (nil, nil)/(nil, err)。
 //
 // 返回 nil 项目是合法输入：resolver 的层叠解析在无项目上下文时退到全局层。
-func loadProjectForExtraction(store *ProjectStore, projectName string) (*domain.ProjectFile, error) {
+func loadProjectForExtraction(store *service.ProjectStore, projectName string) (*domain.ProjectFile, error) {
 	if projectName == "" || store == nil {
 		return nil, nil
 	}
@@ -246,7 +248,7 @@ func pinnedVideoProvider(payload map[string]any) string {
 //
 // 其余 task_type 一律放行（返回 nil）——Python 侧还覆盖 grid，宫格复检随宫格执行路径在 Go 侧
 // 迁移时补齐。缺 queue 元数据（项目名 / resource_id / script_file）的历史或测试任务同样放行。
-func NewWorkerPreflight(store *ProjectStore) queue.Preflight {
+func NewWorkerPreflight(store *service.ProjectStore) queue.Preflight {
 	return func(ctx context.Context, task *repository.TaskData) error {
 		if store == nil || task == nil {
 			return nil
@@ -297,7 +299,7 @@ func preflightStoryboardItem(
 	if !ok {
 		return fmt.Errorf("生成前检查失败：找不到分镜/场景 %s", resourceID)
 	}
-	if formatted := FormatPreflightError(ValidateItemAssetReferences(project, projectDir, item, fields)); formatted != "" {
+	if formatted := service.FormatPreflightError(service.ValidateItemAssetReferences(project, projectDir, item, fields)); formatted != "" {
 		return errors.New(formatted)
 	}
 	return nil
@@ -323,7 +325,7 @@ func preflightReferenceUnit(
 	if !isAd {
 		scriptArg = nil
 	}
-	errorText, err := ValidateReferenceUnitsPreflight(
+	errorText, err := reference.ValidateReferenceUnitsPreflight(
 		project, projectDir, []map[string]any{unit}, scriptArg, nil,
 	)
 	if err != nil {
@@ -342,7 +344,7 @@ func findPreflightItem(items []any, idField, resourceID string) (map[string]any,
 		if !ok {
 			continue
 		}
-		if pythonStrLike(item[idField]) == resourceID || pythonStrLike(item["scene_id"]) == resourceID {
+		if service.PythonStrLike(item[idField]) == resourceID || service.PythonStrLike(item["scene_id"]) == resourceID {
 			return item, true
 		}
 	}
@@ -367,27 +369,6 @@ func findReferenceUnit(script map[string]any, key, resourceID string) (map[strin
 	return nil, false
 }
 
-// pythonStrLike 复刻 Python str() 的文本形态（nil 记空串，布尔按 True/False）。
-func pythonStrLike(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return v
-	case bool:
-		if v {
-			return "True"
-		}
-		return "False"
-	case float64:
-		if v == float64(int64(v)) {
-			return fmt.Sprintf("%d", int64(v))
-		}
-		return fmt.Sprintf("%v", v)
-	default:
-		return fmt.Sprint(v)
-	}
-}
 
 // taskIDOf 读 task id，nil 安全。
 func taskIDOf(task *repository.TaskData) string {

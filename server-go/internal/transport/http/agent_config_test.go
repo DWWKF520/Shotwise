@@ -14,7 +14,7 @@ import (
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -48,7 +48,7 @@ func newAgentConfigFixture(t *testing.T) agentConfigFixture {
 	// 鉴权关闭时中间件注入 admin 身份：agent 配置整组要求管理员，夹具必须走同一层。
 	authService := auth.New(nil, false, nil)
 	v1 := r.Group("/api/v1", authService.Middleware())
-	RegisterAgentConfig(v1, AgentConfigDeps{Credentials: service.NewAgentCredentialService(gdb)})
+	RegisterAgentConfig(v1, AgentConfigDeps{Credentials: admin.NewAgentCredentialService(gdb)})
 	return agentConfigFixture{router: r}
 }
 

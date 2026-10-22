@@ -4,6 +4,7 @@ package http
 // server/routers/prompt_registry.py 2 个端点）。
 
 import (
+	servicereference "github.com/shotwise/shotwise/internal/service/reference"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -49,8 +50,8 @@ func newDraftTestEngine(t *testing.T, userID string) (*gin.Engine, *service.Proj
 	t.Helper()
 	root := t.TempDir()
 	store := service.NewProjectStore(root)
-	repo := service.NewFileDraftPromotionRepository(store)
-	svc := domain.NewDraftPromotionService(repo, service.ScriptStructureDraftValidator())
+	repo := servicereference.NewFileDraftPromotionRepository(store)
+	svc := domain.NewDraftPromotionService(repo, servicereference.ScriptStructureDraftValidator())
 
 	r := gin.New()
 	group := r.Group("/api/v1")
@@ -493,8 +494,8 @@ func TestDraftPromotionStoreFile(t *testing.T) {
 
 	// 用同一个数据目录重建仓储（等价于进程重启）。
 	reloaded := domain.NewDraftPromotionService(
-		service.NewFileDraftPromotionRepository(service.NewProjectStore(store.Root())),
-		service.ScriptStructureDraftValidator(),
+		servicereference.NewFileDraftPromotionRepository(service.NewProjectStore(store.Root())),
+		servicereference.ScriptStructureDraftValidator(),
 	)
 	loaded, err := reloaded.GetDraft(draftID, "u1")
 	if err != nil {

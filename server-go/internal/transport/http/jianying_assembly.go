@@ -9,12 +9,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 )
 
 // JianyingAssemblyDeps 是剪映导出 handler 的依赖。
 type JianyingAssemblyDeps struct {
-	Exports *service.JianyingExportService
+	Exports *media.JianyingExportService
 }
 
 // RegisterJianyingAssembly 注册剪映草稿导出路由。
@@ -45,9 +45,9 @@ func exportJianyingDraft(d JianyingAssemblyDeps) gin.HandlerFunc {
 // 404 / 409 {"code","status"} / 4xx {"code","message"}，与 Python handler 逐支对齐。
 func abortJianyingErr(c *gin.Context, err error) {
 	var (
-		notFound *service.AssemblyPlanNotFoundError
-		conflict *service.AssemblyPlanConflictError
-		export   *service.JianyingExportError
+		notFound *media.AssemblyPlanNotFoundError
+		conflict *media.AssemblyPlanConflictError
+		export   *media.JianyingExportError
 	)
 	switch {
 	case errors.As(err, &notFound):

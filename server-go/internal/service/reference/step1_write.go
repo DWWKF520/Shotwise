@@ -4,9 +4,10 @@
 // 四条写路径（Web 端保存、重拆分、晋升、迁移回写）全部汇入本模块：锁、乐观并发比对与
 // step2 隔离草稿清理只存在一处。Go 侧以进程内 per-path 排他锁等价 Python 的
 // ProjectManager.file_lock（单进程部署；跨进程排他随部署形态增量接入）。
-package service
+package reference
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,8 +15,8 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
-// step1Locks 是 step1 写盘出口的 per-path 排他锁表（键为正式文件绝对路径）。
-var step1Locks = fs.NewKeyedLocks()
+// Step1Locks 是 step1 写盘出口的 per-path 排他锁表（键为正式文件绝对路径）。
+var Step1Locks = fs.NewKeyedLocks()
 
 // FingerprintExpectation 是乐观并发比对的基线：区分「不做比对」与「基线是 nil（写入方取基线时
 // 正式文件不存在）」——两者都要能表达。
@@ -56,7 +57,7 @@ func step1DerefString(value *string) any {
 
 // OfficialReferenceStep1Path 返回该集参考生视频正式 step1 的路径。
 func OfficialReferenceStep1Path(projectDir string, episode int) string {
-	return filepath.Join(EpisodeDraftsDir(projectDir, episode), ReferenceVideoStep1Filename)
+	return filepath.Join(service.EpisodeDraftsDir(projectDir, episode), service.ReferenceVideoStep1Filename)
 }
 
 // AssertBaseFingerprint 做乐观并发比对：expected 与 path 盘上现值不一致时返回 *Step1WriteConflict、不落盘。
@@ -64,7 +65,7 @@ func AssertBaseFingerprint(path string, expected FingerprintExpectation) error {
 	if expected.Unchecked {
 		return nil
 	}
-	actual, err := ContentFingerprint(path)
+	actual, err := service.ContentFingerprint(path)
 	if err != nil {
 		return err
 	}
@@ -72,7 +73,7 @@ func AssertBaseFingerprint(path string, expected FingerprintExpectation) error {
 		return nil
 	}
 	var current map[string]any
-	if loaded, err := readJSONObjectOrNone(path); err == nil {
+	if loaded, err := service.ReadJSONObjectOrNone(path); err == nil {
 		current = loaded
 	}
 	return &Step1WriteConflict{Expected: expected.Value, Actual: actual, CurrentContent: current}
@@ -80,13 +81,13 @@ func AssertBaseFingerprint(path string, expected FingerprintExpectation) error {
 
 // Step1WriteLock 是参考生视频正式 step1 的写临界区：建目录 + per-path 排他锁，回调收到正式文件路径。
 func Step1WriteLock(projectDir string, episode int, fn func(step1Path string) error) error {
-	draftsDir := EpisodeDraftsDir(projectDir, episode)
+	draftsDir := service.EpisodeDraftsDir(projectDir, episode)
 	if err := os.MkdirAll(draftsDir, 0o755); err != nil {
 		return err
 	}
 	path := OfficialReferenceStep1Path(projectDir, episode)
 	var inner error
-	step1Locks.WithLock(path, func() {
+	Step1Locks.WithLock(path, func() {
 		inner = fn(path)
 	})
 	return inner
@@ -105,7 +106,7 @@ func WriteStep1Locked(
 	if err := AssertBaseFingerprint(path, expected); err != nil {
 		return false, err
 	}
-	previous, err := readJSONObjectOrNone(path)
+	previous, err := service.ReadJSONObjectOrNone(path)
 	if err != nil {
 		return false, err
 	}
@@ -126,7 +127,7 @@ func fingerprintEqual(a, b map[string]any) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	return ContentFingerprintOfData(a) == ContentFingerprintOfData(b)
+	return service.ContentFingerprintOfData(a) == service.ContentFingerprintOfData(b)
 }
 
 // stringPtrEqual 判定两个可空字符串相等（双 nil 为相等）。

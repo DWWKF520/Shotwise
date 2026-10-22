@@ -94,7 +94,7 @@ func (s *GridService) ApplySplit(ctx context.Context, projectName string, grid *
 	}
 	// 比例取记录冻结值：项目 aspect_ratio 改过之后再切历史联合图，按新比例中心裁切会把每格
 	// 削掉大半（横版图按竖版切）。存量记录无该字段，回退到项目当前设置。
-	videoAspectRatio := aspectRatioFor(pf, "videos")
+	videoAspectRatio := AspectRatioFor(pf, "videos")
 	if grid.VideoAspectRatio != nil && *grid.VideoAspectRatio != "" {
 		videoAspectRatio = *grid.VideoAspectRatio
 	}

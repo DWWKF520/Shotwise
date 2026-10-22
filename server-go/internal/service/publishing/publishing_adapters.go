@@ -2,9 +2,12 @@
 //
 // 这里不实现任何网络客户端：内置注册表刻意留空，直到官方平台 API、应用凭据与
 // 授权范围确认后才注册真实适配器；在适配器接入前，调用方 fail closed。
-package service
+package publishing
 
-import "strings"
+import (
+	"strings"
+
+)
 
 // PlatformCapabilities 是单个平台的能力声明（JSON 字段名与 Python asdict 对齐）。
 type PlatformCapabilities struct {

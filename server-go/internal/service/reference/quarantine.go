@@ -5,10 +5,10 @@
 // 违约报告落到同目录的隔离草稿，agent 修 content 后经晋升工具按同一校验器全量重判。
 //
 // 信封形状：{"kind": ..., "episode": N, "meta": {...}, "violations": [...], "content": {...}}
-package service
+package reference
 
 import (
-	"encoding/json"
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,8 +34,8 @@ const (
 
 // quarantineFilenames 按来源映射隔离草稿文件名。
 var quarantineFilenames = map[string]string{
-	QuarantineKindStep1: ReferenceVideoStep1QuarantineName,
-	QuarantineKindStep2: ReferenceVideoStep2QuarantineName,
+	QuarantineKindStep1: service.ReferenceVideoStep1QuarantineName,
+	QuarantineKindStep2: service.ReferenceVideoStep2QuarantineName,
 }
 
 // quarantineEnvelopeKeys 是信封的已知键；未知键原样保留（前后兼容）。
@@ -115,7 +115,7 @@ func QuarantinePath(projectDir string, episode int, kind string) string {
 	if !ok {
 		return ""
 	}
-	return filepath.Join(EpisodeDraftsDir(projectDir, episode), filename)
+	return filepath.Join(service.EpisodeDraftsDir(projectDir, episode), filename)
 }
 
 // QuarantineExists 判定该集该阶段是否有隔离草稿在场（不解析内容）。
@@ -146,7 +146,7 @@ func migrateQuarantineEnvelope(data map[string]any, path string) (map[string]any
 	if !ok {
 		raw = QuarantineSchemaV1
 	}
-	version, ok := intValueOK(raw)
+	version, ok := IntValueOK(raw)
 	if !ok {
 		return nil, nil
 	}
@@ -172,7 +172,7 @@ func ReadQuarantine(projectDir string, episode int, kind string) (*QuarantinedDr
 	if path == "" {
 		return nil, nil
 	}
-	data, err := readJSONObjectOrNone(path)
+	data, err := service.ReadJSONObjectOrNone(path)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +193,7 @@ func ReadQuarantine(projectDir string, episode int, kind string) (*QuarantinedDr
 	if kindValue, _ := migrated["kind"].(string); kindValue != kind {
 		return nil, nil
 	}
-	episodeValue, ok := intValueOK(migrated["episode"])
+	episodeValue, ok := IntValueOK(migrated["episode"])
 	if !ok || episodeValue != episode {
 		return nil, nil
 	}
@@ -231,7 +231,7 @@ func WriteQuarantine(
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	existing, err := readJSONObjectOrNone(path)
+	existing, err := service.ReadJSONObjectOrNone(path)
 	if err != nil {
 		return "", err
 	}
@@ -290,24 +290,9 @@ func RenderQuarantineReport(draftPath, kind string, violations []DraftViolation,
 		stage, len(violations), draftPath, RenderViolationReport(violations), field, PromoteToolName, episode)
 }
 
-// readJSONObjectOrNone 读 JSON 文件并要求顶层为对象；缺失 / 损坏 / 非对象返回 (nil, nil)。
-func readJSONObjectOrNone(path string) (map[string]any, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var data map[string]any
-	if json.Unmarshal(raw, &data) != nil {
-		return nil, nil
-	}
-	return data, nil
-}
 
-// intValueOK 取整数语义的值（bool 不算）。
-func intValueOK(value any) (int, bool) {
+// IntValueOK 取整数语义的值（bool 不算）。
+func IntValueOK(value any) (int, bool) {
 	switch v := value.(type) {
 	case int:
 		return v, true

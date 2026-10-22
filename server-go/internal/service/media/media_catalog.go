@@ -3,7 +3,7 @@
 // MediaAsset 只给既有媒体文件分配稳定 ID，绝不移动/改名/删除/转码/覆盖任何文件；
 // 遗留的 project.json 路径仍是兼容契约。目录以 project 根下的
 // .media-assets.json 为唯一真相源，数据库镜像表只是显式同步边界。
-package service
+package media
 
 import (
 	"crypto/sha256"
@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shotwise/shotwise/internal/config"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // 媒体种类取值。
@@ -31,9 +32,7 @@ const (
 // 媒体来源取值。
 const (
 	MediaOriginUpload    = "upload"
-	MediaOriginGenerated = "generated"
 	MediaOriginEdited    = "edited"
-	MediaOriginExtracted = "extracted"
 	MediaOriginImported  = "imported"
 )
 
@@ -353,7 +352,7 @@ func (m *MediaCatalog) MarkReady() (MediaIndexSummary, error) {
 		return MediaIndexSummary{}, err
 	}
 	empty := ""
-	now := nowISO()
+	now := service.NowISO()
 	refreshMediaSummary(&state, mediaStrPtr(MediaIndexStatusReady), &empty, &now)
 	if err := m.save(state); err != nil {
 		return MediaIndexSummary{}, err
@@ -401,7 +400,7 @@ func (m *MediaCatalog) Register(p catalogRegisterParams) (*MediaAsset, error) {
 	if kind == "" {
 		state.diagnostics = append(state.diagnostics, MediaMigrationDiagnostic{
 			ProjectID: p.ProjectID, Path: p.Path, Code: "unsupported_media",
-			Detail: "extension is not indexed", CreatedAt: nowISO(),
+			Detail: "extension is not indexed", CreatedAt: service.NowISO(),
 		})
 		if err := m.save(state); err != nil {
 			return nil, err
@@ -412,7 +411,7 @@ func (m *MediaCatalog) Register(p catalogRegisterParams) (*MediaAsset, error) {
 	if statErr != nil || info.IsDir() {
 		state.diagnostics = append(state.diagnostics, MediaMigrationDiagnostic{
 			ProjectID: p.ProjectID, Path: p.Path, Code: "missing_file",
-			Detail: "referenced file does not exist", CreatedAt: nowISO(),
+			Detail: "referenced file does not exist", CreatedAt: service.NowISO(),
 		})
 		if err := m.save(state); err != nil {
 			return nil, err
@@ -423,7 +422,7 @@ func (m *MediaCatalog) Register(p catalogRegisterParams) (*MediaAsset, error) {
 	if err != nil {
 		state.diagnostics = append(state.diagnostics, MediaMigrationDiagnostic{
 			ProjectID: p.ProjectID, Path: p.Path, Code: "unreadable_file",
-			Detail: fmt.Sprintf("cannot read file: %v", err), CreatedAt: nowISO(),
+			Detail: fmt.Sprintf("cannot read file: %v", err), CreatedAt: service.NowISO(),
 		})
 		if err := m.save(state); err != nil {
 			return nil, err
@@ -442,12 +441,12 @@ func (m *MediaCatalog) Register(p catalogRegisterParams) (*MediaAsset, error) {
 		if samePath {
 			state.diagnostics = append(state.diagnostics, MediaMigrationDiagnostic{
 				ProjectID: p.ProjectID, Path: p.Path, Code: "conflicting_file",
-				Detail: fmt.Sprintf("the indexed path has different content (%s)", asset.ID), CreatedAt: nowISO(),
+				Detail: fmt.Sprintf("the indexed path has different content (%s)", asset.ID), CreatedAt: service.NowISO(),
 			})
 		} else if asset.Fingerprint == fp {
 			state.diagnostics = append(state.diagnostics, MediaMigrationDiagnostic{
 				ProjectID: p.ProjectID, Path: p.Path, Code: "duplicate_file",
-				Detail: fmt.Sprintf("same content is already indexed as %s", asset.ID), CreatedAt: nowISO(),
+				Detail: fmt.Sprintf("same content is already indexed as %s", asset.ID), CreatedAt: service.NowISO(),
 			})
 		}
 	}
@@ -472,7 +471,7 @@ func (m *MediaCatalog) Register(p catalogRegisterParams) (*MediaAsset, error) {
 		SizeBytes:       info.Size(),
 		Fingerprint:     fp,
 		Origin:          p.Origin,
-		CreatedAt:       nowISO(),
+		CreatedAt:       service.NowISO(),
 		WorkflowRunID:   p.WorkflowRunID,
 		WorkflowNodeKey: p.WorkflowNodeKey,
 		ProviderID:      p.ProviderID,
@@ -506,7 +505,7 @@ func (m *MediaCatalog) Bind(mediaAssetID string, projectID, bindingKind string, 
 	}
 	binding := MediaBinding{
 		ID: uuid.NewString(), MediaAssetID: mediaAssetID, ProjectID: projectID,
-		BindingKind: bindingKind, TargetID: targetID, Purpose: purpose, CreatedAt: nowISO(),
+		BindingKind: bindingKind, TargetID: targetID, Purpose: purpose, CreatedAt: service.NowISO(),
 	}
 	state.bindings[binding.ID] = binding
 	if err := m.save(state); err != nil {
@@ -537,7 +536,7 @@ func (m *MediaCatalog) Derive(parentMediaAssetID, childMediaAssetID, operation s
 	}
 	derivation := MediaDerivation{
 		ID: uuid.NewString(), ParentMediaAssetID: parentMediaAssetID,
-		ChildMediaAssetID: childMediaAssetID, Operation: operation, CreatedAt: nowISO(),
+		ChildMediaAssetID: childMediaAssetID, Operation: operation, CreatedAt: service.NowISO(),
 	}
 	state.derivations[derivation.ID] = derivation
 	if err := m.save(state); err != nil {
@@ -608,7 +607,7 @@ func (m *MediaCatalog) EnqueueReconciliation(p EnqueueMediaReconciliationParams)
 	item := MediaReconciliationItem{
 		ID: uuid.NewString(), ProjectID: p.ProjectID, RelativePath: p.RelativePath,
 		WorkflowRunID: p.WorkflowRunID, WorkflowNodeKey: p.WorkflowNodeKey, Reason: reason,
-		CreatedAt: nowISO(), Origin: origin, Operation: operation, MediaAssetID: p.MediaAssetID,
+		CreatedAt: service.NowISO(), Origin: origin, Operation: operation, MediaAssetID: p.MediaAssetID,
 		BindingKind: p.BindingKind, TargetID: p.TargetID, Purpose: p.Purpose,
 		ParentMediaAssetID: p.ParentMediaAssetID, DerivationOperation: p.DerivationOperation,
 	}
@@ -640,7 +639,7 @@ func (m *MediaCatalog) ResolveReconciliation(operation string, mediaAssetID *str
 	if err != nil {
 		return 0, err
 	}
-	resolvedAt := nowISO()
+	resolvedAt := service.NowISO()
 	count := 0
 	updated := make([]MediaReconciliationItem, 0, len(state.reconciliation))
 	for _, item := range state.reconciliation {
@@ -686,7 +685,7 @@ func (m *MediaCatalog) RecordDiagnostic(projectID, path, code, detail string) er
 		}
 	}
 	state.diagnostics = append(state.diagnostics, MediaMigrationDiagnostic{
-		ProjectID: projectID, Path: path, Code: code, Detail: detail, CreatedAt: nowISO(),
+		ProjectID: projectID, Path: path, Code: code, Detail: detail, CreatedAt: service.NowISO(),
 	})
 	return m.save(state)
 }
@@ -742,7 +741,7 @@ func (m *MediaCatalog) RetryReconciliation(projectRoot string, itemID *string) (
 		if err != nil {
 			return nil, err
 		}
-		now := nowISO()
+		now := service.NowISO()
 		for i := range state.reconciliation {
 			if state.reconciliation[i].ID == item.ID {
 				state.reconciliation[i].ResolvedAt = &now
@@ -919,7 +918,7 @@ func (m *MediaCatalog) Backfill(projectID, projectRoot string, relativePaths []s
 			}
 			state.diagnostics = append(state.diagnostics, MediaMigrationDiagnostic{
 				ProjectID: projectID, Path: relativePath, Code: "invalid_reference",
-				Detail: "path escapes project root", CreatedAt: nowISO(),
+				Detail: "path escapes project root", CreatedAt: service.NowISO(),
 			})
 			if err := m.save(state); err != nil {
 				return nil, err

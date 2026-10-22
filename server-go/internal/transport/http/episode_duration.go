@@ -10,6 +10,7 @@
 package http
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"errors"
 	"net/http"
 
@@ -22,7 +23,7 @@ import (
 // EpisodeDurationDeps 是时长规划路由的依赖。
 type EpisodeDurationDeps struct {
 	Store    *service.ProjectStore
-	Duration *service.EpisodeDurationService
+	Duration *servicescript.EpisodeDurationService
 }
 
 // RegisterEpisodeDuration 注册分集时长规划路由。
@@ -76,7 +77,7 @@ func validateDurationPlanBody(body durationPlanBody, requireRevision bool) []app
 }
 
 // toInput 归一为服务层入参（strategy 缺省 equal）。
-func (b durationPlanBody) toInput() service.EpisodeDurationPlanInput {
+func (b durationPlanBody) toInput() servicescript.EpisodeDurationPlanInput {
 	strategy := "equal"
 	if b.Strategy != nil {
 		strategy = *b.Strategy
@@ -89,7 +90,7 @@ func (b durationPlanBody) toInput() service.EpisodeDurationPlanInput {
 	if b.TargetSeconds != nil {
 		target = *b.TargetSeconds
 	}
-	return service.EpisodeDurationPlanInput{
+	return servicescript.EpisodeDurationPlanInput{
 		TargetSeconds:     target,
 		Strategy:          strategy,
 		ManualAllocations: allocations,
@@ -234,9 +235,9 @@ func writeDurationResult(c *gin.Context, out map[string]any, err error) {
 // abortDurationErr 把时长规划错误映射成统一 {"detail": ...} 信封。
 func abortDurationErr(c *gin.Context, err error) {
 	var (
-		conflict *service.EpisodeDurationRevisionConflictError
-		notFound *service.EpisodeDurationNotFoundError
-		invalid  *service.EpisodeDurationInvalidError
+		conflict *servicescript.EpisodeDurationRevisionConflictError
+		notFound *servicescript.EpisodeDurationNotFoundError
+		invalid  *servicescript.EpisodeDurationInvalidError
 	)
 	loc := i18n.FromRequest(c.Request)
 	switch {

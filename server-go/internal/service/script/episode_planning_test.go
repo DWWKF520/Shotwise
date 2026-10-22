@@ -1,4 +1,6 @@
-package service
+package script
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -44,37 +46,37 @@ func (f *fakeCompletion) Generate(_ context.Context, prompt string, schema map[s
 func TestReadingUnitsByLanguage(t *testing.T) {
 	zh := "你好，世界！abc"
 	// 你好(2) + 全角逗号(1) + 世界(2) + 全角叹号(1) = 6；abc 不属 CJK 区。
-	if got := CountReadingUnits(zh, "zh"); got != 6 {
+	if got := service.CountReadingUnits(zh, "zh"); got != 6 {
 		t.Fatalf("zh 读数有误: %d", got)
 	}
 	// en 按词：Python 的 \w 含 CJK 字母，故「你好」「世界」「abc」各算一个词。
-	if got := CountReadingUnits(zh, "en"); got != 3 {
+	if got := service.CountReadingUnits(zh, "en"); got != 3 {
 		t.Fatalf("en 读数有误: %d", got)
 	}
-	if got := CountReadingUnits("Hôm nay trời đẹp", "vi"); got != 4 {
+	if got := service.CountReadingUnits("Hôm nay trời đẹp", "vi"); got != 4 {
 		t.Fatalf("vi 读数有误: %d", got)
 	}
-	if ReadingUnitNoun("en") != "词" || ReadingUnitNoun("zh") != "字" || ReadingUnitNoun("") != "字" {
+	if service.ReadingUnitNoun("en") != "词" || service.ReadingUnitNoun("zh") != "字" || service.ReadingUnitNoun("") != "字" {
 		t.Fatal("量词映射有误")
 	}
 	// 未知语言按 zh 路径。
-	if got := CountReadingUnits("你好", "de"); got != 2 {
+	if got := service.CountReadingUnits("你好", "de"); got != 2 {
 		t.Fatalf("未知语言应走 zh 路径: %d", got)
 	}
 }
 
 func TestFindReadingUnitOffset(t *testing.T) {
 	text := "你好世界啊" // 5 个汉字
-	if got := FindReadingUnitOffset(text, 3, "zh"); got != 3 {
+	if got := service.FindReadingUnitOffset(text, 3, "zh"); got != 3 {
 		t.Fatalf("zh 偏移有误: %d", got)
 	}
-	if got := FindReadingUnitOffset(text, 99, "zh"); got != 5 {
+	if got := service.FindReadingUnitOffset(text, 99, "zh"); got != 5 {
 		t.Fatalf("单位不足应返回总长: %d", got)
 	}
-	if got := FindReadingUnitOffset(text, 0, "zh"); got != 0 {
+	if got := service.FindReadingUnitOffset(text, 0, "zh"); got != 0 {
 		t.Fatalf("target<=0 应返回 0: %d", got)
 	}
-	if got := FindReadingUnitOffset("don't stop", 1, "en"); got != 3 {
+	if got := service.FindReadingUnitOffset("don't stop", 1, "en"); got != 3 {
 		t.Fatalf("en 词边界偏移有误: %d", got)
 	}
 }

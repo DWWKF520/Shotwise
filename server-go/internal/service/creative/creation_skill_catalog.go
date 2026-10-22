@@ -1,4 +1,4 @@
-package service
+package creative
 
 // 数据库承载的官方 Creation Skill 目录与清单同步器
 // （对应 server/services/creation_skill_catalog.py）。

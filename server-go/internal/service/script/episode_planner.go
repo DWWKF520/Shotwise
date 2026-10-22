@@ -9,7 +9,7 @@
 //
 // 坐标口径：source_range / planning_cursor 的偏移是 Python 的字符（码点）偏移，故本文件所有
 // 偏移计算与切片都走 rune（ledgerSlice / ledgerRuneLen），不得直接用字节下标。
-package service
+package script
 
 import (
 	"context"
@@ -20,11 +20,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/textgen"
 )
@@ -296,7 +296,7 @@ func buildPlanningPrompt(
 	if isScreenplay {
 		intro = planIntroScreenplay
 	}
-	unitName := ReadingUnitNoun(project.SourceLanguage)
+	unitName := service.ReadingUnitNoun(project.SourceLanguage)
 
 	lines := append([]string{}, intro...)
 	lines = append(lines, "", "# 项目信息")
@@ -428,7 +428,7 @@ func planSchema(drama bool) map[string]any {
 
 // parsePlanDraft 解析并校验模型输出（对应 Pydantic model_validate + extra=forbid）。
 func parsePlanDraft(responseText string, drama bool) ([]planningDraftEpisode, error) {
-	text := stripJSONCodeFences(responseText)
+	text := service.StripJSONCodeFences(responseText)
 	var raw any
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
 		return nil, &draftRejected{Reasons: []string{"输出不是合法 JSON：" + err.Error()}}
@@ -502,18 +502,6 @@ func parsePlanDraft(responseText string, drama bool) ([]planningDraftEpisode, er
 	return out, nil
 }
 
-var (
-	openingFenceRe = regexp.MustCompile(`^(` + "`" + "`" + "`" + `)[ \t]*(?i:json)?[ \t]*\n?`)
-	closingFenceRe = regexp.MustCompile(`\n?(` + "`" + "`" + "`" + `)$`)
-)
-
-// stripJSONCodeFences 剥离 LLM 输出最外层的 markdown 代码栅栏（对应 lib/text_utils.strip_json_code_fences）。
-func stripJSONCodeFences(text string) string {
-	out := strings.TrimSpace(text)
-	out = openingFenceRe.ReplaceAllString(out, "")
-	out = closingFenceRe.ReplaceAllString(out, "")
-	return strings.TrimSpace(out)
-}
 
 // --- 规划器 ---
 
@@ -643,7 +631,7 @@ func (p *EpisodePlanner) Plan(ctx context.Context, instructions string) (*PlanRe
 		progress = &planningProgress{
 			plannedCount:   countPlannedEpisodes(project),
 			remainingUnits: p.remainingUnitsFrom(sourceRel, start, text, language),
-			windowUnits:    CountReadingUnits(window, language),
+			windowUnits:    service.CountReadingUnits(window, language),
 		}
 	}
 
@@ -719,7 +707,7 @@ func (p *EpisodePlanner) Plan(ctx context.Context, instructions string) (*PlanRe
 				Episode:      num,
 				Title:        draft.Title,
 				Hook:         draft.Hook,
-				ReadingUnits: CountReadingUnits(segment, language),
+				ReadingUnits: service.CountReadingUnits(segment, language),
 				LedgerStatus: entry.LedgerStatus,
 			})
 			prev = absEnd
@@ -865,14 +853,14 @@ func (p *EpisodePlanner) effectiveStart(project *domain.ProjectFile) (string, in
 // remainingUnitsFrom 计当前窗口起点之后全部 + 后续源文件的阅读单位总量（全局进度提示用）。
 func (p *EpisodePlanner) remainingUnitsFrom(sourceRel string, start int, text, language string) int {
 	rest, _ := ledgerSlice(text, start, ledgerRuneLen(text))
-	total := CountReadingUnits(rest, language)
+	total := service.CountReadingUnits(rest, language)
 	sources := DiscoverSources(p.projectDir)
 	idx, ok := indexOf(relPaths(sources), sourceRel)
 	if !ok {
 		return total
 	}
 	for _, doc := range sources[idx+1:] {
-		total += CountReadingUnits(doc.Text, language)
+		total += service.CountReadingUnits(doc.Text, language)
 	}
 	return total
 }
@@ -1086,7 +1074,7 @@ func (p *EpisodePlanner) computeLedgerStats(project *domain.ProjectFile) *Ledger
 		if !ok {
 			continue
 		}
-		unitsByEpisode[num] = CountReadingUnits(segment, language)
+		unitsByEpisode[num] = service.CountReadingUnits(segment, language)
 	}
 
 	type pair struct{ num, units int }

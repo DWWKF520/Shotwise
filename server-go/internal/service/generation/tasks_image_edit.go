@@ -3,7 +3,7 @@
 // 编辑语义（见 docs/adr/0050）：以资源的当前图为唯一参考图、用户编辑指令为唯一 prompt 走
 // i2i，产出新图覆盖 canonical 路径并登记版本；原 image_prompt 不回写——编辑是对**图**的
 // 分叉而非对 prompt 的分叉。因此模板与执行共用 resolve_current_image_rel 的读图口径。
-package service
+package generation
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // imageEditVersionSource 是版本记录里标记「指令式编辑」的 source 值，前端据此展示编辑标记
@@ -25,8 +26,8 @@ const imageEditVersionSource = "image_edit"
 // executeImageEdit 执行图片编辑任务：读当前图 → i2i → 新版本覆盖 canonical → 按资源类型写回。
 //
 // 编辑必然 i2i（唯一入队即知 capability 的图片任务，见 docs/adr/0001），故恒定走 i2i 槽；
-// backend 调用失败时 canonical 图与资源写回都不被触碰（生成失败在 Generate 内已记账）。
-// 旧图基线登记（EnsureCurrentTracked）先于 backend 调用发生，与成败无关、失败不回滚——
+// backend 调用失败时 canonical 图与资源写回都不被触碰（生成失败在 service.Generate 内已记账）。
+// 旧图基线登记（service.EnsureCurrentTracked）先于 backend 调用发生，与成败无关、失败不回滚——
 // 保证编辑前的旧图始终可回滚。
 func (d *TaskDispatcher) executeImageEdit(ctx context.Context, task *repository.TaskData) (map[string]any, error) {
 	if d.images == nil {
@@ -89,7 +90,7 @@ func (d *TaskDispatcher) executeImageEdit(ctx context.Context, task *repository.
 		return nil, fmt.Errorf("no current image to edit: %s/%s", resourceType, task.ResourceID)
 	}
 
-	outRel, err := resourceRelativePath(versionResourceType, key)
+	outRel, err := service.ResourceRelativePath(versionResourceType, key)
 	if err != nil {
 		return nil, err
 	}
@@ -98,12 +99,12 @@ func (d *TaskDispatcher) executeImageEdit(ctx context.Context, task *repository.
 		return nil, fmt.Errorf("非法资源 ID: %s", key)
 	}
 
-	versions := NewVersions(projectDir)
+	versions := service.NewVersions(projectDir)
 	if _, err := versions.EnsureCurrentTracked(versionResourceType, key, "", currentAbs, nil); err != nil {
 		return nil, err
 	}
 
-	aspectRatio := aspectRatioFor(pf, versionResourceType)
+	aspectRatio := service.AspectRatioFor(pf, versionResourceType)
 	// 参考图仅当前图一张、prompt 仅编辑指令（不拼原 image_prompt、不追加生成路径的自动参考图收集）。
 	request := provider.NewImageGenerationRequest(instruction, outPath)
 	request.ReferenceImages = []provider.ReferenceImage{{Path: currentAbs}}

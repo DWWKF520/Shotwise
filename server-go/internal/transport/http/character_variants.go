@@ -14,11 +14,12 @@ import (
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 // CharacterDeps 聚合角色扩展端点依赖。
 type CharacterDeps struct {
-	Variants *service.CharacterVariants
+	Variants *asset.CharacterVariants
 }
 
 // variantAllowedKeys 是两个变体请求的合法字段集（pydantic extra="forbid"）。
@@ -55,11 +56,11 @@ func (h *characterHandlers) uploadAvatar(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 	// 有界读取：读阶段就截断，不按 Content-Length 分配内存。
-	content, err := img.ReadAllBounded(file, service.AvatarMaxBytes)
+	content, err := img.ReadAllBounded(file, asset.AvatarMaxBytes)
 	if err != nil {
 		if errors.Is(err, img.ErrTooLarge) {
 			apperr.Abort(c, apperr.NewText(http.StatusRequestEntityTooLarge, "character_avatar_too_large",
-				map[string]any{"max_mb": service.AvatarMaxBytes / (1024 * 1024)}))
+				map[string]any{"max_mb": asset.AvatarMaxBytes / (1024 * 1024)}))
 			return
 		}
 		apperr.Abort(c, apperr.Internal(err))
@@ -69,9 +70,9 @@ func (h *characterHandlers) uploadAvatar(c *gin.Context) {
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "character_avatar_file_empty", nil))
 		return
 	}
-	if len(content) > service.AvatarMaxBytes {
+	if len(content) > asset.AvatarMaxBytes {
 		apperr.Abort(c, apperr.NewText(http.StatusRequestEntityTooLarge, "character_avatar_too_large",
-			map[string]any{"max_mb": service.AvatarMaxBytes / (1024 * 1024)}))
+			map[string]any{"max_mb": asset.AvatarMaxBytes / (1024 * 1024)}))
 		return
 	}
 
@@ -124,7 +125,7 @@ func (h *characterHandlers) createVariant(c *gin.Context) {
 		abortVariantError(c, http.StatusUnprocessableEntity, "character_variant_invalid_status", nil)
 		return
 	}
-	variant, err := h.deps.Variants.CreateVariant(c.Param("name"), c.Param("entry"), service.VariantCreateInput{
+	variant, err := h.deps.Variants.CreateVariant(c.Param("name"), c.Param("entry"), asset.VariantCreateInput{
 		Slug:         derefVariantString(body.Slug),
 		DisplayName:  body.DisplayName,
 		Description:  body.Description,
@@ -164,7 +165,7 @@ func (h *characterHandlers) updateVariant(c *gin.Context) {
 	}
 	_, metadataSet := raw["metadata"]
 	variant, err := h.deps.Variants.UpdateVariant(c.Param("name"), c.Param("entry"), c.Param("variant_id"),
-		service.VariantUpdateInput{
+		asset.VariantUpdateInput{
 			Slug:         body.Slug,
 			DisplayName:  body.DisplayName,
 			Description:  body.Description,
@@ -246,8 +247,8 @@ func derefVariantString(value *string) string {
 // abortCharacterErr 把变体域错误映射到 Python 侧同形的状态码。
 func abortCharacterErr(c *gin.Context, err error) {
 	var (
-		slugExists *service.CharacterVariantSlugExistsError
-		tooLarge   *service.CharacterAvatarTooLargeError
+		slugExists *asset.CharacterVariantSlugExistsError
+		tooLarge   *asset.CharacterAvatarTooLargeError
 	)
 	switch {
 	case errors.As(err, &slugExists):
@@ -256,16 +257,16 @@ func abortCharacterErr(c *gin.Context, err error) {
 	case errors.As(err, &tooLarge):
 		abortVariantError(c, http.StatusRequestEntityTooLarge, "character_avatar_pixels_too_large",
 			map[string]any{"max_megapixels": tooLarge.MaxMegapixels})
-	case errors.Is(err, service.ErrVariantNotFound):
+	case errors.Is(err, asset.ErrVariantNotFound):
 		abortVariantError(c, http.StatusNotFound, "character_variant_not_found",
 			map[string]any{"name": c.Param("variant_id")})
-	case errors.Is(err, service.ErrVariantInvalidSlug):
+	case errors.Is(err, asset.ErrVariantInvalidSlug):
 		abortVariantError(c, http.StatusUnprocessableEntity, "character_variant_invalid_slug", nil)
-	case errors.Is(err, service.ErrVariantInvalidStatus):
+	case errors.Is(err, asset.ErrVariantInvalidStatus):
 		abortVariantError(c, http.StatusUnprocessableEntity, "character_variant_invalid_status", nil)
-	case errors.Is(err, service.ErrVariantInvalidPath):
+	case errors.Is(err, asset.ErrVariantInvalidPath):
 		abortVariantError(c, http.StatusUnprocessableEntity, "character_variant_invalid_image_path", nil)
-	case errors.Is(err, service.ErrAvatarInvalidFile):
+	case errors.Is(err, asset.ErrAvatarInvalidFile):
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "character_avatar_invalid_file", nil))
 	case errors.Is(err, service.ErrAssetNotFound):
 		// FileNotFoundError→project_not_found / KeyError→character_not_found 的可观察

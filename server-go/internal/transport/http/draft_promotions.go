@@ -13,6 +13,7 @@ package http
 //   - prepare/confirm 期间剧本消失 → 404 script_not_found {name: draft_id}
 
 import (
+	servicereference "github.com/shotwise/shotwise/internal/service/reference"
 	"errors"
 	"net/http"
 
@@ -266,9 +267,9 @@ func abortDraftErr(c *gin.Context, err error, scriptFile string) {
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "draft_not_found", map[string]any{"id": c.Param("draft_id")}))
 	case errors.Is(err, domain.ErrDraftAbandoned):
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "request_invalid", nil))
-	case errors.Is(err, service.ErrDraftProjectNotFound):
+	case errors.Is(err, servicereference.ErrDraftProjectNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "script_not_found", map[string]any{"name": scriptFile}))
-	case errors.Is(err, service.ErrDraftScriptNameInvalid):
+	case errors.Is(err, servicereference.ErrDraftScriptNameInvalid):
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "request_invalid", nil))
 	default:
 		apperr.Abort(c, apperr.Internal(err))

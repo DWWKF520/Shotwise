@@ -5,7 +5,7 @@
 // 起点、source_fingerprints 记录已参与规划的源文内容指纹。物理 source/episode_N.txt 是派生物。
 //
 // source_range 是账本里唯一的位置真相：有它才能从源文重造派生文件、才能续接规划。
-package service
+package script
 
 import (
 	"crypto/sha256"
@@ -23,6 +23,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -40,14 +41,8 @@ var step1LegacyFilenames = map[string][]string{
 	"narration": {"step1_segments.md"},
 }
 
-// reference_video 的 step1 文件名：generation_mode 维度、跨 content_mode，不进按内容模式键控的表。
-const (
-	ReferenceVideoStep1Filename       = "step1_reference_units.json"
-	ReferenceVideoStep1LegacyFilename = "step1_reference_units.md"
-	ReferenceVideoStep1QuarantineName = "step1_reference_units.invalid.json"
-	ReferenceVideoStep2QuarantineName = "step2_reference_script.invalid.json"
-	step1ProductGlobPrefix            = "step1_"
-)
+// step1ProductGlobPrefix 是派生集产物文件名的公共前缀（仅账本扫描用）。
+const step1ProductGlobPrefix = "step1_"
 
 // Step1Filename 返回该内容模式的结构化 step1 文件名；不走结构化 step1（如 ad）时 ok=false。
 func Step1Filename(contentMode string) (string, bool) {
@@ -66,10 +61,6 @@ func Step1ReadCandidates(contentMode string) []string {
 	return out
 }
 
-// EpisodeDraftsDir 返回该集 step1 草稿目录 {project}/drafts/episode_N。
-func EpisodeDraftsDir(projectDir string, episode int) string {
-	return filepath.Join(projectDir, "drafts", fmt.Sprintf("episode_%d", episode))
-}
 
 // EpisodeScriptFilename 返回该集剧本文件名 episode_N.json（不含 scripts/ 目录前缀）。
 func EpisodeScriptFilename(episode int) string { return fmt.Sprintf("episode_%d.json", episode) }
@@ -326,7 +317,7 @@ func HasDownstreamProducts(projectDir string, episodeNum int, entry *domain.Epis
 	if fs.SafeExists(projectDir, EpisodeScriptRelpath(episodeNum)) {
 		return true
 	}
-	return dirHasStep1Product(EpisodeDraftsDir(projectDir, episodeNum))
+	return dirHasStep1Product(service.EpisodeDraftsDir(projectDir, episodeNum))
 }
 
 // RegisterOrphanEpisodeEntries 为磁盘上有派生集文件、账本却无条目的集号补建条目。
@@ -461,14 +452,6 @@ func EpisodeOutlineContext(pf *domain.ProjectFile, episode int) (map[string]any,
 
 // --- 源文解析（episode_source.py） ---
 
-// EpisodeSource 是解析后的剧集源文及其来源。
-type EpisodeSource struct {
-	Path         string
-	RelativePath string
-	Text         string
-	IsDerived    bool
-}
-
 // readSourceFile 按项目相对路径读源文；越界 / 缺失 / 不可读返回 ok=false。
 func readSourceFile(projectDir, relativePath string) (string, string, bool) {
 	path, err := fs.SafeJoin(projectDir, false, filepath.FromSlash(relativePath))
@@ -503,9 +486,9 @@ func ledgerSlice(text string, start, end int) (string, bool) {
 }
 
 // ledgerSource 按账本 source_range 切片源文。
-func ledgerSource(projectDir string, pf *domain.ProjectFile, episode int) (EpisodeSource, bool) {
+func ledgerSource(projectDir string, pf *domain.ProjectFile, episode int) (service.EpisodeSource, bool) {
 	if pf == nil {
-		return EpisodeSource{}, false
+		return service.EpisodeSource{}, false
 	}
 	for index := range pf.Episodes {
 		entry := &pf.Episodes[index]
@@ -514,40 +497,40 @@ func ledgerSource(projectDir string, pf *domain.ProjectFile, episode int) (Episo
 		}
 		sourceRange, ok := ParseSourceRange(entry)
 		if !ok {
-			return EpisodeSource{}, false
+			return service.EpisodeSource{}, false
 		}
 		path, text, ok := readSourceFile(projectDir, sourceRange.SourceFile)
 		if !ok {
-			return EpisodeSource{}, false
+			return service.EpisodeSource{}, false
 		}
 		episodeText, ok := ledgerSlice(text, sourceRange.Start, sourceRange.End)
 		if !ok || strings.TrimSpace(episodeText) == "" {
-			return EpisodeSource{}, false
+			return service.EpisodeSource{}, false
 		}
-		return EpisodeSource{Path: path, RelativePath: sourceRange.SourceFile, Text: episodeText}, true
+		return service.EpisodeSource{Path: path, RelativePath: sourceRange.SourceFile, Text: episodeText}, true
 	}
-	return EpisodeSource{}, false
+	return service.EpisodeSource{}, false
 }
 
-// ResolveEpisodeSource 按统一优先级解析一集源文。
+// service.ResolveEpisodeSource 按统一优先级解析一集源文（经根包 Hook 对外暴露）。
 //
 // 显式 source 始终优先；省略时先使用账本中的原文范围，随后使用本集手动预拆分的
 // source/episode_N.txt，最后回退到旧项目的原始源文拼接。
 func ResolveEpisodeSource(
 	projectDir string, episode int, source string, pf *domain.ProjectFile,
-) (EpisodeSource, error) {
+) (service.EpisodeSource, error) {
 	if source != "" {
 		path, text, ok := readSourceFile(projectDir, source)
 		if !ok {
 			if _, err := fs.SafeJoin(projectDir, false, filepath.FromSlash(source)); err != nil {
-				return EpisodeSource{}, fmt.Errorf("路径超出项目目录: %s", source)
+				return service.EpisodeSource{}, fmt.Errorf("路径超出项目目录: %s", source)
 			}
-			return EpisodeSource{}, fmt.Errorf("未找到源文件: %s", filepath.Join(projectDir, source))
+			return service.EpisodeSource{}, fmt.Errorf("未找到源文件: %s", filepath.Join(projectDir, source))
 		}
 		if strings.TrimSpace(text) == "" {
-			return EpisodeSource{}, errors.New("小说原文为空")
+			return service.EpisodeSource{}, errors.New("小说原文为空")
 		}
-		return EpisodeSource{Path: path, RelativePath: source, Text: text}, nil
+		return service.EpisodeSource{Path: path, RelativePath: source, Text: text}, nil
 	}
 
 	if resolved, ok := ledgerSource(projectDir, pf, episode); ok {
@@ -562,7 +545,7 @@ func ResolveEpisodeSource(
 				if err != nil {
 					rel = filepath.Base(derived)
 				}
-				return EpisodeSource{
+				return service.EpisodeSource{
 					Path: derived, RelativePath: filepath.ToSlash(rel), Text: normalized, IsDerived: true,
 				}, nil
 			}
@@ -577,7 +560,7 @@ func ResolveEpisodeSource(
 		}
 		text := strings.Join(parts, "\n\n")
 		if strings.TrimSpace(text) != "" {
-			return EpisodeSource{
+			return service.EpisodeSource{
 				Path:         filepath.Join(projectDir, filepath.FromSlash(originals[0].RelPath)),
 				RelativePath: originals[0].RelPath,
 				Text:         text,
@@ -585,6 +568,10 @@ func ResolveEpisodeSource(
 		}
 	}
 
-	return EpisodeSource{}, fmt.Errorf(
+	return service.EpisodeSource{}, fmt.Errorf(
 		"找不到第 %d 集源文：请提供 source 文件或准备 source/episode_%d.txt", episode, episode)
+}
+
+func init() {
+	service.ResolveEpisodeSourceHook = ResolveEpisodeSource
 }

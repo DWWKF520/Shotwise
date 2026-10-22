@@ -1,4 +1,4 @@
-package service
+package creative
 
 // Shotwise 工作流服务（对应 server/services/workflows.py）。
 //

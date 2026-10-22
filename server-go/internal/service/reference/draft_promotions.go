@@ -1,9 +1,11 @@
-package service
+package reference
+
+import "github.com/shotwise/shotwise/internal/service"
 
 // 草稿晋升仓储（对应 server/draft_promotion_repository.py 的 FileDraftPromotionRepository）。
 //
 // 草稿记录落在 <数据目录>/.draft_promotions.json（Python: app_data_dir()/.draft_promotions.json），
-// 正式剧本仍是唯一内容真相源，读写全部经 ProjectStore。晋升是剧本锁内的
+// 正式剧本仍是唯一内容真相源，读写全部经 service.ProjectStore。晋升是剧本锁内的
 // compare-and-write：先按 revision + fingerprint 比对，再走统一写盘入口
 // （结构不更坏守卫 + 集号一致性 + metadata 重算 + project.json 同步）。
 
@@ -23,19 +25,19 @@ import (
 // → router 转 404 script_not_found）。
 var ErrDraftProjectNotFound = errors.New("project not found")
 
-// ErrDraftScriptNameInvalid 剧本文件名非法（Python: safe_join 的 ValueError
+// ErrDraftScriptNameInvalid 剧本文件名非法（Python: safe_join 的 service.ValueError
 // → router 转 400 request_invalid）。
 var ErrDraftScriptNameInvalid = errors.New("invalid script file name")
 
 // FileDraftPromotionRepository 文件适配器：草稿存 JSON，晋升走剧本锁。
 type FileDraftPromotionRepository struct {
-	store *ProjectStore
+	store *service.ProjectStore
 	path  string
 	locks *fs.KeyedLocks
 }
 
 // NewFileDraftPromotionRepository 构造仓储；草稿 store 位于数据目录根部。
-func NewFileDraftPromotionRepository(store *ProjectStore) *FileDraftPromotionRepository {
+func NewFileDraftPromotionRepository(store *service.ProjectStore) *FileDraftPromotionRepository {
 	return &FileDraftPromotionRepository{
 		store: store,
 		path:  filepath.Join(store.Root(), ".draft_promotions.json"),
@@ -170,7 +172,7 @@ func (r *FileDraftPromotionRepository) PromoteAtomically(
 		}
 		// 与 Python _write_script_unlocked(validate=True, before=改前剧本) 同序：
 		// 结构不更坏守卫 → 集号一致性 → metadata 重算 → 原子写 → 集元数据同步。
-		return r.store.writeScript(target.ProjectName, dir, locked, cloneScript(content), current.Content, true)
+		return r.store.WriteScript(target.ProjectName, dir, locked, service.CloneScript(content), current.Content, true)
 	})
 	if err != nil {
 		return domain.OfficialScript{}, err
@@ -198,7 +200,7 @@ func (r *FileDraftPromotionRepository) projectDir(projectName string) (string, e
 	}
 	dir, err := r.store.Dir(projectName)
 	if err != nil {
-		// 项目名穿越 / 非法字符与「项目不存在」在 Python 侧分别走 ValueError 与
+		// 项目名穿越 / 非法字符与「项目不存在」在 Python 侧分别走 service.ValueError 与
 		// FileNotFoundError；SafeJoin 把两者都收敛成 PathTraversalError，这里按存在性区分。
 		if r.store.Exists(projectName) {
 			return "", ErrDraftScriptNameInvalid
@@ -213,8 +215,8 @@ func (r *FileDraftPromotionRepository) projectDir(projectName string) (string, e
 
 // draftScriptFilename 归一剧本文件名；非单段（含 ../）一律拒绝。
 func draftScriptFilename(name string) (string, error) {
-	filename := NormalizeScriptFilename(name)
-	if err := validateScriptBase(filename); err != nil {
+	filename := service.NormalizeScriptFilename(name)
+	if err := service.ValidateScriptBase(filename); err != nil {
 		return "", ErrDraftScriptNameInvalid
 	}
 	return filename, nil
@@ -223,20 +225,20 @@ func draftScriptFilename(name string) (string, error) {
 // draftReadOfficial 读取正式剧本快照：revision 取 mtime_ns（Python st_mtime_ns 口径）。
 //
 // insideLock 表示调用方已持该剧本的锁：此时必须走无锁读（readScriptMigrated），
-// 否则 ReadScriptJSON 撞上存量迁移会二次取同一把锁造成同进程自死锁——对应 Python
+// 否则 service.ReadScriptJSON 撞上存量迁移会二次取同一把锁造成同进程自死锁——对应 Python
 // promote_atomically 里刻意调用 _read_script_unlocked 的原因。
 //
 // revision 必须在读**之后**才 stat：读路径可能顺手把存量迁移写回盘（mtime 随之变化），
 // 先 stat 会把迁移前的旧 mtime 当基线，下一次读取必然对不上，晋升被误判成 stale。
 // Python read_official 同样是 load_script 之后才 stat。
-func draftReadOfficial(store *ProjectStore, dir, project, filename string, insideLock bool) (domain.OfficialScript, error) {
+func draftReadOfficial(store *service.ProjectStore, dir, project, filename string, insideLock bool) (domain.OfficialScript, error) {
 	path := filepath.Join(dir, "scripts", filename)
 	var (
 		content map[string]any
 		err     error
 	)
 	if insideLock {
-		content, _, err = readScriptMigrated(path)
+		content, _, err = service.ReadScriptMigrated(path)
 	} else {
 		content, err = store.ReadScriptJSON(project, filename)
 	}

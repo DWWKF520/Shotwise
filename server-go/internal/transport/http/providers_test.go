@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/infra/db"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -40,7 +40,7 @@ func newProviderFixture(t *testing.T) providerFixture {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	v1 := r.Group("/api/v1")
-	RegisterProviders(v1, ProviderDeps{Providers: service.NewProviderAdminService(gdb)})
+	RegisterProviders(v1, ProviderDeps{Providers: admin.NewProviderAdminService(gdb)})
 	return providerFixture{router: r, db: gdb}
 }
 

@@ -1,4 +1,4 @@
-package service
+package publishing
 
 import (
 	"context"

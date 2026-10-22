@@ -2,9 +2,10 @@
 //
 // 产出平铺 shots[] 的带货镜头脚本 prompt：按目标总时长选择带货八段框架的时长配比档位
 // （15/30/60/90 秒，经维护者审定的配比表）。products 为空时自动分流为通用短片 prompt。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"strconv"
 	"strings"
@@ -100,7 +101,7 @@ func absInt(value int) int {
 
 // formatDurationConstraint 生成时长约束描述：连续整数集 ≥5 用区间表达，否则枚举。
 func formatDurationConstraint(supportedDurations []int, defaultDuration *int) (string, error) {
-	normalized := normalizeDurations(supportedDurations)
+	normalized := service.NormalizeDurations(supportedDurations)
 	if len(normalized) == 0 {
 		return "", fmt.Errorf("supported_durations 不能为空：调用方必须提供 model 的合法时长列表")
 	}
@@ -118,7 +119,7 @@ func formatDurationConstraint(supportedDurations []int, defaultDuration *int) (s
 		body = "从 [" + joinInts(normalized, ", ") + "] 秒中选择"
 	}
 	if defaultDuration != nil {
-		if !containsInt(normalized, *defaultDuration) {
+		if !service.ContainsInt(normalized, *defaultDuration) {
 			return "", fmt.Errorf("default_duration=%d 不在 supported_durations=%v 内，调用方必须保证默认值合法（否则 prompt 会自相矛盾）",
 				*defaultDuration, normalized)
 		}
@@ -226,8 +227,8 @@ func BuildAdPrompt(opts AdPromptOptions) (string, error) {
 	if aspectRatio == "" {
 		aspectRatio = "9:16"
 	}
-	speechRate := SpeechRateUnitsPerSecond(targetLanguage, opts.SpeechRateOverride)
-	unitLabel := ReadingUnitNoun(targetLanguage)
+	speechRate := service.SpeechRateUnitsPerSecond(targetLanguage, opts.SpeechRateOverride)
+	unitLabel := service.ReadingUnitNoun(targetLanguage)
 	voiceoverRateNote := fmt.Sprintf("口播长度按约 %s %s/秒折算", formatFloat(speechRate), unitLabel)
 
 	episode := opts.Episode
@@ -345,11 +346,11 @@ func adReferenceEpisodeScriptSchema() map[string]any {
 
 // adEpisodeScriptSchema 是 ad storyboard 路径的剧集脚本 schema：镜头时长被枚举硬约束。
 func adEpisodeScriptSchema(supportedDurations []int) (map[string]any, error) {
-	normalized := normalizeDurations(supportedDurations)
+	normalized := service.NormalizeDurations(supportedDurations)
 	if len(normalized) == 0 {
 		return nil, fmt.Errorf("supported_durations 为空，无法构造 duration 枚举约束")
 	}
-	return adEpisodeScriptSchemaWithDuration(durationConstraint(normalized)), nil
+	return adEpisodeScriptSchemaWithDuration(service.DurationConstraint(normalized)), nil
 }
 
 // adEpisodeScriptSchemaWithDuration 构造 shots[] 骨架的 ad 剧本 schema（仅 durations 约束不同）。

@@ -17,6 +17,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/asset"
 	"github.com/shotwise/shotwise/migrations"
 	"gorm.io/gorm/logger"
 )
@@ -56,7 +57,7 @@ func newVariantFixture(t *testing.T) variantFixture {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	RegisterCharacterExtras(r.Group("/api/v1"), CharacterDeps{
-		Variants: service.NewCharacterVariants(store),
+		Variants: asset.NewCharacterVariants(store),
 	})
 	return variantFixture{router: r, store: store}
 }

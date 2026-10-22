@@ -5,7 +5,7 @@
 //
 // 宫格切分后的单元格图 canonical 路径与图生视频模式相同（storyboards/scene_{id}.png），
 // 按镜头上传即覆盖该单元格，宫格记录不动；联合图整图上传走宫格路由。
-package service
+package media
 
 import (
 	"context"
@@ -17,6 +17,8 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/img"
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 // 上传档位常量（与 Python upload_finalize 一致；视频上限复用 reference_video_upload 的同一值）。
@@ -42,11 +44,11 @@ func ValidateUpload(filename string, declaredSize *int64, kind ShotUploadKind) (
 	typeErrorKey := "unsupported_image_type"
 	if kind == ShotUploadVideo {
 		extensions = []string{".mp4", ".mov", ".m4v"}
-		maxBytes = uploadVideoMaxBytes
+		maxBytes = service.UploadVideoMaxBytes
 		typeErrorKey = "unsupported_video_type"
 	}
 	if strings.TrimSpace(filename) == "" {
-		return 0, &UploadValidationError{Status: 400, Key: "missing_filename"}
+		return 0, &service.UploadValidationError{Status: 400, Key: "missing_filename"}
 	}
 	ext := strings.ToLower(filepath.Ext(filename))
 	allowed := false
@@ -57,12 +59,12 @@ func ValidateUpload(filename string, declaredSize *int64, kind ShotUploadKind) (
 		}
 	}
 	if !allowed {
-		return 0, &UploadValidationError{Status: 400, Key: typeErrorKey, Params: map[string]any{
+		return 0, &service.UploadValidationError{Status: 400, Key: typeErrorKey, Params: map[string]any{
 			"ext": ext, "allowed": strings.Join(extensions, ", "),
 		}}
 	}
 	if declaredSize != nil && *declaredSize > maxBytes {
-		return 0, &UploadValidationError{Status: 413, Key: "upload_too_large", Params: map[string]any{
+		return 0, &service.UploadValidationError{Status: 413, Key: "upload_too_large", Params: map[string]any{
 			"max_mb": maxBytes / (1024 * 1024),
 		}}
 	}
@@ -70,10 +72,10 @@ func ValidateUpload(filename string, declaredSize *int64, kind ShotUploadKind) (
 }
 
 // ShotUploadService 承载镜头上传的落盘、版本与剧本回写。
-type ShotUploadService struct{ store *ProjectStore }
+type ShotUploadService struct{ store *service.ProjectStore }
 
 // NewShotUploadService 构造。
-func NewShotUploadService(store *ProjectStore) *ShotUploadService {
+func NewShotUploadService(store *service.ProjectStore) *ShotUploadService {
 	return &ShotUploadService{store: store}
 }
 
@@ -86,24 +88,24 @@ func (s *ShotUploadService) Upload(
 	content []byte, stream TargetWriter,
 ) (map[string]any, error) {
 	if kind != ShotUploadStoryboard && kind != ShotUploadVideo {
-		return nil, &UploadValidationError{Status: 422, Key: "request_invalid"}
+		return nil, &service.UploadValidationError{Status: 422, Key: "request_invalid"}
 	}
 	projectDir, err := s.store.Dir(projectName)
 	if err != nil {
-		return nil, &UploadValidationError{Status: 400, Key: "invalid_project_name",
+		return nil, &service.UploadValidationError{Status: 400, Key: "invalid_project_name",
 			Params: map[string]any{"name": projectName}}
 	}
 	if !s.store.Exists(projectName) {
-		return nil, &UploadValidationError{Status: 404, Key: "project_not_found",
+		return nil, &service.UploadValidationError{Status: 404, Key: "project_not_found",
 			Params: map[string]any{"name": projectName}}
 	}
 	script, err := s.store.ReadScriptJSON(projectName, scriptFile)
 	if err != nil {
-		return nil, &UploadValidationError{Status: 404, Key: "script_not_found",
+		return nil, &service.UploadValidationError{Status: 404, Key: "script_not_found",
 			Params: map[string]any{"name": scriptFile}}
 	}
-	if _, err := findShot(script, shotID); err != nil {
-		return nil, &UploadValidationError{Status: 404, Key: "segment_not_found",
+	if _, err := service.FindShot(script, shotID); err != nil {
+		return nil, &service.UploadValidationError{Status: 404, Key: "segment_not_found",
 			Params: map[string]any{"id": shotID}}
 	}
 
@@ -111,14 +113,14 @@ func (s *ShotUploadService) Upload(
 	if kind == ShotUploadVideo {
 		resourceType = "videos"
 	}
-	relativePath, err := resourceRelativePath(resourceType, shotID)
+	relativePath, err := service.ResourceRelativePath(resourceType, shotID)
 	if err != nil {
-		return nil, &UploadValidationError{Status: 400, Key: "invalid_resource_id",
+		return nil, &service.UploadValidationError{Status: 400, Key: "invalid_resource_id",
 			Params: map[string]any{"resource_id": shotID}}
 	}
 	target := filepath.Join(projectDir, filepath.FromSlash(relativePath))
 
-	versions := NewVersions(projectDir)
+	versions := service.NewVersions(projectDir)
 	// 旧文件若从未入版本库（如历史迁移），先补登，避免被覆盖后字节丢失。
 	if _, err := versions.EnsureCurrentTracked(resourceType, shotID, "", target, nil); err != nil {
 		return nil, err
@@ -128,24 +130,24 @@ func (s *ShotUploadService) Upload(
 		pngBytes, normErr := img.NormalizeToPNG(content, nil)
 		if normErr != nil {
 			if errors.Is(normErr, img.ErrPixelLimit) {
-				return nil, &UploadValidationError{Status: 400, Key: "image_pixels_too_large",
+				return nil, &service.UploadValidationError{Status: 400, Key: "image_pixels_too_large",
 					Params: map[string]any{"max_megapixels": img.MaxUploadPixels / 1_000_000}}
 			}
-			return nil, &UploadValidationError{Status: 400, Key: "invalid_image_file"}
+			return nil, &service.UploadValidationError{Status: 400, Key: "invalid_image_file"}
 		}
-		if err := writeFileAtomic(target, pngBytes); err != nil {
+		if err := service.WriteFileAtomic(target, pngBytes); err != nil {
 			return nil, err
 		}
 	} else {
 		if stream == nil {
-			return nil, &UploadValidationError{Status: 400, Key: "request_invalid"}
+			return nil, &service.UploadValidationError{Status: 400, Key: "request_invalid"}
 		}
 		if err := stream(target); err != nil {
 			return nil, err
 		}
 	}
 
-	metadata := map[string]any{"source": uploadVersionSource}
+	metadata := map[string]any{"source": service.UploadVersionSource}
 	if originalFilename != "" {
 		metadata["original_filename"] = originalFilename
 	}
@@ -172,7 +174,7 @@ func (s *ShotUploadService) Upload(
 		}
 	}
 
-	fingerprints := ComputeAffectedFingerprints(s.store, projectName, string(kind), shotID)
+	fingerprints := generation.ComputeAffectedFingerprints(s.store, projectName, string(kind), shotID)
 	return map[string]any{
 		"success":            true,
 		"path":               relativePath,
@@ -202,7 +204,7 @@ func (s *ShotUploadService) updateSceneAssets(
 	projectName, scriptFile, shotID string, updates map[string]any,
 ) error {
 	return s.store.UpdateScript(projectName, scriptFile, func(script map[string]any) error {
-		item, err := findShot(script, shotID)
+		item, err := service.FindShot(script, shotID)
 		if err != nil {
 			return err
 		}

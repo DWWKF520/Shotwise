@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"

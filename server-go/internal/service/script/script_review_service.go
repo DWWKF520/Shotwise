@@ -1,7 +1,7 @@
 // step1→step2 web 审核 gate 的服务层（对应 server/services/script_review.py::ScriptReviewService）：
 // 审阅状态读取、结构化中间态编辑、确认动作。
 //
-// 纯 gate 逻辑（适用性 / 指纹 / 状态派生）在 script_review.go；本层叠加 ProjectStore 持久化
+// 纯 gate 逻辑（适用性 / 指纹 / 状态派生）在 script_review.go；本层叠加 service.ProjectStore 持久化
 // （确认指纹落 project.json episodes[i].step1_review）与结构化内容的校验、落盘。
 //
 // 确认触发 step2 的语义是「放行」而非「服务端 launcher」：step2（剧本视觉生成）由 agent 的
@@ -10,9 +10,11 @@
 //
 // Python 侧的 async 结构（asyncio.to_thread + 阻塞文件锁）在 Go 侧直接同步化；「档位表先于
 // 取锁解析」的顺序约束保留——caps 解析走 resolver 查询，锁内不做能力解析。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"errors"
 	"fmt"
@@ -58,12 +60,12 @@ func scriptReviewErr(code string) *ScriptReviewError {
 // ScriptReviewService 封装 step1→step2 审核 gate 的读写。transport 与测试经此操作 gate，
 // 不直接碰文件 / project.json。
 type ScriptReviewService struct {
-	store    *ProjectStore
-	resolver VideoCapabilityResolver
+	store    *service.ProjectStore
+	resolver service.VideoCapabilityResolver
 }
 
 // NewScriptReviewService 构造审阅门服务。
-func NewScriptReviewService(store *ProjectStore, resolver VideoCapabilityResolver) *ScriptReviewService {
+func NewScriptReviewService(store *service.ProjectStore, resolver service.VideoCapabilityResolver) *ScriptReviewService {
 	return &ScriptReviewService{store: store, resolver: resolver}
 }
 
@@ -89,7 +91,7 @@ func (s *ScriptReviewService) resolveStep1Kind(pf *domain.ProjectFile) (string, 
 func (s *ScriptReviewService) requireEpisode(
 	projectName string, pf *domain.ProjectFile, episode int,
 ) (*domain.ProjectFile, error) {
-	if FindEpisodeEntry(pf, episode) != nil {
+	if service.FindEpisodeEntry(pf, episode) != nil {
 		return pf, nil
 	}
 	projectDir, err := s.store.Dir(projectName)
@@ -103,7 +105,7 @@ func (s *ScriptReviewService) requireEpisode(
 	if err != nil {
 		return nil, err
 	}
-	if FindEpisodeEntry(healed, episode) == nil {
+	if service.FindEpisodeEntry(healed, episode) == nil {
 		return nil, scriptReviewErr(ScriptReviewCodeEpisodeNotFound)
 	}
 	return healed, nil
@@ -135,7 +137,7 @@ func (s *ScriptReviewService) registerOrphanEpisodes(projectName string) (*domai
 func (s *ScriptReviewService) resolveCapsBestEffort(
 	ctx context.Context, projectName string, pf *domain.ProjectFile,
 ) config.VideoCapabilityView {
-	caps := ResolveProjectVideoCaps(ctx, s.resolver, pf, provider.VideoBucketForGenerationMode(pf.GenerationMode))
+	caps := service.ResolveProjectVideoCaps(ctx, s.resolver, pf, provider.VideoBucketForGenerationMode(pf.GenerationMode))
 	if !caps.Resolved {
 		slog.Info("video_capabilities 解析异常，审阅门退回不带 caps 的解析", "project", projectName)
 		return config.VideoCapabilityView{}
@@ -163,7 +165,7 @@ func (s *ScriptReviewService) resolveSupportedDurations(
 }
 
 // readStep1Migrated 读结构化 step1，并对参考生视频草稿做一次性时长收编迁移；返回
-// (内容, 最新 project)。调用方须已持有该文件的排他锁（withStep1FileLock / Step1WriteLock
+// (内容, 最新 project)。调用方须已持有该文件的排他锁（withStep1FileLock / reference.Step1WriteLock
 // 同一把 per-path 锁）——本函数只做读改写，不自行加锁。
 //
 // supportedDurations 由调用方经 resolveSupportedDurations 解析后传入（本函数跑在锁内，不做
@@ -172,11 +174,11 @@ func (s *ScriptReviewService) resolveSupportedDurations(
 func (s *ScriptReviewService) readStep1Migrated(
 	projectName string, pf *domain.ProjectFile, episode int, path string, supportedDurations []int,
 ) (map[string]any, *domain.ProjectFile, error) {
-	content, _ := readJSONObjectOrNone(path)
+	content, _ := service.ReadJSONObjectOrNone(path)
 	if content == nil || Step1Kind(pf) != step1KindReferenceVideo {
 		return content, pf, nil
 	}
-	updated, _, err := MigrateStep1DraftInPlace(s.store, projectName, content, episode, supportedDurations)
+	updated, _, err := reference.MigrateStep1DraftInPlace(s.store, projectName, content, episode, supportedDurations)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -187,11 +189,11 @@ func (s *ScriptReviewService) readStep1Migrated(
 }
 
 // withStep1FileLock 取该 step1 文件的 per-path 排他锁（对应 Python ProjectManager.file_lock）。
-// 与 Step1WriteLock 同键：drama / narration 草稿的保存、迁移读改写与参考生视频的写盘出口
+// 与 reference.Step1WriteLock 同键：drama / narration 草稿的保存、迁移读改写与参考生视频的写盘出口
 // 相互互斥。锁不可重入——已在临界区内的调用方不得再套。
 func withStep1FileLock(path string, fn func() error) error {
 	var err error
-	step1Locks.WithLock(path, func() { err = fn() })
+	reference.Step1Locks.WithLock(path, func() { err = fn() })
 	return err
 }
 
@@ -245,7 +247,7 @@ func (s *ScriptReviewService) getStateSync(
 				return err
 			}
 			pf = updated
-			live, err := ContentFingerprint(path)
+			live, err := service.ContentFingerprint(path)
 			if err != nil {
 				return err
 			}
@@ -262,7 +264,7 @@ func (s *ScriptReviewService) getStateSync(
 		status = ReviewStatus(projectDir, pf, episode)
 	}
 	var confirmedAt any
-	if review := StoredReview(pf, episode); review != nil && review.ConfirmedAt != "" {
+	if review := service.StoredReview(pf, episode); review != nil && review.ConfirmedAt != "" {
 		confirmedAt = review.ConfirmedAt
 	}
 	var contentValue any
@@ -283,7 +285,7 @@ func (s *ScriptReviewService) getStateSync(
 // GetQuarantineInfo 返回 reference_video 变体的隔离草稿信息（供 web 审核 gate 呈现违约行内
 // 锚定），不适用 / 无隔离草稿时返回 nil。
 //
-// 读时按产出时那套校验器全量重算（RevalidateReferenceStep1Draft，晋升工具同一份代码），
+// 读时按产出时那套校验器全量重算（reference.RevalidateReferenceStep1Draft，晋升工具同一份代码），
 // 不信任草稿里 violations 的上一轮快照——隔离期间源文或模型配置可能已变，报告要对现值负责。
 // 本方法与 GetState 各自读盘、互不依赖，由 transport 在同一次请求内合并两者的返回。
 //
@@ -308,9 +310,9 @@ func (s *ScriptReviewService) GetQuarantineInfo(
 	if !ok || !step1FilePresent(quarantinePath) {
 		return nil, nil
 	}
-	draft, err := ReadQuarantine(projectDir, episode, QuarantineKindStep1)
+	draft, err := reference.ReadQuarantine(projectDir, episode, reference.QuarantineKindStep1)
 	if err != nil {
-		var unsupported *UnsupportedQuarantineSchemaError
+		var unsupported *reference.UnsupportedQuarantineSchemaError
 		if errors.As(err, &unsupported) {
 			slog.Warn("隔离草稿 schema 版本过新",
 				"project", projectName, "episode", episode, "version", unsupported.Version)
@@ -332,7 +334,7 @@ func (s *ScriptReviewService) GetQuarantineInfo(
 			// 隔离草稿」处理，不误报损坏。
 			return nil, nil
 		}
-		// 文件存在但信封形状坏（非法 JSON / 顶层非对象 / content 非对象）：ReadQuarantine 按
+		// 文件存在但信封形状坏（非法 JSON / 顶层非对象 / content 非对象）：reference.ReadQuarantine 按
 		// 「无隔离草稿」返回 nil 是它自己的读取口径（供 Confirm 的存在性判断照常阻塞），但
 		// 呈现层不能照单全收——那会让面板看起来「干净」，实际隔离草稿仍在阻塞确认。
 		return map[string]any{
@@ -343,7 +345,7 @@ func (s *ScriptReviewService) GetQuarantineInfo(
 			}},
 		}, nil
 	}
-	revalidation, err := RevalidateReferenceStep1Draft(ctx, projectDir, pf, episode, draft, s.resolver)
+	revalidation, err := reference.RevalidateReferenceStep1Draft(ctx, projectDir, pf, episode, draft, s.resolver)
 	if err != nil {
 		// meta.source 缺失等草稿被改坏的情形：把重算失败本身报成一条无 unit 归属的违约，
 		// 呈现层落聚合区。gate 不崩，用户也不会看到一份与现值脱钩的旧报告。异常文本含
@@ -361,7 +363,7 @@ func (s *ScriptReviewService) GetQuarantineInfo(
 	if !revalidation.SchemaFailed {
 		content = map[string]any{"units": revalidation.FlatUnits}
 	}
-	return map[string]any{"content": content, "violations": ViolationEntries(revalidation.Violations)}, nil
+	return map[string]any{"content": content, "violations": reference.ViolationEntries(revalidation.Violations)}, nil
 }
 
 // step1FilePresent 判定路径上有常规文件在场。
@@ -392,10 +394,10 @@ func (s *ScriptReviewService) GetReferenceDurationTiers(
 	if raw == nil {
 		return nil, nil
 	}
-	withRefs, withoutRefs := ReferenceUnitDurationTiers(ctx, s.resolver, pf, view, raw)
+	withRefs, withoutRefs := service.ReferenceUnitDurationTiers(ctx, s.resolver, pf, view, raw)
 	return map[string]any{
-		"with_references":    sortedUniqueInts(withRefs),
-		"without_references": sortedUniqueInts(withoutRefs),
+		"with_references":    service.SortedUniqueInts(withRefs),
+		"without_references": service.SortedUniqueInts(withoutRefs),
 	}, nil
 }
 
@@ -444,17 +446,17 @@ func (s *ScriptReviewService) saveContentSync(
 	}
 	// 入参的 nil 表示「调用方无基线、不比对」；比对语义里的 nil 另有含义（取基线时文件不存在），
 	// 两者在此一次性转换，三个变体共用同一个 expected。
-	expected := UncheckedFingerprintExpectation()
+	expected := reference.UncheckedFingerprintExpectation()
 	if baseFingerprint != nil {
-		expected = BaselineFingerprint(baseFingerprint)
+		expected = reference.BaselineFingerprint(baseFingerprint)
 	}
 	if kind == step1KindReferenceVideo {
 		// references 是从 shot 文本机械派生的字段：编辑正文后随之重派生，避免正文与 references
 		// 漂移（step2 会用陈旧 [图N] 映射生成）。机械变换、不校验能力上限。
 		rederiveUnitReferences(validated["units"], pf)
-		// 写盘经单一出口：锁、基线比对、step2 隔离草稿清理都在 WriteStep1Locked 一处。
-		err = Step1WriteLock(projectDir, episode, func(string) error {
-			_, err := WriteStep1Locked(projectDir, episode, validated, expected, true)
+		// 写盘经单一出口：锁、基线比对、step2 隔离草稿清理都在 reference.WriteStep1Locked 一处。
+		err = reference.Step1WriteLock(projectDir, episode, func(string) error {
+			_, err := reference.WriteStep1Locked(projectDir, episode, validated, expected, true)
 			return err
 		})
 	} else {
@@ -462,15 +464,15 @@ func (s *ScriptReviewService) saveContentSync(
 			return err
 		}
 		// 与 readStep1Migrated 共享同一把 per-path 锁：保存与迁移的读改写相互互斥。
-		// 基线比对同 rv 走 AssertBaseFingerprint，两者的冲突判据不分叉。
+		// 基线比对同 rv 走 reference.AssertBaseFingerprint，两者的冲突判据不分叉。
 		err = withStep1FileLock(path, func() error {
-			if err := AssertBaseFingerprint(path, expected); err != nil {
+			if err := reference.AssertBaseFingerprint(path, expected); err != nil {
 				return err
 			}
 			return fs.WriteJSONAtomic(path, validated)
 		})
 	}
-	var conflict *Step1WriteConflict
+	var conflict *reference.Step1WriteConflict
 	if errors.As(err, &conflict) {
 		return &ScriptReviewError{Code: ScriptReviewCodeConflict, Message: conflict.Error()}
 	}
@@ -552,18 +554,18 @@ func (s *ScriptReviewService) confirmSync(
 			// SaveContent 直改 step1 正文后直接确认，故确认前重派生并落盘。指纹按刚写盘的
 			// 这份对象直接算，确认记录与实际写入内容一致。
 			rederiveUnitReferences(validated["units"], pf)
-			// 单一写盘出口（已持同一把 per-path 锁，不再套 Step1WriteLock）；同临界区读改写
+			// 单一写盘出口（已持同一把 per-path 锁，不再套 reference.Step1WriteLock）；同临界区读改写
 			// 无并发窗口，不做基线比对。重派生真的改了内容时，step2 隔离草稿的基底随之失效，
 			// 由出口按变更清理。
-			if _, err := WriteStep1Locked(
-				projectDir, episode, validated, UncheckedFingerprintExpectation(), true,
+			if _, err := reference.WriteStep1Locked(
+				projectDir, episode, validated, reference.UncheckedFingerprintExpectation(), true,
 			); err != nil {
 				return err
 			}
-			fingerprint = ContentFingerprintOfData(validated)
+			fingerprint = service.ContentFingerprintOfData(validated)
 		} else {
 			// 指纹从校验通过的 content 派生，不二次读盘：确认记录须对应这里校验过的内容。
-			fingerprint = ContentFingerprintOfData(content)
+			fingerprint = service.ContentFingerprintOfData(content)
 		}
 		return nil
 	})
@@ -573,7 +575,7 @@ func (s *ScriptReviewService) confirmSync(
 
 	confirmedAt := time.Now().UTC().Format(time.RFC3339)
 	return s.store.Update(projectName, func(pf *domain.ProjectFile) error {
-		if !ApplyConfirmation(pf, episode, fingerprint, confirmedAt) {
+		if !service.ApplyConfirmation(pf, episode, fingerprint, confirmedAt) {
 			return scriptReviewErr(ScriptReviewCodeEpisodeNotFound)
 		}
 		return nil

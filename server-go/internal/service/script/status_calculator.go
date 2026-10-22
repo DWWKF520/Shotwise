@@ -5,9 +5,11 @@
 //
 // 全部入参/出参用 map[string]any 直通磁盘 JSON：Python 侧就是在原始 dict 上就地注入
 // 计算字段，Go 侧保持同一形态才能保证「响应里多出来的键」与 Python 逐字段一致。
-package service
+package script
 
 import (
+	"sort"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 
@@ -55,11 +57,11 @@ type ProjectStatus struct {
 
 // StatusCalculator 读取项目磁盘真相并派生统计字段。
 type StatusCalculator struct {
-	store *ProjectStore
+	store *service.ProjectStore
 }
 
 // NewStatusCalculator 构造计算器。
-func NewStatusCalculator(store *ProjectStore) *StatusCalculator {
+func NewStatusCalculator(store *service.ProjectStore) *StatusCalculator {
 	return &StatusCalculator{store: store}
 }
 
@@ -142,10 +144,10 @@ func (c *StatusCalculator) CalculateEpisodeStats(script map[string]any, generati
 			continue
 		}
 		assets := domain.GeneratedAssets(m)
-		if pyTruthy(assets["storyboard_image"]) {
+		if service.PyTruthy(assets["storyboard_image"]) {
 			storyboardDone++
 		}
-		if pyTruthy(assets["video_clip"]) {
+		if service.PyTruthy(assets["video_clip"]) {
 			videoDone++
 		}
 	}
@@ -195,7 +197,7 @@ func adReferenceStats(script map[string]any, shots []any) EpisodeStatus {
 
 	videoDone := 0
 	for _, item := range units {
-		if m, ok := item.(map[string]any); ok && pyTruthy(domain.GeneratedAssets(m)["video_clip"]) {
+		if m, ok := item.(map[string]any); ok && service.PyTruthy(domain.GeneratedAssets(m)["video_clip"]) {
 			videoDone++
 		}
 	}
@@ -226,7 +228,7 @@ func adReferenceStats(script map[string]any, shots []any) EpisodeStatus {
 func referenceVideoStats(units []any) EpisodeStatus {
 	videoDone := 0
 	for _, item := range units {
-		if m, ok := item.(map[string]any); ok && pyTruthy(domain.GeneratedAssets(m)["video_clip"]) {
+		if m, ok := item.(map[string]any); ok && service.PyTruthy(domain.GeneratedAssets(m)["video_clip"]) {
 			videoDone++
 		}
 	}
@@ -257,7 +259,7 @@ func DraftCandidates(contentMode, generationMode string) []string {
 		return nil
 	}
 	if generationMode == string(domain.GenerationReferenceVideo) {
-		return []string{ReferenceVideoStep1Filename, ReferenceVideoStep1QuarantineName}
+		return []string{service.ReferenceVideoStep1Filename, service.ReferenceVideoStep1QuarantineName}
 	}
 	primary, ok := Step1Filename(contentMode)
 	if !ok {
@@ -350,7 +352,7 @@ func (c *StatusCalculator) loadEpisodeScript(
 	if dirErr != nil {
 		return "none", nil
 	}
-	draftsDir := EpisodeDraftsDir(projectDir, episodeNum)
+	draftsDir := service.EpisodeDraftsDir(projectDir, episodeNum)
 	for _, name := range candidates {
 		if _, statErr := os.Stat(filepath.Join(draftsDir, name)); statErr == nil {
 			return "segmented", nil
@@ -511,9 +513,9 @@ func (c *StatusCalculator) EnrichScript(script map[string]any, generationMode st
 		}
 	}
 
-	script["characters_in_episode"] = sortedKeys(charsSet)
-	script["scenes_in_episode"] = sortedKeys(scenesSet)
-	script["props_in_episode"] = sortedKeys(propsSet)
+	script["characters_in_episode"] = sortedKeyList(charsSet)
+	script["scenes_in_episode"] = sortedKeyList(scenesSet)
+	script["props_in_episode"] = sortedKeyList(propsSet)
 	return script
 }
 
@@ -616,27 +618,6 @@ func bucketCounts(raw any, projectDir, sheetField string) (total, done int) {
 	return total, done
 }
 
-// truthy 复刻 Python 真值判断（nil / 空串 / 数字 0 / false / 空容器为假）。
-func pyTruthy(value any) bool {
-	switch v := value.(type) {
-	case nil:
-		return false
-	case bool:
-		return v
-	case string:
-		return v != ""
-	case float64:
-		return v != 0
-	case int:
-		return v != 0
-	case map[string]any:
-		return len(v) > 0
-	case []any:
-		return len(v) > 0
-	default:
-		return true
-	}
-}
 
 func anyList(raw any) []any {
 	items, ok := raw.([]any)
@@ -672,4 +653,14 @@ func unwrapPathError(err error) error {
 		}
 		err = next
 	}
+}
+
+// sortedKeyList 对 map[string]bool 的键排序输出（与 creative 侧 sortedKeys 同口径）。
+func sortedKeyList(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

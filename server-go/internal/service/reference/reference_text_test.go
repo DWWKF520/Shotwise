@@ -1,4 +1,6 @@
-package service
+package reference
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"errors"
@@ -42,28 +44,28 @@ func TestParsePromptMentions(t *testing.T) {
 }
 
 func TestValidateUnitTextRejectsUnregisteredAsset(t *testing.T) {
-	_, _, err := validateUnitText("unit E1U01", "镜头1：@[张三] 走进来。", refProject(), nil)
+	_, _, err := ValidateUnitText("unit E1U01", "镜头1：@[张三] 走进来。", refProject(), nil)
 	if err == nil {
 		t.Fatal("unregistered asset should fail")
 	}
 }
 
 func TestValidateUnitTextRejectsFullwidthBraces(t *testing.T) {
-	_, _, err := validateUnitText("unit E1U01", "镜头1：他喊｛快来｝。", refProject(), nil)
+	_, _, err := ValidateUnitText("unit E1U01", "镜头1：他喊｛快来｝。", refProject(), nil)
 	if err == nil {
 		t.Fatal("fullwidth braces should fail")
 	}
 }
 
 func TestValidateUnitTextRejectsBlankShot(t *testing.T) {
-	_, _, err := validateUnitText("unit E1U01", "镜头1：李明走进来。\n镜头2：\n@[李明]：{你好}", refProject(), nil)
+	_, _, err := ValidateUnitText("unit E1U01", "镜头1：李明走进来。\n镜头2：\n@[李明]：{你好}", refProject(), nil)
 	if err == nil {
 		t.Fatal("blank shot without description should fail")
 	}
 }
 
 func TestValidateUnitTextDerivesReferences(t *testing.T) {
-	shots, refs, err := validateUnitText("unit E1U01", "镜头1：@[李明] 推开门。", refProject(), nil)
+	shots, refs, err := ValidateUnitText("unit E1U01", "镜头1：@[李明] 推开门。", refProject(), nil)
 	if err != nil {
 		t.Fatalf("valid text: %v", err)
 	}
@@ -83,11 +85,11 @@ func TestValidateSourceTextAnchor(t *testing.T) {
 
 func TestValidateDialogueLoad(t *testing.T) {
 	text := "@[李明]：{这是一句很短的话}"
-	if err := validateDialogueLoad("u", text, 4, "zh", nil); err != nil {
+	if err := ValidateDialogueLoad("u", text, 4, "zh", nil); err != nil {
 		t.Fatalf("short dialogue should fit: %v", err)
 	}
 	long := "@[李明]：{这是一段非常非常非常长的话" + repeatRunes("很", 60) + "}"
-	if err := validateDialogueLoad("u", long, 2, "zh", nil); err == nil {
+	if err := ValidateDialogueLoad("u", long, 2, "zh", nil); err == nil {
 		t.Fatal("overloaded dialogue should fail")
 	}
 }
@@ -110,7 +112,7 @@ func TestWriteStep1LockedDetectsConflict(t *testing.T) {
 		t.Fatalf("initial write: changed=%v err=%v", first, err)
 	}
 	// 记录现值指纹。
-	fingerprint, err := ContentFingerprint(OfficialReferenceStep1Path(dir, 1))
+	fingerprint, err := service.ContentFingerprint(OfficialReferenceStep1Path(dir, 1))
 	if err != nil || fingerprint == nil {
 		t.Fatalf("fingerprint: %v", err)
 	}
@@ -137,7 +139,7 @@ func TestStep1WriteLockCreatesDraftsDir(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("lock: %v", err)
 	}
-	if seen != filepath.Join(EpisodeDraftsDir(dir, 3), ReferenceVideoStep1Filename) {
+	if seen != filepath.Join(service.EpisodeDraftsDir(dir, 3), service.ReferenceVideoStep1Filename) {
 		t.Fatalf("unexpected step1 path: %s", seen)
 	}
 }

@@ -1,7 +1,7 @@
 // 语义创意板业务服务（对应 server/services/creative_boards.py）。
 //
 // 创意板数据与 workflow 执行解耦：边只描述内容关系，不涉及节点调度、端口、适配器或失败分支。
-package service
+package creative
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // 语义画布允许的条目类型与关系集合（与 Python 侧常量对齐）。
@@ -77,7 +78,7 @@ func creativeBoardPayload(
 			"position":         map[string]any{"x": item.PositionX, "y": item.PositionY},
 			"size":             map[string]any{"width": item.Width, "height": item.Height},
 			"group_id":         item.GroupID,
-			"display_settings": parseJSONValue(item.DisplaySettingsJSON),
+			"display_settings": service.ParseJSONValue(item.DisplaySettingsJSON),
 		})
 	}
 	edgePayloads := make([]map[string]any, 0, len(edges))
@@ -89,17 +90,17 @@ func creativeBoardPayload(
 			"target_item_id": edge.TargetItemID,
 			"relation":       edge.Relation,
 			"ordinal":        edge.Ordinal,
-			"metadata":       parseJSONValue(edge.MetadataJSON),
+			"metadata":       service.ParseJSONValue(edge.MetadataJSON),
 		})
 	}
 	return map[string]any{
 		"id":               board.ID,
 		"project_id":       board.ProjectID,
 		"name":             board.Name,
-		"viewport":         parseJSONValue(board.ViewportJSON),
-		"display_settings": parseJSONValue(board.DisplaySettingsJSON),
-		"created_at":       isoformatTime(board.CreatedAt.Time),
-		"updated_at":       isoformatTime(board.UpdatedAt.Time),
+		"viewport":         service.ParseJSONValue(board.ViewportJSON),
+		"display_settings": service.ParseJSONValue(board.DisplaySettingsJSON),
+		"created_at":       service.IsoformatTime(board.CreatedAt.Time),
+		"updated_at":       service.IsoformatTime(board.UpdatedAt.Time),
 		"revision":         board.Revision,
 		"items":            itemPayloads,
 		"edges":            edgePayloads,
@@ -112,10 +113,10 @@ func creativeBoardVersionPayload(version *repository.CreativeBoardVersion, inclu
 		"board_id":       version.BoardID,
 		"version_number": version.VersionNumber,
 		"version_name":   version.VersionName,
-		"created_at":     isoformatTime(version.CreatedAt.Time),
+		"created_at":     service.IsoformatTime(version.CreatedAt.Time),
 	}
 	if includeSnapshot {
-		payload["snapshot"] = parseJSONValue(version.SnapshotJSON)
+		payload["snapshot"] = service.ParseJSONValue(version.SnapshotJSON)
 	}
 	return payload
 }
@@ -215,7 +216,7 @@ func (s *CreativeBoardService) ListBoards(ctx context.Context, userID, projectID
 			"id":         board.ID,
 			"project_id": board.ProjectID,
 			"name":       board.Name,
-			"updated_at": isoformatTime(board.UpdatedAt.Time),
+			"updated_at": service.IsoformatTime(board.UpdatedAt.Time),
 			"revision":   board.Revision,
 		})
 	}
@@ -382,7 +383,7 @@ func (s *CreativeBoardService) AddItem(
 		"resource_type": item.ResourceType,
 		"resource_id":   item.ResourceID,
 		"revision":      updated.Revision,
-		"updated_at":    isoformatTime(updated.UpdatedAt.Time),
+		"updated_at":    service.IsoformatTime(updated.UpdatedAt.Time),
 	}, nil
 }
 
@@ -496,7 +497,7 @@ func (s *CreativeBoardService) DeleteItem(
 		"deleted":    true,
 		"item_id":    itemID,
 		"revision":   updated.Revision,
-		"updated_at": isoformatTime(updated.UpdatedAt.Time),
+		"updated_at": service.IsoformatTime(updated.UpdatedAt.Time),
 	}, nil
 }
 
@@ -542,7 +543,7 @@ func (s *CreativeBoardService) AddEdge(
 			"target_item_id": existing.TargetItemID,
 			"relation":       existing.Relation,
 			"revision":       board.Revision,
-			"updated_at":     isoformatTime(board.UpdatedAt.Time),
+			"updated_at":     service.IsoformatTime(board.UpdatedAt.Time),
 		}, nil
 	}
 	metadataJSON, err := boardJSON(metadata)
@@ -590,7 +591,7 @@ func (s *CreativeBoardService) AddEdge(
 		"target_item_id": edge.TargetItemID,
 		"relation":       edge.Relation,
 		"revision":       updated.Revision,
-		"updated_at":     isoformatTime(updated.UpdatedAt.Time),
+		"updated_at":     service.IsoformatTime(updated.UpdatedAt.Time),
 	}, nil
 }
 
@@ -638,7 +639,7 @@ func (s *CreativeBoardService) DeleteEdge(
 		"deleted":    true,
 		"edge_id":    edgeID,
 		"revision":   updated.Revision,
-		"updated_at": isoformatTime(updated.UpdatedAt.Time),
+		"updated_at": service.IsoformatTime(updated.UpdatedAt.Time),
 	}, nil
 }
 
@@ -678,7 +679,7 @@ func (s *CreativeBoardService) DeleteBoard(
 		"deleted":    true,
 		"board_id":   boardID,
 		"revision":   revision,
-		"updated_at": isoformatTime(updatedAt),
+		"updated_at": service.IsoformatTime(updatedAt),
 	}, nil
 }
 
@@ -985,22 +986,22 @@ func normaliseBoardSnapshot(snapshot map[string]any, fallbackCreatedAt time.Time
 		if !ok {
 			return nil, &CreativeBoardValidationError{Msg: "snapshot items must be objects"}
 		}
-		itemID := stringField(entry, "id")
+		itemID := service.StringField(entry, "id")
 		if itemID == "" {
 			itemID = newBoardRef()
 		}
 		if itemIDs[itemID] {
 			return nil, &CreativeBoardValidationError{Msg: "snapshot item ids must be unique"}
 		}
-		itemType := stringField(entry, "item_type")
+		itemType := service.StringField(entry, "item_type")
 		if !creativeBoardItemTypes[itemType] {
 			return nil, &CreativeBoardValidationError{Msg: "unsupported board item type"}
 		}
-		resourceType := stringField(entry, "resource_type")
+		resourceType := service.StringField(entry, "resource_type")
 		if strings.TrimSpace(resourceType) == "" {
 			return nil, &CreativeBoardValidationError{Msg: "resource_type must not be empty"}
 		}
-		resourceID := stringField(entry, "resource_id")
+		resourceID := service.StringField(entry, "resource_id")
 		if strings.TrimSpace(resourceID) == "" {
 			return nil, &CreativeBoardValidationError{Msg: "resource_id must not be empty"}
 		}
@@ -1040,10 +1041,10 @@ func normaliseBoardSnapshot(snapshot map[string]any, fallbackCreatedAt time.Time
 		if !ok {
 			return nil, &CreativeBoardValidationError{Msg: "snapshot edges must be objects"}
 		}
-		source := stringField(entry, "source_item_id")
-		target := stringField(entry, "target_item_id")
-		relation := stringField(entry, "relation")
-		edgeID := stringField(entry, "id")
+		source := service.StringField(entry, "source_item_id")
+		target := service.StringField(entry, "target_item_id")
+		relation := service.StringField(entry, "relation")
+		edgeID := service.StringField(entry, "id")
 		if edgeID == "" {
 			edgeID = newBoardRef()
 		}
@@ -1134,11 +1135,6 @@ func anyListOrEmpty(value any) ([]any, bool) {
 		return list, true
 	}
 	return nil, false
-}
-
-func stringField(m map[string]any, key string) string {
-	s, _ := m[key].(string)
-	return s
 }
 
 func optionalStringField(m map[string]any, key string) *string {

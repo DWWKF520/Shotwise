@@ -1,6 +1,7 @@
 package http
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -73,7 +74,7 @@ func newProjectExtraFixture(t *testing.T, contentMode domain.ContentMode) projec
 	r := gin.New()
 	RegisterProjectExtras(r.Group("/api/v1"), ProjectExtraDeps{
 		Store: store,
-		Extra: service.NewProjectExtraService(store, queue.NewQueue(gdb), config.NewResolver(gdb)),
+		Extra: servicescript.NewProjectExtraService(store, queue.NewQueue(gdb), config.NewResolver(gdb)),
 	})
 	return projectExtraFixture{router: r, store: store}
 }

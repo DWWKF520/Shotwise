@@ -1,4 +1,4 @@
-package service
+package creative
 
 // 模板市场契约的安全校验（对应 server/services/workflow_contracts.py）。
 //

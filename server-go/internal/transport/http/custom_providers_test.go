@@ -16,7 +16,7 @@ import (
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -50,7 +50,7 @@ func newCustomProviderFixture(t *testing.T, authed bool) customProviderFixture {
 		v1.Use(auth.New(nil, false, nil).Middleware())
 	}
 	RegisterCustomProviders(v1, CustomProviderDeps{
-		Providers: service.NewCustomProviderService(gdb, nil, nil),
+		Providers: admin.NewCustomProviderService(gdb, nil, nil),
 	})
 	return customProviderFixture{router: r, db: gdb}
 }

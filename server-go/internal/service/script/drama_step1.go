@@ -4,21 +4,23 @@
 // step1 产物落 drafts/episode_N/step1_normalized_script.json，供 generate_episode_script
 // （drama）透传消费：场景边界、出场资产、逐字口播 utterances、原文锚 source_text、视觉改编
 // 描述 scene_description 一次定稿；step2 只补视觉层。
-package service
+package script
 
 import (
 	"fmt"
+
+	"github.com/shotwise/shotwise/internal/service"
 	"strings"
 )
 
 // DramaNormalizedScriptSchema 构造 duration_seconds 被 supported_durations 枚举硬约束的
 // step1 规范化剧本 JSON Schema（单值渲染为 const、多值渲染为 enum）。
 func DramaNormalizedScriptSchema(supportedDurations []int) (map[string]any, error) {
-	durations := normalizeDurations(supportedDurations)
+	durations := service.NormalizeDurations(supportedDurations)
 	if len(durations) == 0 {
 		return nil, fmt.Errorf("supported_durations 为空，无法构造 duration 枚举约束")
 	}
-	durationConstraint := durationConstraint(durations)
+	constraint := service.DurationConstraint(durations)
 
 	utterance := map[string]any{
 		"type": "object",
@@ -34,7 +36,7 @@ func DramaNormalizedScriptSchema(supportedDurations []int) (map[string]any, erro
 		"type": "object",
 		"properties": map[string]any{
 			"scene_id":            map[string]any{"type": "string", "minLength": 1},
-			"duration_seconds":    durationConstraint,
+			"duration_seconds":    constraint,
 			"segment_break":       map[string]any{"type": "boolean"},
 			"characters_in_scene": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"scenes":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
@@ -57,28 +59,17 @@ func DramaNormalizedScriptSchema(supportedDurations []int) (map[string]any, erro
 	}, nil
 }
 
-// durationConstraint 构造时长枚举约束：单值用 const、多值用 enum。
-func durationConstraint(durations []int) map[string]any {
-	values := make([]any, 0, len(durations))
-	for _, d := range durations {
-		values = append(values, d)
-	}
-	if len(values) == 1 {
-		return map[string]any{"const": values[0]}
-	}
-	return map[string]any{"enum": values}
-}
 
 // ParseDramaNormalizedScript 解析并校验 step1 规范化响应，返回归一化后的 {title, scenes}。
 //
 // 校验与 response_schema 同口径（extra=forbid、字段非空、时长硬约束、utterances 的 kind ⇄
 // speaker 联合约束）：即使 backend 未严格执行 schema，越界内容也在此被拦截，不写盘。
 func ParseDramaNormalizedScript(responseText string, supportedDurations []int) (map[string]any, error) {
-	root, err := parseJSONObject(responseText)
+	root, err := service.ParseJSONObject(responseText)
 	if err != nil {
 		return nil, fmt.Errorf("step1 规范化内容%s", strings.TrimPrefix(err.Error(), "JSON 解析失败: "))
 	}
-	if err := rejectUnknownKeys(root, []string{"title", "scenes"}, "根对象"); err != nil {
+	if err := service.RejectUnknownKeys(root, []string{"title", "scenes"}, "根对象"); err != nil {
 		return nil, fmt.Errorf("step1 结构校验失败：%w", err)
 	}
 	title, ok := root["title"].(string)
@@ -90,7 +81,7 @@ func ParseDramaNormalizedScript(responseText string, supportedDurations []int) (
 		return nil, fmt.Errorf("step1 规范化内容结构异常：scenes 必须是非空的场景对象数组")
 	}
 	allowedDurations := map[int]bool{}
-	for _, d := range normalizeDurations(supportedDurations) {
+	for _, d := range service.NormalizeDurations(supportedDurations) {
 		allowedDurations[d] = true
 	}
 	scenes := make([]any, 0, len(rawScenes))
@@ -117,14 +108,14 @@ var dramaSceneContentAllowed = []string{
 // normalizeDramaSceneContent 校验并归一单个场景内容对象。
 func normalizeDramaSceneContent(scene map[string]any, index int, allowedDurations map[int]bool) (map[string]any, error) {
 	loc := fmt.Sprintf("scenes.%d", index)
-	if err := rejectUnknownKeys(scene, dramaSceneContentAllowed, loc); err != nil {
+	if err := service.RejectUnknownKeys(scene, dramaSceneContentAllowed, loc); err != nil {
 		return nil, err
 	}
 	sceneID, ok := scene["scene_id"].(string)
 	if !ok || sceneID == "" {
 		return nil, fmt.Errorf("%s.scene_id: 必填且非空", loc)
 	}
-	duration := coerceDigitInt(scene["duration_seconds"])
+	duration := service.CoerceDigitInt(scene["duration_seconds"])
 	if duration == 0 || !allowedDurations[duration] {
 		return nil, fmt.Errorf("%s.duration_seconds: 必须取 supported_durations 中的值", loc)
 	}
@@ -148,7 +139,7 @@ func normalizeDramaSceneContent(scene map[string]any, index int, allowedDuration
 		"props":               listStrings(scene["props"]),
 		"scene_description":   sceneDesc,
 		"utterances":          utterances,
-		"source_text":         stringValue(scene["source_text"], ""),
+		"source_text":         service.StringValue(scene["source_text"], ""),
 	}
 	if b, ok := scene["segment_break"].(bool); ok {
 		out["segment_break"] = b
@@ -175,7 +166,7 @@ func normalizeUtterances(raw any, loc string) ([]any, error) {
 			return nil, fmt.Errorf("%s.utterances.%d: 必须是对象", loc, i)
 		}
 		uloc := fmt.Sprintf("%s.utterances.%d", loc, i)
-		if err := rejectUnknownKeys(entry, utteranceAllowed, uloc); err != nil {
+		if err := service.RejectUnknownKeys(entry, utteranceAllowed, uloc); err != nil {
 			return nil, err
 		}
 		kind, _ := entry["kind"].(string)
@@ -205,18 +196,4 @@ func normalizeUtterances(raw any, loc string) ([]any, error) {
 	return out, nil
 }
 
-// rejectUnknownKeys 拒绝白名单之外的键（对应 pydantic extra="forbid"）。
-func rejectUnknownKeys(m map[string]any, allowed []string, loc string) error {
-	set := stringSet(allowed)
-	for key := range m {
-		if !set[key] {
-			return fmt.Errorf("%s: 不允许的字段 %q", loc, key)
-		}
-	}
-	return nil
-}
 
-// coerceDigitInt 机械强转：纯数字字符串 → int；整数数值原样；其余返回 0。
-func coerceDigitInt(value any) int {
-	return intValueOrZero(value)
-}

@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -64,7 +66,7 @@ func (d *TaskDispatcher) executeTTS(ctx context.Context, task *repository.TaskDa
 		return nil, err
 	}
 
-	audioRel, err := resourceRelativePath("audio", task.ResourceID)
+	audioRel, err := service.ResourceRelativePath("audio", task.ResourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +78,7 @@ func (d *TaskDispatcher) executeTTS(ctx context.Context, task *repository.TaskDa
 		}
 	}
 
-	createdAt, _ := NewVersions(projectDir).LatestCreatedAt("audio", task.ResourceID)
+	createdAt, _ := service.NewVersions(projectDir).LatestCreatedAt("audio", task.ResourceID)
 	return map[string]any{
 		"version":       out.Version,
 		"file_path":     audioRel,

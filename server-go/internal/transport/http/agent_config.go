@@ -9,18 +9,19 @@
 package http
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/auth"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
 )
 
 // AgentConfigDeps 是 Agent 配置路由的依赖。
 type AgentConfigDeps struct {
-	Credentials *service.AgentCredentialService
+	Credentials *admin.AgentCredentialService
 }
 
 // RegisterAgentConfig 注册 Agent 配置路由。
@@ -44,9 +45,9 @@ func listAgentPresets() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sdkType := c.Query("sdk_type")
 		if sdkType == "" {
-			sdkType = service.AgentSDKClaude
+			sdkType = admin.AgentSDKClaude
 		}
-		if sdkType != service.AgentSDKClaude && sdkType != service.AgentSDKOpenAI {
+		if sdkType != admin.AgentSDKClaude && sdkType != admin.AgentSDKOpenAI {
 			apperr.Abort(c, &apperr.Validation{Items: []apperr.ValidationItem{{
 				Loc: []string{"query", "sdk_type"},
 				Msg: "String should match pattern '^(claude|openai)$'", Type: "string_pattern_mismatch",
@@ -54,8 +55,8 @@ func listAgentPresets() gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"providers":          service.ListAgentPresets(sdkType),
-			"custom_sentinel_id": service.CustomPresetID,
+			"providers":          admin.ListAgentPresets(sdkType),
+			"custom_sentinel_id": admin.CustomPresetID,
 		})
 	}
 }
@@ -64,7 +65,7 @@ func listAgentPresets() gin.HandlerFunc {
 func listAgentCredentials(d AgentConfigDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sdkType := c.Query("sdk_type")
-		if sdkType != "" && sdkType != service.AgentSDKClaude && sdkType != service.AgentSDKOpenAI {
+		if sdkType != "" && sdkType != admin.AgentSDKClaude && sdkType != admin.AgentSDKOpenAI {
 			apperr.Abort(c, &apperr.Validation{Items: []apperr.ValidationItem{{
 				Loc: []string{"query", "sdk_type"},
 				Msg: "String should match pattern '^(claude|openai)$'", Type: "string_pattern_mismatch",
@@ -97,8 +98,8 @@ type agentCredentialBody struct {
 	Activate    *bool            `json:"activate"`
 }
 
-func (b agentCredentialBody) toInput() service.AgentCredentialInput {
-	return service.AgentCredentialInput{
+func (b agentCredentialBody) toInput() admin.AgentCredentialInput {
+	return admin.AgentCredentialInput{
 		SDKType:     b.SDKType,
 		Protocol:    b.Protocol,
 		PresetID:    b.PresetID,
@@ -235,7 +236,7 @@ func testAgentConnectionDraft(d AgentConfigDeps) gin.HandlerFunc {
 func abortAgentConfigErr(c *gin.Context, err error) {
 	var valueErr *service.ValueError
 	switch {
-	case errors.Is(err, service.ErrAgentCredentialNotFound):
+	case errors.Is(err, admin.ErrAgentCredentialNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "credentials_not_found", nil))
 	case errors.As(err, &valueErr):
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "request_invalid", map[string]any{

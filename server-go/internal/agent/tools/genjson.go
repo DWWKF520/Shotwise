@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"github.com/shotwise/shotwise/internal/service/reference"
+	"github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,15 +72,15 @@ func ReferenceResolver(caps VideoCapabilityReader) (service.VideoCapabilityResol
 // ReferenceContextForTool 为参考路径解析运行时能力上下文（拆分档位 + 逐 unit 取档 context）。
 func ReferenceContextForTool(
 	ctx context.Context, pf *domain.ProjectFile, caps VideoCapabilityReader,
-) (service.ScriptReferenceContext, error) {
+) (script.ScriptReferenceContext, error) {
 	resolver, ok := ReferenceResolver(caps)
 	if !ok {
-		return service.ScriptReferenceContext{}, fmt.Errorf("无法解析视频模型能力：参考路径需要完整视频能力解析器")
+		return script.ScriptReferenceContext{}, fmt.Errorf("无法解析视频模型能力：参考路径需要完整视频能力解析器")
 	}
-	splitCaps, err := service.FetchReferenceSplitCaps(ctx, resolver, pf)
+	splitCaps, err := reference.FetchReferenceSplitCaps(ctx, resolver, pf)
 	if err != nil {
-		return service.ScriptReferenceContext{}, err
+		return script.ScriptReferenceContext{}, err
 	}
 	dctx := service.ResolveProjectDurationContext(ctx, resolver, pf, provider.VideoBucketForGenerationMode(pf.GenerationMode))
-	return service.ScriptReferenceContext{Caps: splitCaps, DurationCtx: dctx}, nil
+	return script.ScriptReferenceContext{Caps: splitCaps, DurationCtx: dctx}, nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 	"gorm.io/gorm"
 )
 
@@ -55,8 +56,8 @@ type renderHandlerEnv struct {
 	r        *gin.Engine
 	gdb      *gorm.DB
 	store    *service.ProjectStore
-	assembly *service.MediaAssemblyService
-	renders  *service.MediaRenderingService
+	assembly *media.MediaAssemblyService
+	renders  *media.MediaRenderingService
 	planID   string
 }
 
@@ -64,7 +65,7 @@ func newRenderHandlerEnv(t *testing.T) *renderHandlerEnv {
 	t.Helper()
 	gdb := newJianyingHTTPTestDB(t)
 	store := service.NewProjectStore(t.TempDir())
-	assembly := service.NewMediaAssemblyService(gdb)
+	assembly := media.NewMediaAssemblyService(gdb)
 	manifest := map[string]any{
 		"contract_version": "episode-media-manifest/v1",
 		"persistence":      "read_only",
@@ -89,7 +90,7 @@ func newRenderHandlerEnv(t *testing.T) *renderHandlerEnv {
 		"trim_start_seconds": 0.0, "trim_end_seconds": 0.0,
 		"audio_policy": "duck", "transition": nil,
 	}}
-	payload, err := assembly.CreatePlan(context.Background(), service.CreatePlanParams{
+	payload, err := assembly.CreatePlan(context.Background(), media.CreatePlanParams{
 		UserID: repository.DefaultUserID, ProjectName: "p1", Name: "plan", Scope: "episode",
 		SourceManifest: manifest, Timeline: timeline,
 		Audio:     map[string]any{"tracks": []any{}},
@@ -101,7 +102,7 @@ func newRenderHandlerEnv(t *testing.T) *renderHandlerEnv {
 	}
 	planID, _ := payload["id"].(string)
 
-	renders := service.NewMediaRenderingService(gdb, store)
+	renders := media.NewMediaRenderingService(gdb, store)
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	RegisterMediaRendering(r.Group("/api/v1"), MediaRenderingDeps{Renders: renders})

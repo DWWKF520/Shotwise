@@ -3,9 +3,10 @@
 //
 // 只覆盖三类待检查资产（character / scene / prop）；ad 的参考集从成员镜头（内容唯一真相）现算，
 // 索引里持久化的 references 只是展示缓存。任一 unit 引用无效即整批阻断，不留半批已入队状态。
-package service
+package reference
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/domain"
@@ -20,13 +21,13 @@ func ValidateReferenceUnitsPreflight(
 	if project == nil {
 		return "", nil
 	}
-	var results []PreflightResult
+	var results []service.PreflightResult
 	for _, unit := range units {
 		unitID, _ := unit["unit_id"].(string)
 		if skipIDs[unitID] {
 			continue
 		}
-		var references []itemReference
+		var references []service.ItemReference
 		if script != nil {
 			shots, err := domain.ResolveAdUnitShots(script, unit)
 			if err != nil {
@@ -36,18 +37,18 @@ func ValidateReferenceUnitsPreflight(
 		} else {
 			references = collectReferenceEntries(unit["references"])
 		}
-		results = append(results, validateAssetReferences(project, projectDir, references))
+		results = append(results, service.ValidateAssetReferences(project, projectDir, references))
 	}
-	return FormatPreflightError(MergePreflightResults(results...)), nil
+	return service.FormatPreflightError(service.MergePreflightResults(results...)), nil
 }
 
 // collectReferenceEntries 从 “[{"type":..,"name":..}]“ 数据收集类型化引用（按类型+归一名去重）。
-func collectReferenceEntries(entries any) []itemReference {
+func collectReferenceEntries(entries any) []service.ItemReference {
 	list, ok := entries.([]any)
 	if !ok {
 		return nil
 	}
-	var references []itemReference
+	var references []service.ItemReference
 	seen := map[string]bool{}
 	for _, raw := range list {
 		entry, ok := raw.(map[string]any)
@@ -64,17 +65,17 @@ func collectReferenceEntries(entries any) []itemReference {
 			continue
 		}
 		seen[key] = true
-		references = append(references, itemReference{
-			kind:  domain.AssetKind(assetType),
-			field: "references",
-			name:  domain.NormalizeAssetName(name),
+		references = append(references, service.ItemReference{
+			Kind:  domain.AssetKind(assetType),
+			Field: "references",
+			Name:  domain.NormalizeAssetName(name),
 		})
 	}
 	return references
 }
 
 // collectAdShotReferences 从 ad 成员镜头的字段（内容唯一真相）收集类型化引用，不读索引缓存。
-func collectAdShotReferences(shots []map[string]any) []itemReference {
+func collectAdShotReferences(shots []map[string]any) []service.ItemReference {
 	fields := []struct {
 		kind  domain.AssetKind
 		field string
@@ -84,7 +85,7 @@ func collectAdShotReferences(shots []map[string]any) []itemReference {
 		{domain.AssetScene, "scenes"},
 		{domain.AssetProp, "props"},
 	}
-	var references []itemReference
+	var references []service.ItemReference
 	seen := map[string]bool{}
 	for _, shot := range shots {
 		for _, f := range fields {
@@ -103,7 +104,7 @@ func collectAdShotReferences(shots []map[string]any) []itemReference {
 					continue
 				}
 				seen[key] = true
-				references = append(references, itemReference{kind: f.kind, field: f.field, name: name})
+				references = append(references, service.ItemReference{Kind: f.kind, Field: f.field, Name: name})
 			}
 		}
 	}

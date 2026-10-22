@@ -4,7 +4,7 @@
 // 重复计费）。不走 executeVideoTask / executeReferenceVideoTask 常规流水线：provider 端 job 早已
 // 在跑，本地 storyboard / 参考资产是否存在、能力闸是否仍通过，都不该把已提交给供应商的付费任务
 // 卡成幽灵任务；本层仅复用两条常规路径的 finalize helper 回写产物。
-package service
+package generation
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // ResumeExecutor 实现 queue.ResumeExecutor：worker 的 _process_resume_task 直接调它。
@@ -73,7 +74,7 @@ func (r *ResumeExecutor) ResumeVideo(
 
 	// 提交端点回放：自定义供应商的 provider_endpoint 承载 endpoint 标识，比对判定协议是否被换掉；
 	// 内置供应商承载的是请求域名，走下方 submitted_base_url 消费分支。
-	submittedEndpoint := derefText(task.ProviderEndpoint)
+	submittedEndpoint := service.DerefText(task.ProviderEndpoint)
 	currentEndpoint := ""
 	if custom, ok := target.Backend.(provider.CustomVideoBackend); ok {
 		currentEndpoint = custom.Endpoint()
@@ -119,9 +120,9 @@ func (r *ResumeExecutor) ResumeVideo(
 	}
 
 	// 产物回写：复用两条常规路径的同一份 finalize（缩略图 + 剧本 generated_assets + 版本登记）。
-	// resume 无 warnings，来源签名按现算口径（signatureCompute）写回。
+	// resume 无 warnings，来源签名按现算口径（service.SignatureCompute）写回。
 	if task.TaskType == "reference_video" {
-		return dispatcher.finalizeReferenceVideoUnit(task, projectDir, scriptFile, out, nil, signatureCompute, "")
+		return dispatcher.finalizeReferenceVideoUnit(task, projectDir, scriptFile, out, nil, service.SignatureCompute, "")
 	}
 	return dispatcher.finalizeVideoTask(task, projectDir, scriptFile, out)
 }
@@ -189,7 +190,7 @@ func resumeAspectRatio(project *domain.ProjectFile, taskType string) string {
 		}
 		return "9:16"
 	}
-	return aspectRatioFor(project, "videos")
+	return service.AspectRatioFor(project, "videos")
 }
 
 // resumeDurationSeconds 按 resume 口径归一申请秒数：payload > 项目默认 > 8，可浮点解析则截断取整。
@@ -198,7 +199,7 @@ func resumeAspectRatio(project *domain.ProjectFile, taskType string) string {
 // 已提交的 job，脏数据（"8.0" / 不可解析）不该让在跑的付费任务卡死，故回退到 8。
 func resumeDurationSeconds(payload map[string]any, project *domain.ProjectFile) int {
 	var raw any
-	if value, present := payload["duration_seconds"]; present && refPresenceTruthy(value) {
+	if value, present := payload["duration_seconds"]; present && service.RefPresenceTruthy(value) {
 		raw = value
 	} else if project != nil && project.DefaultDuration != nil && *project.DefaultDuration != 0 {
 		raw = *project.DefaultDuration

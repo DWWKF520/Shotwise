@@ -17,12 +17,13 @@ import (
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 )
 
 // ShotUploadDeps 是镜头上传路由的依赖。
 type ShotUploadDeps struct {
 	Store   *service.ProjectStore
-	Uploads *service.ShotUploadService
+	Uploads *media.ShotUploadService
 }
 
 // RegisterShotUploads 注册镜头上传路由。
@@ -39,8 +40,8 @@ func uploadShotMedia(d ShotUploadDeps) gin.HandlerFunc {
 		if !requireExistingProject(c, d.Store) {
 			return
 		}
-		kind := service.ShotUploadKind(c.Param("kind"))
-		if kind != service.ShotUploadStoryboard && kind != service.ShotUploadVideo {
+		kind := media.ShotUploadKind(c.Param("kind"))
+		if kind != media.ShotUploadStoryboard && kind != media.ShotUploadVideo {
 			apperr.Abort(c, &apperr.Validation{Items: []apperr.ValidationItem{{
 				Loc: []string{"path", "kind"}, Msg: "Input should be 'storyboard' or 'video'", Type: "literal_error",
 			}}})
@@ -55,7 +56,7 @@ func uploadShotMedia(d ShotUploadDeps) gin.HandlerFunc {
 			return
 		}
 		declared := fileHeader.Size
-		maxBytes, err := service.ValidateUpload(fileHeader.Filename, &declared, kind)
+		maxBytes, err := media.ValidateUpload(fileHeader.Filename, &declared, kind)
 		if err != nil {
 			abortShotUploadErr(c, err)
 			return
@@ -63,9 +64,9 @@ func uploadShotMedia(d ShotUploadDeps) gin.HandlerFunc {
 
 		var (
 			content []byte
-			stream  service.TargetWriter
+			stream  media.TargetWriter
 		)
-		if kind == service.ShotUploadStoryboard {
+		if kind == media.ShotUploadStoryboard {
 			opened, openErr := fileHeader.Open()
 			if openErr != nil {
 				apperr.Abort(c, apperr.Internal(openErr))

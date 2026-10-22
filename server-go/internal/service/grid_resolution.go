@@ -30,11 +30,11 @@ type ImageCapabilityResolver interface {
 // 路径的 T2I。解析失败（未配置图像供应商等）按未配置处理：门控是收紧方向，取不到档位即不放
 // 行大宫格。
 func ResolveImageResolution(ctx context.Context, resolver ImageCapabilityResolver, pf *domain.ProjectFile) string {
-	return resolveImageResolutionFor(ctx, resolver, pf, nil, config.ImageCapT2I)
+	return ResolveImageResolutionFor(ctx, resolver, pf, nil, config.ImageCapT2I)
 }
 
-// resolveImageResolutionFor 按给定能力槽与载荷解析生效分辨率档（执行侧按实际槽取档）。
-func resolveImageResolutionFor(
+// ResolveImageResolutionFor 按给定能力槽与载荷解析生效分辨率档（执行侧按实际槽取档）。
+func ResolveImageResolutionFor(
 	ctx context.Context, resolver ImageCapabilityResolver, pf *domain.ProjectFile,
 	payload map[string]any, capability config.ImageCapability,
 ) string {

@@ -15,11 +15,12 @@ import (
 
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
 )
 
 // ProviderDeps 是供应商管理路由的依赖。
 type ProviderDeps struct {
-	Providers *service.ProviderAdminService
+	Providers *admin.ProviderAdminService
 }
 
 // RegisterProviders 注册供应商管理路由。
@@ -157,8 +158,8 @@ type providerCredentialBody struct {
 	BaseURL *string `json:"base_url"`
 }
 
-func (b providerCredentialBody) toInput() service.CredentialInput {
-	return service.CredentialInput{Name: b.Name, APIKey: b.APIKey, BaseURL: b.BaseURL}
+func (b providerCredentialBody) toInput() admin.CredentialInput {
+	return admin.CredentialInput{Name: b.Name, APIKey: b.APIKey, BaseURL: b.BaseURL}
 }
 
 // createProviderCredential 新增一条凭证（该供应商首条自动激活）。
@@ -268,10 +269,10 @@ func pathInt64(c *gin.Context, name string) (int64, bool) {
 func abortProviderErr(c *gin.Context, err error) {
 	var valueErr *service.ValueError
 	switch {
-	case errors.Is(err, service.ErrUnknownProviderID):
+	case errors.Is(err, admin.ErrUnknownProviderID):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "unknown_provider",
 			map[string]any{"provider_id": c.Param("provider_id")}))
-	case errors.Is(err, service.ErrCredentialNotFound):
+	case errors.Is(err, admin.ErrCredentialNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "credentials_not_found", nil))
 	case errors.As(err, &valueErr):
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "request_invalid", map[string]any{

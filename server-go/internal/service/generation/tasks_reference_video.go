@@ -3,7 +3,7 @@
 //
 // resource_id 即 unit_id（E{集}U{序号}）。narration/drama 的 unit 来自 video_units（内容自包含）；
 // ad 剧本骨架唯一，unit 来自 reference_units 轻量索引，成员镜头执行期从 shots 水合。
-package service
+package generation
 
 import (
 	"context"
@@ -17,6 +17,8 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service/reference"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // executeReferenceVideoTask 处理一个 reference_video unit 的生成。
@@ -65,13 +67,13 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 	if isAd {
 		adReferences := adUnitReferenceMaps(adShots)
 		var adWarnings []map[string]any
-		adEntries, adWarnings = resolveAdUnitReferenceEntries(project, projectDir, adReferences)
+		adEntries, adWarnings = reference.ResolveAdUnitReferenceEntries(project, projectDir, adReferences)
 		for _, entry := range adEntries {
 			sourceRefs = append(sourceRefs, entry["image"].(string))
 		}
 		warnings = append(warnings, adWarnings...)
 	} else {
-		sourceRefs, err = resolveUnitReferences(project, projectDir, stringMapList(unit["references"]))
+		sourceRefs, err = reference.ResolveUnitReferences(project, projectDir, stringMapList(unit["references"]))
 		if err != nil {
 			return nil, err
 		}
@@ -105,7 +107,7 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 	}
 	registryProviderID := target.ProviderModel.ProviderID
 
-	baseDuration, err := UnitScriptDuration(unit, adShots)
+	baseDuration, err := service.UnitScriptDuration(unit, adShots)
 	if err != nil {
 		return nil, err
 	}
@@ -113,20 +115,20 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 	var constrainedRefs []string
 	var effectiveDuration int
 	if isAd {
-		adEntries, clampWarnings := clampAdReferenceEntries(adEntries, maxRefs, providerName, modelName)
+		adEntries, clampWarnings := reference.ClampAdReferenceEntries(adEntries, maxRefs, providerName, modelName)
 		entryImages := make([]string, 0, len(adEntries))
 		for _, entry := range adEntries {
 			entryImages = append(entryImages, entry["image"].(string))
 		}
 		var durationWarnings []map[string]any
-		constrainedRefs, effectiveDuration, durationWarnings = applyProviderConstraints(
+		constrainedRefs, effectiveDuration, durationWarnings = reference.ApplyProviderConstraints(
 			providerName, modelName, nil, supportedDurations, entryImages, baseDuration,
 			registryProviderID, resolution,
 		)
 		warnings = append(warnings, clampWarnings...)
 		warnings = append(warnings, durationWarnings...)
 	} else {
-		constrainedRefs, effectiveDuration, warnings = applyProviderConstraints(
+		constrainedRefs, effectiveDuration, warnings = reference.ApplyProviderConstraints(
 			providerName, modelName, maxRefs, supportedDurations, sourceRefs, baseDuration,
 			registryProviderID, resolution,
 		)
@@ -154,25 +156,25 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 	}
 
 	// 渲染 prompt。
-	audioPaths := resolveReferenceAudioPaths(project, projectDir)
+	audioPaths := reference.ResolveReferenceAudioPaths(project, projectDir)
 	requestedAudio, err := d.videos.RequestedGenerateAudio(ctx, project)
 	if err != nil {
 		requestedAudio = true
 	}
-	voiceSettings := VoiceRenderSettings{
-		VoiceConsistency:       voiceConsistencyForCaps(caps, target.ProviderModel, project.GenerationMode),
+	voiceSettings := reference.VoiceRenderSettings{
+		VoiceConsistency:       service.VoiceConsistencyForCaps(caps, target.ProviderModel, project.GenerationMode),
 		RequestedGenerateAudio: requestedAudio,
 		MaxReferenceAudio:      caps.MaxReferenceAudioCount,
 		ModelID:                modelName,
 		// 参考音频路径先解析再渲染：渲染层按「确实可用」判定绑定，@音频N 的编号与随请求发出的
 		// 段数因此严格等长（字段指向已删文件时不会留下指向不存在段的编号）。
-		AudioReady:             audioPathSet(audioPaths),
+		AudioReady:             reference.AudioPathSet(audioPaths),
 		RequiresReferenceImage: caps.ReferenceAudioPerImage,
 	}
 
-	var rendered renderedUnitPrompt
+	var rendered reference.RenderedUnitPrompt
 	if isAd {
-		rendered, err = renderAdBackendPrompt(adShots, adEntries, project, voiceSettings, project.Style)
+		rendered, err = reference.RenderAdBackendPrompt(adShots, adEntries, project, voiceSettings, project.Style)
 		if err != nil {
 			return nil, err
 		}
@@ -189,7 +191,7 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 				productNames = append(productNames, name)
 			}
 		}
-		rendered.Prompt = appendProductFidelityTail(rendered.Prompt, productNames)
+		rendered.Prompt = reference.AppendProductFidelityTail(rendered.Prompt, productNames)
 	} else {
 		rendered, err = renderUnitPromptForUnit(unit, project, constrainedRefs, voiceSettings, project.Style)
 		if err != nil {
@@ -198,7 +200,7 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 	}
 	warnings = append(warnings, rendered.Warnings...)
 
-	referenceAudioFiles, referenceAudioTargets := buildReferenceAudioWiring(
+	referenceAudioFiles, referenceAudioTargets := reference.BuildReferenceAudioWiring(
 		rendered, audioPaths, voiceSettings.RequiresReferenceImage,
 	)
 
@@ -225,44 +227,13 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 		return nil, err
 	}
 
-	signatureArg := signatureCompute
+	signatureArg := service.SignatureCompute
 	if isAd {
-		signatureArg = signatureValue
+		signatureArg = service.SignatureValue
 	}
 	return d.finalizeReferenceVideoUnit(task, projectDir, scriptFile, out, warnings, signatureArg, sourceSignature)
 }
 
-// signatureMode 区分「按剧本现算来源签名」与「沿用给定签名」两种写回口径。
-type signatureMode int
-
-const (
-	signatureCompute signatureMode = iota
-	signatureValue
-)
-
-// renderUnitPromptForUnit 把 unit 渲染成三段论 prompt（对应 reference_video_tasks.py::_render_unit_prompt）。
-//
-// 空提示词的结构校验落在书写层文本上：三段论渲染恒产出非空第三段，渲染后已无从判别书写层是否为空。
-// 渲染用 assembleShotsTextForRender（按数组位置重新注入规范 header），因为经解析预览面板编辑回写的
-// unit 其 shots[*].text 普遍已不带 header。
-func renderUnitPromptForUnit(
-	unit map[string]any, project *domain.ProjectFile, constrainedRefs []string,
-	settings VoiceRenderSettings, style string,
-) (renderedUnitPrompt, error) {
-	shotsAny, _ := unit["shots"].([]any)
-	if strings.TrimSpace(domain.AssembleShotsText(shotsAny)) == "" {
-		return renderedUnitPrompt{}, fmt.Errorf("reference video unit prompt is empty: all shots[*].text are blank")
-	}
-	// 与 constrained_refs 同口径裁 references：保证「图片N」的 1-based 索引与 backend 实际收到的
-	// reference_images 一一对应；跳过去重会让编号错位到错误的资产上。
-	rawRefs := stringMapList(unit["references"])
-	promptRefs := dedupeTypedReferences(rawRefs)
-	if len(promptRefs) > len(constrainedRefs) {
-		promptRefs = promptRefs[:len(constrainedRefs)]
-	}
-	text := assembleShotsTextForRender(shotsAny)
-	return renderUnitPrompt(text, project, promptRefs, settings, style), nil
-}
 
 // adUnitReferenceMaps 把 ad 成员镜头的参考集渲染成 “[{type,name}]“ 结构。
 func adUnitReferenceMaps(shots []map[string]any) []map[string]any {
@@ -293,7 +264,7 @@ func stringMapList(value any) []map[string]any {
 // 返回 result dict。
 func (d *TaskDispatcher) finalizeReferenceVideoUnit(
 	task *repository.TaskData, projectDir, scriptFile string, out VideoGenerateResult,
-	warnings []map[string]any, mode signatureMode, signature string,
+	warnings []map[string]any, mode service.SignatureMode, signature string,
 ) (map[string]any, error) {
 	thumbRel := ""
 	thumbDir := filepath.Join(projectDir, "reference_videos", "thumbnails")
@@ -307,10 +278,10 @@ func (d *TaskDispatcher) finalizeReferenceVideoUnit(
 		_ = os.Remove(thumbPath)
 	}
 
-	versions := NewVersions(projectDir)
+	versions := service.NewVersions(projectDir)
 	var writtenSignature *string
 	if err := d.store.UpdateScript(task.ProjectName, scriptFile, func(script map[string]any) error {
-		written, err := applyUnitVideoAssets(script, task.ResourceID, out.VideoURI, thumbRel, nowISO(), mode, signature)
+		written, err := applyUnitVideoAssets(script, task.ResourceID, out.VideoURI, thumbRel, service.NowISO(), mode, signature)
 		if err != nil {
 			return err
 		}
@@ -359,11 +330,11 @@ func (d *TaskDispatcher) finalizeReferenceVideoUnit(
 // 两处都查。新结果不含 video_uri / 缩略图时清空旧值，避免指向过期 URI / 已删除文件。unit 不存在
 // 返回错误（还原侧把它当正常跳过），unit 列表结构损坏同样返回错误。
 //
-// mode 为 signatureCompute 时按本剧本现算来源签名（finalize 兜底口径）；signatureValue 时沿用
+// mode 为 service.SignatureCompute 时按本剧本现算来源签名（finalize 兜底口径）；service.SignatureValue 时沿用
 // 给定值（生成 finalize 传执行期快照的签名），空串表示清除。返回写入的签名（narration/drama
 // 的 video_units 条目不承载签名，返回 nil）。
 func applyUnitVideoAssets(
-	script map[string]any, resourceID, videoURI, thumbRel, generatedAt string, mode signatureMode, signature string,
+	script map[string]any, resourceID, videoURI, thumbRel, generatedAt string, mode service.SignatureMode, signature string,
 ) (*string, error) {
 	type unitList struct {
 		key   string
@@ -421,7 +392,7 @@ func applyUnitVideoAssets(
 				return nil, nil
 			}
 			resolved := signature
-			if mode == signatureCompute {
+			if mode == service.SignatureCompute {
 				resolved = domain.AdUnitSourceSignature(script, u)
 			}
 			if resolved != "" {
@@ -433,5 +404,34 @@ func applyUnitVideoAssets(
 			return &out, nil
 		}
 	}
-	return nil, &ReferenceUnitNotFoundError{UnitID: resourceID}
+	return nil, &reference.ReferenceUnitNotFoundError{UnitID: resourceID}
+}
+
+func init() {
+	// 依赖倒置注册：版本还原侧（根包 version_service）经 Hook 写回 unit 产物。
+	service.ApplyUnitVideoAssetsHook = applyUnitVideoAssets
+}
+
+// renderUnitPromptForUnit 把 unit 渲染成三段论 prompt（对应 reference_video_tasks.py::_render_unit_prompt）。
+//
+// 空提示词的结构校验落在书写层文本上：三段论渲染恒产出非空第三段，渲染后已无从判别书写层是否为空。
+// 渲染用 reference.AssembleShotsTextForRender（按数组位置重新注入规范 header），因为经解析预览面板编辑回写的
+// unit 其 shots[*].text 普遍已不带 header。
+func renderUnitPromptForUnit(
+	unit map[string]any, project *domain.ProjectFile, constrainedRefs []string,
+	settings reference.VoiceRenderSettings, style string,
+) (reference.RenderedUnitPrompt, error) {
+	shotsAny, _ := unit["shots"].([]any)
+	if strings.TrimSpace(domain.AssembleShotsText(shotsAny)) == "" {
+		return reference.RenderedUnitPrompt{}, fmt.Errorf("reference video unit prompt is empty: all shots[*].text are blank")
+	}
+	// 与 constrained_refs 同口径裁 references：保证「图片N」的 1-based 索引与 backend 实际收到的
+	// reference_images 一一对应；跳过去重会让编号错位到错误的资产上。
+	rawRefs := stringMapList(unit["references"])
+	promptRefs := reference.DedupeTypedReferences(rawRefs)
+	if len(promptRefs) > len(constrainedRefs) {
+		promptRefs = promptRefs[:len(constrainedRefs)]
+	}
+	text := reference.AssembleShotsTextForRender(shotsAny)
+	return reference.RenderUnitPrompt(text, project, promptRefs, settings, style), nil
 }

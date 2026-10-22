@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -132,15 +134,15 @@ func TestIsTransientTaskError(t *testing.T) {
 
 func TestLedgerSettlerSettlesAndResumes(t *testing.T) {
 	gdb := newServiceTestDB(t)
-	ledger := NewLedger(gdb, nil)
+	ledger := service.NewLedger(gdb, nil)
 	settler := NewLedgerSettler(ledger)
 	ctx := context.Background()
 
-	call1, err := ledger.Start(ctx, StartParams{ProjectName: "p1", CallType: "image", Model: "m", Provider: "openai"})
+	call1, err := ledger.Start(ctx, service.StartParams{ProjectName: "p1", CallType: "image", Model: "m", Provider: "openai"})
 	if err != nil {
 		t.Fatalf("start call1: %v", err)
 	}
-	call2, err := ledger.Start(ctx, StartParams{ProjectName: "p1", CallType: "image", Model: "m", Provider: "openai"})
+	call2, err := ledger.Start(ctx, service.StartParams{ProjectName: "p1", CallType: "image", Model: "m", Provider: "openai"})
 	if err != nil {
 		t.Fatalf("start call2: %v", err)
 	}
@@ -246,7 +248,7 @@ func writeUnderProject(t *testing.T, dir, rel string) {
 }
 
 // registerCharacter 把角色登记进 project.json 并落盘其设计图。
-func registerCharacter(t *testing.T, store *ProjectStore, projectName, projectDir, name string) {
+func registerCharacter(t *testing.T, store *service.ProjectStore, projectName, projectDir, name string) {
 	t.Helper()
 	writeUnderProject(t, projectDir, "characters/"+name+".png")
 	if err := store.Update(projectName, func(p *domain.ProjectFile) error {
@@ -264,7 +266,7 @@ func registerCharacter(t *testing.T, store *ProjectStore, projectName, projectDi
 }
 
 func TestWorkerPreflightStoryboardItemReferences(t *testing.T) {
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "t", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -310,7 +312,7 @@ func TestWorkerPreflightStoryboardItemReferences(t *testing.T) {
 }
 
 func TestWorkerPreflightReferenceUnitReferences(t *testing.T) {
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p2", "t", domain.ContentNarration, domain.GenerationReferenceVideo, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}

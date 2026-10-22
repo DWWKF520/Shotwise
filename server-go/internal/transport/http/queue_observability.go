@@ -9,12 +9,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 // QueueObservabilityDeps 是可观测性路由的依赖。
 type QueueObservabilityDeps struct {
-	Obs *service.QueueObservability
+	Obs *generation.QueueObservability
 }
 
 // RegisterQueueObservability 注册队列诊断路由。
@@ -30,7 +30,7 @@ func RegisterQueueObservability(group *gin.RouterGroup, d QueueObservabilityDeps
 func getQueueObservability(d QueueObservabilityDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		snapshot, err := d.Obs.BuildSnapshot(c.Request.Context(), optionalQuery(c, "project_name"),
-			service.ObservabilityOptions{})
+			generation.ObservabilityOptions{})
 		if err != nil {
 			apperr.Abort(c, apperr.Internal(err))
 			return

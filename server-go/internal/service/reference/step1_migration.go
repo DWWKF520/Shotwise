@@ -9,9 +9,10 @@
 //
 // supportedDurations 为空（项目尚未配置可解析的视频型号，以及剧集脚本同步加载链）时只做
 // 结构区间 clamp；给了档位表则按容量语义取档，偏移记 warning。
-package service
+package reference
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -24,12 +25,6 @@ const (
 	legacyShotDurationField = "duration"
 	legacyUnitDurationField = "duration_override"
 )
-
-// MigrationWarning 是一条 locale-neutral 的迁移警告（i18n key + 参数），由消费边界渲染。
-type MigrationWarning struct {
-	Key    string
-	Params map[string]any
-}
 
 // stripLegacyShotDurations 剥掉各镜头的遗留时长字段，返回 (时长之和, 是否剥掉过字段)。
 //
@@ -54,7 +49,7 @@ func stripLegacyShotDurations(unit map[string]any) (int, bool) {
 		}
 		stripped = true
 		delete(shot, legacyShotDurationField)
-		if n, ok := positiveIntValue(value); ok {
+		if n, ok := service.PositiveIntValue(value); ok {
 			total += n
 		}
 	}
@@ -69,14 +64,14 @@ func stripLegacyShotDurations(unit map[string]any) (int, bool) {
 //
 // supportedDurations 非空时按容量语义取档（超出最大档位即 clamp 到最大档位），偏移记
 // warning；空则只 clamp 到 unit 时长的结构合理性区间。
-func MigrateUnitDurations(units any, supportedDurations []int) (bool, []MigrationWarning) {
+func MigrateUnitDurations(units any, supportedDurations []int) (bool, []service.MigrationWarning) {
 	list, ok := units.([]any)
 	if !ok {
 		return false, nil
 	}
 
 	changed := false
-	var warnings []MigrationWarning
+	var warnings []service.MigrationWarning
 	low, high := domain.ReferenceUnitDurationRange()
 
 	for _, raw := range list {
@@ -93,7 +88,7 @@ func MigrateUnitDurations(units any, supportedDurations []int) (bool, []Migratio
 		}
 		changed = true
 
-		target, ok := positiveIntValue(unit["duration_seconds"])
+		target, ok := service.PositiveIntValue(unit["duration_seconds"])
 		if !ok {
 			target = legacyTotal
 		}
@@ -103,7 +98,7 @@ func MigrateUnitDurations(units any, supportedDurations []int) (bool, []Migratio
 
 		clamped := min(max(target, low), high)
 		if clamped != target {
-			warnings = append(warnings, MigrationWarning{
+			warnings = append(warnings, service.MigrationWarning{
 				Key: "val_unit_duration_clamped",
 				Params: map[string]any{
 					"unit_id": unit["unit_id"], "target": target,
@@ -112,13 +107,13 @@ func MigrateUnitDurations(units any, supportedDurations []int) (bool, []Migratio
 			})
 		}
 		if len(supportedDurations) > 0 {
-			slot := ResolveDurationSlot(float64(clamped), supportedDurations)
+			slot := service.ResolveDurationSlot(float64(clamped), supportedDurations)
 			if slot.Seconds != clamped {
-				warnings = append(warnings, MigrationWarning{
+				warnings = append(warnings, service.MigrationWarning{
 					Key: "val_unit_duration_slotted",
 					Params: map[string]any{
 						"unit_id": unit["unit_id"], "duration": clamped,
-						"durations": sortedUniqueInts(supportedDurations), "slot": slot.Seconds,
+						"durations": service.SortedUniqueInts(supportedDurations), "slot": slot.Seconds,
 					},
 				})
 			}
@@ -134,7 +129,7 @@ func MigrateUnitDurations(units any, supportedDurations []int) (bool, []Migratio
 //
 // 按数据形状而非 generation_mode 戳判定——脏数据与半成品剧本可能缺戳，而收编只关心
 // 「有没有 per-shot 时长要剥」，对其它骨架天然是空操作。
-func MigrateScriptUnitDurations(script any) (bool, []MigrationWarning) {
+func MigrateScriptUnitDurations(script any) (bool, []service.MigrationWarning) {
 	m, ok := script.(map[string]any)
 	if !ok {
 		return false, nil
@@ -150,7 +145,7 @@ var migrationWarningTemplates = map[string]string{
 }
 
 // RenderMigrationWarning 按 key + params 渲染一条迁移警告的默认文本（供智能体与日志边界消费）。
-func RenderMigrationWarning(w MigrationWarning) string {
+func RenderMigrationWarning(w service.MigrationWarning) string {
 	tmpl, ok := migrationWarningTemplates[w.Key]
 	if !ok {
 		return w.Key
@@ -162,8 +157,8 @@ func RenderMigrationWarning(w MigrationWarning) string {
 	return out
 }
 
-// renderMigrationWarnings 渲染警告列表，以「；」连接（对齐 Python 的 join 语义）。
-func renderMigrationWarnings(warnings []MigrationWarning) string {
+// RenderMigrationWarnings 渲染警告列表，以「；」连接（对齐 Python 的 join 语义）。
+func RenderMigrationWarnings(warnings []service.MigrationWarning) string {
 	parts := make([]string, 0, len(warnings))
 	for _, w := range warnings {
 		parts = append(parts, RenderMigrationWarning(w))
@@ -180,14 +175,14 @@ func renderMigrationWarnings(warnings []MigrationWarning) string {
 //
 // 仅适用于迁移无 warnings 的情形（纯格式收编，时长取值未被 clamp 改写）。
 func CarryConfirmationThroughMigration(pf *domain.ProjectFile, episode int, before, after string) bool {
-	stored := StoredReview(pf, episode)
+	stored := service.StoredReview(pf, episode)
 	if stored == nil || stored.Fingerprint != before {
 		return false
 	}
-	return ApplyConfirmation(pf, episode, after, stored.ConfirmedAt)
+	return service.ApplyConfirmation(pf, episode, after, stored.ConfirmedAt)
 }
 
-// step1MigrationStore 是 step1 迁移对项目读写的最小依赖（*ProjectStore 与
+// step1MigrationStore 是 step1 迁移对项目读写的最小依赖（*service.ProjectStore 与
 // ScriptGenStore 实现方都满足）。
 type step1MigrationStore interface {
 	Dir(name string) (string, error)
@@ -217,15 +212,15 @@ type step1MigrationStore interface {
 func MigrateStep1DraftInPlace(
 	store step1MigrationStore, projectName string,
 	content map[string]any, episode int, supportedDurations []int,
-) (*domain.ProjectFile, []MigrationWarning, error) {
+) (*domain.ProjectFile, []service.MigrationWarning, error) {
 	if content == nil {
 		return nil, nil, nil
 	}
-	before := ContentFingerprintOfData(content)
+	before := service.ContentFingerprintOfData(content)
 	changed, warnings := MigrateUnitDurations(content["units"], supportedDurations)
 	for _, message := range warnings {
 		slog.Warn("step1 草稿时长收编迁移",
-			"file", ReferenceVideoStep1Filename, "key", message.Key, "params", message.Params)
+			"file", service.ReferenceVideoStep1Filename, "key", message.Key, "params", message.Params)
 	}
 	if !changed {
 		return nil, nil, nil
@@ -238,13 +233,13 @@ func MigrateStep1DraftInPlace(
 		// pending_review；无指纹的 grandfather 存量集显式记下迁移前指纹使其退回待审。
 		err := store.Update(projectName, func(pf *domain.ProjectFile) error {
 			updated = pf
-			stored := StoredReview(pf, episode)
+			stored := service.StoredReview(pf, episode)
 			if stored == nil || stored.Fingerprint == "" {
 				confirmedAt := ""
 				if stored != nil {
 					confirmedAt = stored.ConfirmedAt
 				}
-				ApplyConfirmation(pf, episode, before, confirmedAt)
+				service.ApplyConfirmation(pf, episode, before, confirmedAt)
 			}
 			return nil
 		})
@@ -252,7 +247,7 @@ func MigrateStep1DraftInPlace(
 			return nil, warnings, err
 		}
 	} else {
-		after := ContentFingerprintOfData(content)
+		after := service.ContentFingerprintOfData(content)
 		err := store.Update(projectName, func(pf *domain.ProjectFile) error {
 			updated = pf
 			CarryConfirmationThroughMigration(pf, episode, before, after)
@@ -272,4 +267,9 @@ func MigrateStep1DraftInPlace(
 		return nil, warnings, err
 	}
 	return updated, warnings, nil
+}
+
+func init() {
+	// 依赖倒置：剧本写盘守卫（根包 script_store）经钩子调用本域的时长收编迁移。
+	service.MigrateScriptUnitDurationsHook = MigrateScriptUnitDurations
 }

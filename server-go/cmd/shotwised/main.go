@@ -9,6 +9,7 @@
 package main
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"errors"
 	"log/slog"
@@ -31,6 +32,11 @@ import (
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
+	"github.com/shotwise/shotwise/internal/service/generation"
+	"github.com/shotwise/shotwise/internal/service/media"
+	"github.com/shotwise/shotwise/internal/service/asset"
+	"github.com/shotwise/shotwise/internal/service/admin"
 	"github.com/shotwise/shotwise/internal/textgen"
 	"github.com/shotwise/shotwise/migrations"
 	"golang.org/x/crypto/bcrypt"
@@ -96,8 +102,8 @@ func run(log *slog.Logger) error {
 
 	// 把代码拥有的官方 Skill 清单物化到库里（对应 Python 启动期 sync_official_creation_skills）。
 	// 失败不阻断启动：同步是幂等的，下次启动会重试。
-	workflows := service.NewWorkflowService(gdb)
-	if synced, err := service.NewCreationSkillCatalog(gdb, workflows).
+	workflows := creative.NewWorkflowService(gdb)
+	if synced, err := creative.NewCreationSkillCatalog(gdb, workflows).
 		SyncOfficialCreationSkills(context.Background()); err != nil {
 		log.Error("official Creation Skill catalog synchronization failed (non-fatal)", "error", err)
 	} else if synced > 0 {
@@ -128,16 +134,16 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	store := service.NewProjectStore(cfg.DataDir)
-	assets := service.NewAssetService(store)
+	assets := asset.NewAssetService(store)
 
 	// 生成队列与 worker：所有生成类工具（资产 / 分镜 / 配音 / 图片编辑 / 宫格 / 视频 / 分集规划）
 	// 与任务 API 都依赖它。ledger 走内置定价目录（pricing.BuiltinCatalog），无目录时结算无法
 	// 在真实调用上完成。worker 的执行层是 TaskDispatcher（按 task_type 路由到各生成路径）。
 	ledger := service.NewLedger(gdb, pricing.NewCalculator(pricing.BuiltinCatalog()))
-	images := service.NewImageGenerator(gdb, ledger)
-	audioGen := service.NewAudioGenerator(gdb, ledger)
-	videos := service.NewVideoGenerator(gdb, ledger)
-	dispatcher := service.NewTaskDispatcher(store, images)
+	images := generation.NewImageGenerator(gdb, ledger)
+	audioGen := generation.NewAudioGenerator(gdb, ledger)
+	videos := generation.NewVideoGenerator(gdb, ledger)
+	dispatcher := generation.NewTaskDispatcher(store, images)
 	dispatcher.SetAudioGenerator(audioGen)
 	dispatcher.SetVideoGenerator(videos)
 	// 项目变更事件的订阅总线：worker 终态经它广播给前端，须先于 queue 构造。
@@ -145,21 +151,21 @@ func run(log *slog.Logger) error {
 	q := queue.NewQueue(gdb,
 		queue.WithProjectLoader(store),
 		// 生成完成的终态广播：只发成功事件，带受影响文件的指纹供前端 cache-bust。
-		queue.WithTerminalEmitter(service.NewTerminalEmitter(hub, store, gdb)))
+		queue.WithTerminalEmitter(generation.NewTerminalEmitter(hub, store, gdb)))
 	worker := queue.NewWorker(q, dispatcher,
 		// 中断记账收口：启动时翻残留 pending 行为失败，取消时翻该任务的 pending 行。
-		queue.WithInterruptedSettler(service.NewLedgerSettler(ledger)),
+		queue.WithInterruptedSettler(generation.NewLedgerSettler(ledger)),
 		// 失败编码走结构化 "[code] {params}"，读侧据此渲染多语言文案。
-		queue.WithFailureEncoder(service.EncodeTaskFailure),
-		queue.WithTaskErrorEncoder(service.EncodeTaskError),
+		queue.WithFailureEncoder(generation.EncodeTaskFailure),
+		queue.WithTaskErrorEncoder(generation.EncodeTaskError),
 		// 健康账的熔断只对上游瞬态失败计数，取消与业务失败不动健康度。
-		queue.WithTransientClassifier(service.IsTransientTaskError),
+		queue.WithTransientClassifier(generation.IsTransientTaskError),
 		// 限流槽路由用的执行身份投影；解析失败由 worker 兜底 DefaultProvider，不阻断认领循环。
-		queue.WithProviderExtractor(service.NewProviderExtractor(store, config.NewResolver(gdb))),
+		queue.WithProviderExtractor(generation.NewProviderExtractor(store, config.NewResolver(gdb))),
 		// 执行前复检引用资产，收窄「准入与执行之间」的项目 / 剧本漂移窗口。
-		queue.WithPreflight(service.NewWorkerPreflight(store)),
+		queue.WithPreflight(generation.NewWorkerPreflight(store)),
 		// 重启自愈：按提交时锁定的身份轮询下载，绝不重新 submit（重复 submit 等于重复计费）。
-		queue.WithResumeExecutor(service.NewResumeExecutor(dispatcher)))
+		queue.WithResumeExecutor(generation.NewResumeExecutor(dispatcher)))
 	// 取消回调先注册再启动 worker：取消 API 才能把进程内取消信号同步投递给在途执行。
 	q.SetCancelCallback(worker.RequestCancel)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
@@ -173,7 +179,7 @@ func run(log *slog.Logger) error {
 
 	// 会话主模型凭证链：DB 活跃 agent 凭证（chat_completions 协议）优先，env 兜底。
 	// 按次解析——prepareAgent 每轮回调，设置页切换凭证从下一轮起生效，无需重启。
-	agentCreds := service.NewAgentCredentialService(gdb)
+	agentCreds := admin.NewAgentCredentialService(gdb)
 	agentModelResolver := func(ctx context.Context) (agent.ModelConfig, error) {
 		resolved, ok, err := agentCreds.ResolveActiveModel(ctx)
 		if err != nil {
@@ -206,21 +212,21 @@ func run(log *slog.Logger) error {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}, store),
 		agent.WithScriptEditing(store), agent.WithAssetRename(assets),
-		agent.WithTextGenerationTools(func(ctx context.Context, pf *domain.ProjectFile) (service.TextCompletion, error) {
+		agent.WithTextGenerationTools(func(ctx context.Context, pf *domain.ProjectFile) (servicescript.TextCompletion, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}, store),
 		agent.WithScriptReviewTools(store),
-		agent.WithReferenceTools(func(ctx context.Context, pf *domain.ProjectFile) (service.TextCompletion, error) {
+		agent.WithReferenceTools(func(ctx context.Context, pf *domain.ProjectFile) (servicescript.TextCompletion, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}, store, config.NewResolver(gdb)),
-		agent.WithTimelineTools(service.NewMediaAssemblyService(gdb)),
+		agent.WithTimelineTools(media.NewMediaAssemblyService(gdb)),
 		agent.WithMemoryProposals(service.NewMemoryService(gdb)),
 		// 生成类工具依赖上面装配好的 GenerationQueue 与 worker。
 		agent.WithAssetGeneration(q, store),
 		agent.WithGenerationTools(q, store),
 		agent.WithImageEditTools(q, store, config.NewResolver(gdb)),
 		agent.WithGridTools(q, store, config.NewResolver(gdb), service.NewGridService(store)),
-		agent.WithEpisodePlanning(store, func(ctx context.Context, pf *domain.ProjectFile) (service.TextCompletion, error) {
+		agent.WithEpisodePlanning(store, func(ctx context.Context, pf *domain.ProjectFile) (servicescript.TextCompletion, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}),
 		agent.WithVideoGeneration(q, store, config.NewResolver(gdb), store))

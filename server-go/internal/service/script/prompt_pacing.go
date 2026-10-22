@@ -5,7 +5,7 @@
 //
 // 文风用「宜 / 例」而非「必须 / 禁止」，给 LLM 在边界条件下的判断空间（如视频模型最短只支持
 // 5 秒时，「~4 秒」比「=4 秒」更可执行）。
-package service
+package script
 
 import "fmt"
 

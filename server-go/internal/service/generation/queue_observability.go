@@ -9,7 +9,7 @@
 // 告警只输出机器可读的 code + 数值/阈值，文案由前端按 code 本地化——本模块不落
 // 面向用户的自然语言。分位数按最近秩（nearest-rank）在 Go 侧算：SQLite 没有
 // percentile_cont，在 SQL 里算会让两套方言分叉，而这里只需要诊断精度。
-package service
+package generation
 
 import (
 	"context"

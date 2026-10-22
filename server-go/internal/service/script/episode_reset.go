@@ -10,7 +10,7 @@
 // 派生集文件按「是否可从账本重造」分流：带 source_range 的 episode_N.txt 是派生物，直接删除；
 // 无 source_range 的集文件可能是老项目原件（含手工内容，无坐标可重造），改名留底而非删除。
 // 下游产物（剧本 JSON、step1 中间文件、媒体）一律不删。
-package service
+package script
 
 import (
 	"errors"
@@ -394,7 +394,7 @@ func resolvePartialResetCursor(
 	return prevRel, prevEnd, nil
 }
 
-// EpisodeStore 是分集账本工具所需的最小项目能力（*ProjectStore 满足）。
+// EpisodeStore 是分集账本工具所需的最小项目能力（*service.ProjectStore 满足）。
 type EpisodeStore interface {
 	Get(name string) (*domain.ProjectFile, error)
 	Dir(name string) (string, error)

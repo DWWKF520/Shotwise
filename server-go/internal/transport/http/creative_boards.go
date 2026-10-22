@@ -10,12 +10,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
 )
 
 // CreativeBoardDeps 是创意板 handler 的依赖。
 type CreativeBoardDeps struct {
-	Boards *service.CreativeBoardService
+	Boards *creative.CreativeBoardService
 }
 
 // RegisterCreativeBoards 注册创意板路由；调用方负责挂 feature gate。
@@ -468,9 +468,9 @@ func asInt64(value any) (int64, bool) {
 // abortCreativeBoardErr 把创意板领域错误映射成统一 {"detail": ...} 信封。
 func abortCreativeBoardErr(c *gin.Context, err error) {
 	var (
-		validation *service.CreativeBoardValidationError
-		notFound   *service.CreativeBoardNotFoundError
-		conflict   *service.CreativeBoardConflictError
+		validation *creative.CreativeBoardValidationError
+		notFound   *creative.CreativeBoardNotFoundError
+		conflict   *creative.CreativeBoardConflictError
 	)
 	switch {
 	case errors.As(err, &notFound):

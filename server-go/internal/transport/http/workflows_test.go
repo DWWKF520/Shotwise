@@ -17,7 +17,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -114,7 +114,7 @@ func newWorkflowTestEngine(t *testing.T) *gin.Engine {
 		c.Set("shotwise.user", &auth.User{ID: "u1", Sub: "u1", Role: "admin"})
 		c.Next()
 	})
-	RegisterWorkflows(group, WorkflowDeps{Workflows: service.NewWorkflowService(gdb)})
+	RegisterWorkflows(group, WorkflowDeps{Workflows: creative.NewWorkflowService(gdb)})
 	return r
 }
 
@@ -354,11 +354,11 @@ func TestWorkflowBuiltinTemplatesReturned(t *testing.T) {
 
 // TestWorkflowLegacyGraphMatchesPythonShape 复刻 Python legacy_linear_graph 的形态。
 func TestWorkflowLegacyGraphMatchesPythonShape(t *testing.T) {
-	nodes, edges := service.LegacyLinearGraph()
-	if len(nodes) != len(service.LegacyFlowNodeTypes) {
+	nodes, edges := creative.LegacyLinearGraph()
+	if len(nodes) != len(creative.LegacyFlowNodeTypes) {
 		t.Fatalf("node count mismatch: %d", len(nodes))
 	}
-	if len(edges) != len(service.LegacyFlowNodeTypes)-1 {
+	if len(edges) != len(creative.LegacyFlowNodeTypes)-1 {
 		t.Fatalf("edge count mismatch: %d", len(edges))
 	}
 	if domain.WorkflowMapFloat(nodes[0], "weight", 0) != 1.0 {

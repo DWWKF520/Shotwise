@@ -1,7 +1,7 @@
 // 角色设计图任务（对应 server/services/generation_tasks.py::execute_character_task 与
 // _execute_character_task_locked）：四视图设计图 + 从设计图裁出标准头像，写回
 // character_sheet / character_avatar 两个字段。
-package service
+package generation
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/provider"
@@ -65,7 +66,7 @@ func (d *TaskDispatcher) executeCharacterTask(ctx context.Context, task *reposit
 	}
 	previousAvatar := entry.MustString("character_avatar")
 
-	sheetRel, err := resourceRelativePath("characters", key)
+	sheetRel, err := service.ResourceRelativePath("characters", key)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +76,7 @@ func (d *TaskDispatcher) executeCharacterTask(ctx context.Context, task *reposit
 
 	request := provider.NewImageGenerationRequest(fullPrompt, sheetAbs)
 	request.ReferenceImages = refs
-	request.AspectRatio = aspectRatioFor(pf, "characters")
+	request.AspectRatio = service.AspectRatioFor(pf, "characters")
 	if size := payloadString(task.Payload, "image_size"); size != "" {
 		request.ImageSize = size
 	}

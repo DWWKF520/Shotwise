@@ -1,4 +1,6 @@
-package service
+package asset
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"testing"
@@ -9,7 +11,7 @@ import (
 // Upsert 不存在则新建，存在则合并改字段；sheet 字段由调用方（工具层）过滤，这里只验证落盘语义。
 func TestAssetUpsertCreatesThenMerges(t *testing.T) {
 	root := t.TempDir()
-	store := NewProjectStore(root)
+	store := service.NewProjectStore(root)
 	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +39,7 @@ func TestAssetUpsertCreatesThenMerges(t *testing.T) {
 // 新建条目缺描述时写盘守卫拒绝（不写坏 project.json）。
 func TestAssetUpsertRejectsMissingDescriptionOnCreate(t *testing.T) {
 	root := t.TempDir()
-	store := NewProjectStore(root)
+	store := service.NewProjectStore(root)
 	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatal(err)
 	}

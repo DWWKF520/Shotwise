@@ -20,12 +20,13 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 // GridDeps 是宫格路由的依赖。
 type GridDeps struct {
 	Store *service.ProjectStore
-	Grids *service.GridTaskService
+	Grids *generation.GridTaskService
 }
 
 // RegisterGrids 注册宫格路由。

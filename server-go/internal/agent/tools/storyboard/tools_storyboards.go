@@ -12,6 +12,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 
@@ -118,7 +119,7 @@ func runGenerateStoryboards(
 		if _, present := item["image_prompt"]; !present {
 			return "", false, fmt.Errorf("片段/场景 %v 缺少 image_prompt 字段", plan.ResourceID)
 		}
-		prompt, err := service.BuildImagePromptText(item["image_prompt"], style, styleDescription)
+		prompt, err := generation.BuildImagePromptText(item["image_prompt"], style, styleDescription)
 		if err != nil {
 			return "", false, fmt.Errorf("片段/场景 %v：%w", plan.ResourceID, err)
 		}

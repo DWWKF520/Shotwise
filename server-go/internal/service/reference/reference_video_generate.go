@@ -1,4 +1,6 @@
-package service
+package reference
+
+import "github.com/shotwise/shotwise/internal/service"
 
 // 参考生视频 unit 生成的提交入口预检（对应 server/routers/_validators.py 的
 // require_video_bucket_capability / require_audio_switch_supported 与
@@ -16,7 +18,7 @@ import (
 )
 
 // VideoBackendResolver 是视频后端身份解析（*config.Resolver 满足）。独立于
-// VideoCapabilityResolver 声明：ResolveVideoBackend 不在能力视图接口里，transport 按
+// service.VideoCapabilityResolver 声明：ResolveVideoBackend 不在能力视图接口里，transport 按
 // 此窄接口注入依赖、测试注入替身。
 type VideoBackendResolver interface {
 	ResolveVideoBackend(
@@ -31,26 +33,26 @@ type VideoBackendResolver interface {
 // Go 侧无角色衍生形态（variant）概念，调用方渲染 missing_variants 段时恒传空占位。
 func ValidateTypedReferences(
 	project *domain.ProjectFile, projectDir string, refs []domain.AdReference, requireSheetImages bool,
-) PreflightResult {
-	items := make([]itemReference, 0, len(refs))
+) service.PreflightResult {
+	items := make([]service.ItemReference, 0, len(refs))
 	for _, ref := range refs {
-		items = append(items, itemReference{
-			kind:  domain.AssetKind(ref.Type),
-			field: "references",
-			name:  domain.NormalizeAssetName(ref.Name),
+		items = append(items, service.ItemReference{
+			Kind:  domain.AssetKind(ref.Type),
+			Field: "references",
+			Name:  domain.NormalizeAssetName(ref.Name),
 		})
 	}
-	result := validateAssetReferences(project, projectDir, items)
+	result := service.ValidateAssetReferences(project, projectDir, items)
 	if requireSheetImages {
 		return result
 	}
-	kept := make([]PreflightIssue, 0, len(result.Issues))
+	kept := make([]service.PreflightIssue, 0, len(result.Issues))
 	for _, issue := range result.Issues {
-		if issue.Kind != PreflightKindMissingSheet {
+		if issue.Kind != service.PreflightKindMissingSheet {
 			kept = append(kept, issue)
 		}
 	}
-	return PreflightResult{Issues: kept}
+	return service.PreflightResult{Issues: kept}
 }
 
 // RequireVideoBucketCapability 视频生成入口预检：按能力桶解析全局 + 项目配置并过解析闸

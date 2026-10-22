@@ -9,9 +9,10 @@
 //   - 状态是**派生**的（有活跃凭证即 ready），不落库，避免出现「库里 ready、实际没 key」；
 //   - 密钥只进不出：GET 只回 masked 值，明文只在写入请求的方向上出现；
 //   - 启用开关落 system_setting（`provider_enabled:<id>`），解析链与 UI 读同一处。
-package service
+package admin
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -162,7 +163,7 @@ func (s *ProviderAdminService) GetConfig(ctx context.Context, providerID string)
 	fields := make([]FieldView, 0, len(keys))
 	for _, key := range keys {
 		value, present := values[key]
-		required := containsString(meta.RequiredKeys, key)
+		required := service.ContainsString(meta.RequiredKeys, key)
 		field := FieldView{
 			Key:      key,
 			Label:    key,
@@ -221,11 +222,11 @@ func (s *ProviderAdminService) PatchConfig(
 	now := db.NewFlexibleTime(time.Now())
 	for key, value := range updates {
 		if !allowed[key] {
-			return &ValueError{Msg: fmt.Sprintf("unsupported config key: %s", key)}
+			return &service.ValueError{Msg: fmt.Sprintf("unsupported config key: %s", key)}
 		}
 		if secret[key] {
 			// 密钥写这里会绕过凭证表，让「是否有活跃凭证」的判定失真。
-			return &ValueError{Msg: fmt.Sprintf("secret key must be set through credentials: %s", key)}
+			return &service.ValueError{Msg: fmt.Sprintf("secret key must be set through credentials: %s", key)}
 		}
 		if err := s.upsertProviderConfig(ctx, providerID, key, value, false, now); err != nil {
 			return err
@@ -261,12 +262,12 @@ func (s *ProviderAdminService) PatchModelTypes(
 	}
 	for modelID, mediaType := range overrides {
 		if _, ok := known[modelID]; !ok {
-			return ModelTypesView{}, &ValueError{Msg: "unknown model: " + modelID}
+			return ModelTypesView{}, &service.ValueError{Msg: "unknown model: " + modelID}
 		}
 		switch mediaType {
 		case "image", "video", "audio", "text":
 		default:
-			return ModelTypesView{}, &ValueError{Msg: "invalid media type: " + mediaType}
+			return ModelTypesView{}, &service.ValueError{Msg: "invalid media type: " + mediaType}
 		}
 		merged[modelID] = mediaType
 	}
@@ -335,7 +336,7 @@ func (s *ProviderAdminService) CreateCredential(
 	if in.APIKey == nil || strings.TrimSpace(*in.APIKey) == "" {
 		// 注册表声明了 required ∩ secret 的供应商，缺密钥就是不可用凭证。
 		if len(meta.RequiredKeys) > 0 {
-			return CredentialView{}, &ValueError{Msg: "api_key is required"}
+			return CredentialView{}, &service.ValueError{Msg: "api_key is required"}
 		}
 	}
 	now := db.NewFlexibleTime(time.Now())

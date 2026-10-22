@@ -1,6 +1,6 @@
 // 创意画布图片任务执行（对应 server/services/canvas_image_tasks.py::execute_canvas_image_task）。
 //
-// 画布操作刻意不触碰项目资产与剧本宫格记录：每次操作保留源图，产出独立的 MediaAsset。
+// 画布操作刻意不触碰项目资产与剧本宫格记录：每次操作保留源图，产出独立的 service.MediaAsset。
 //   - split / crop 是确定性几何操作（无 AI 语义）；
 //   - 其余八个操作走项目「图生图」i2i 管线：redraw / erase 以选区裁剪参考聚焦模型、
 //     生成贴片合成回全图（选区外像素保持原样）；outpaint 的选区描述源图在更大画布
@@ -8,7 +8,7 @@
 //
 // 与 Python 的收敛差异：画质档位只认显式 2K / 4K，未指定时留空走 backend 默认
 // （Python 回落项目配置的 i2i 分辨率，该配置读取在 Go 侧未接线）。
-package service
+package generation
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // canvasAIPrompts 各 AI 操作的语义指令（与 Python 逐字一致：进入模型 prompt，不参与 i18n）。
@@ -197,7 +198,7 @@ func (d *TaskDispatcher) resolveCanvasImageSource(
 
 // resolveCanvasMediaPath 解析媒体库来源的图片资产绝对路径（须为图片且文件在项目内存在）。
 func resolveCanvasMediaPath(projectDir, mediaAssetID string) (string, error) {
-	asset, err := GetProjectMediaAsset(projectDir, mediaAssetID)
+	asset, err := service.GetProjectMediaAssetHook(projectDir, mediaAssetID)
 	if err != nil || asset == nil {
 		return "", fmt.Errorf("reference media asset not found")
 	}
@@ -381,7 +382,7 @@ func compositeCanvasOutpaint(sourcePath, outputPath string, geo canvasOutpaintGe
 	return writeCanvasPNG(outputPath, composited)
 }
 
-// writeCanvasRenderedOutputs 落盘确定性渲染产物并逐个登记 MediaAsset
+// writeCanvasRenderedOutputs 落盘确定性渲染产物并逐个登记 service.MediaAsset
 // （对应 _write_outputs：PNG 命名 {序号:02d}-{label}.png，目录 canvas_outputs/{op}/{task_id}）。
 func (d *TaskDispatcher) writeCanvasRenderedOutputs(
 	task *repository.TaskData, operation, projectDir, sourceID string,
@@ -422,10 +423,10 @@ func (d *TaskDispatcher) writeCanvasRenderedOutputs(
 }
 
 // canvasRegisterOutput 登记一个画布产物并组装输出片段（对应 _register_output）。
-// 索引关闭时 RegisterMediaAsset 为空操作，输出片段不含 media_asset 字段（与 Python 一致）。
+// 索引关闭时 service.RegisterMediaAsset 为空操作，输出片段不含 media_asset 字段（与 Python 一致）。
 func canvasRegisterOutput(projectName, projectDir, sourceID, relPath, label, origin string) (map[string]any, error) {
 	originalName := fmt.Sprintf("%s-%s.png", sourceID, label)
-	asset, err := RegisterMediaAsset(RegisterMediaAssetParams{
+	asset, err := service.RegisterMediaAssetHook(service.RegisterMediaAssetHookParams{
 		ProjectID:    projectName,
 		ProjectRoot:  projectDir,
 		RelativePath: relPath,
@@ -455,9 +456,9 @@ func canvasRegisterOutput(projectName, projectDir, sourceID, relPath, label, ori
 // 其余（含确定性的 crop）按 Python 口径登记为 generated。
 func canvasRegisterOrigin(operation string) string {
 	if operation == CanvasImageOperationSplit || operation == "canvas_image_layers" {
-		return MediaOriginExtracted
+		return service.MediaOriginExtracted
 	}
-	return MediaOriginGenerated
+	return service.MediaOriginGenerated
 }
 
 // canvasSplitCells 把源图切成 rows×cols 宫格（对应 _build_split）。

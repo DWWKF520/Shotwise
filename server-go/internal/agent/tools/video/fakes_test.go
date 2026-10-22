@@ -12,7 +12,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 )
 
 // 与 assets / 生成类测试共享的最小替身副本（Go 测试不能跨包复用未导出类型）。
@@ -122,8 +122,8 @@ func newTextGenProject(t *testing.T, contentMode string, pf *domain.ProjectFile)
 }
 
 // staticGenFactory 构造固定输出的文本生成工厂。
-func staticGenFactory(out string) service.TextCompletionFactory {
-	return func(context.Context, *domain.ProjectFile) (service.TextCompletion, error) {
+func staticGenFactory(out string) servicescript.TextCompletionFactory {
+	return func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
 		return &fakeTextCompletion{outputs: []string{out}}, nil
 	}
 }

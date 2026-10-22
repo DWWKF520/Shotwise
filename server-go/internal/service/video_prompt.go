@@ -9,6 +9,9 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 )
 
+// videoAvoidItems 是视频统一反向提示词清单（与分镜图侧同源）。
+const videoAvoidItems = "BGM、文字字幕、水印"
+
 // IsStructuredVideoPrompt 对应 is_structured_video_prompt：对象且带 action 键。
 func IsStructuredVideoPrompt(videoPrompt any) bool {
 	m, ok := videoPrompt.(map[string]any)
@@ -154,9 +157,9 @@ func VideoPromptToYAML(videoPrompt map[string]any) (string, error) {
 		b.WriteString("Voice_Profiles:")
 		writeVoiceProfileItems(&b, profiles)
 	}
-	b.WriteString("Action: " + promptYAMLScalar(action) + "\n")
-	b.WriteString("Camera_Motion: " + promptYAMLScalar(cameraMotion) + "\n")
-	b.WriteString("Ambiance_Audio: " + promptYAMLScalar(ambiance) + "\n")
+	b.WriteString("Action: " + PromptYAMLScalar(action) + "\n")
+	b.WriteString("Camera_Motion: " + PromptYAMLScalar(cameraMotion) + "\n")
+	b.WriteString("Ambiance_Audio: " + PromptYAMLScalar(ambiance) + "\n")
 
 	if dialogue, ok := videoPrompt["dialogue"].([]any); ok && len(dialogue) > 0 {
 		b.WriteString("Dialogue:\n")
@@ -164,11 +167,11 @@ func VideoPromptToYAML(videoPrompt map[string]any) (string, error) {
 			entry, _ := raw.(map[string]any)
 			speaker, _ := entry["speaker"].(string)
 			line, _ := entry["line"].(string)
-			b.WriteString("- Speaker: " + promptYAMLScalar(speaker) + "\n")
-			b.WriteString("  Line: " + promptYAMLScalar(line) + "\n")
+			b.WriteString("- Speaker: " + PromptYAMLScalar(speaker) + "\n")
+			b.WriteString("  Line: " + PromptYAMLScalar(line) + "\n")
 		}
 	}
-	b.WriteString("Avoid: " + promptYAMLScalar(videoAvoidItems) + "\n")
+	b.WriteString("Avoid: " + PromptYAMLScalar(videoAvoidItems) + "\n")
 	return b.String(), nil
 }
 
@@ -178,7 +181,20 @@ func writeVoiceProfileItems(b *strings.Builder, profiles []any) {
 		entry, _ := raw.(map[string]any)
 		speaker, _ := entry["Speaker"].(string)
 		style, _ := entry["Voice_Style"].(string)
-		b.WriteString("\n- Speaker: " + promptYAMLScalar(speaker) + "\n")
-		b.WriteString("  Voice_Style: " + promptYAMLScalar(style) + "\n")
+		b.WriteString("\n- Speaker: " + PromptYAMLScalar(speaker) + "\n")
+		b.WriteString("  Voice_Style: " + PromptYAMLScalar(style) + "\n")
 	}
+}
+
+// NormalizeStylePrefix 去掉风格值开头的「画风：」前缀并 strip 两端空白（幂等）。
+// 存量项目的 style 取自旧版风格模版，不清理会渲染成 Style: 画风：... 的中英混叠。
+func NormalizeStylePrefix(style string) string {
+	s := strings.TrimSpace(style)
+	for _, prefix := range []string{"画风：", "画风:"} {
+		if strings.HasPrefix(s, prefix) {
+			s = strings.TrimSpace(strings.TrimPrefix(s, prefix))
+			break
+		}
+	}
+	return s
 }

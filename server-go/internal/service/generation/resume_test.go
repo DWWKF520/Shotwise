@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -64,7 +66,7 @@ func resumeStrPtr(s string) *string { return &s }
 // 让执行身份的唯一来源是 payload 锁定键，从而验证 resume 按提交时身份解析而非当前项目配置。
 func newResumeFixture(
 	t *testing.T, contentMode domain.ContentMode, genMode domain.GenerationMode,
-) (*TaskDispatcher, *ResumeExecutor, *ProjectStore, *gorm.DB, *resumeStubBackend, string, string) {
+) (*TaskDispatcher, *ResumeExecutor, *service.ProjectStore, *gorm.DB, *resumeStubBackend, string, string) {
 	t.Helper()
 	dispatcher, store, gdb, projectName := newVideoFixture(t, contentMode, genMode)
 	backend := &resumeStubBackend{caps: stubVideoCaps()}
@@ -98,7 +100,7 @@ func seedPendingCall(t *testing.T, gdb *gorm.DB, projectName string) int64 {
 		ProjectName: projectName,
 		CallType:    "video",
 		Model:       "sora-2",
-		Status:      StatusPending,
+		Status:      service.StatusPending,
 		Currency:    "USD",
 		Provider:    "openai",
 		UserID:      repository.DefaultUserID,
@@ -183,11 +185,11 @@ func TestResumeVideoTaskHappyPath(t *testing.T) {
 	}
 
 	// 结算补账：pending 精准翻 success。
-	if row := loadCall(t, gdb, callID); row.Status != StatusSuccess {
+	if row := loadCall(t, gdb, callID); row.Status != service.StatusSuccess {
 		t.Fatalf("ledger status = %s, want success", row.Status)
 	}
 	// 版本登记：resume 必 bump 新版本。
-	if _, err := NewVersions(projectDir).LatestCreatedAt("videos", "E1S01"); err != nil {
+	if _, err := service.NewVersions(projectDir).LatestCreatedAt("videos", "E1S01"); err != nil {
 		t.Fatalf("version not registered: %v", err)
 	}
 }
@@ -215,7 +217,7 @@ func TestResumeVideoTaskExpiredSettlesFailed(t *testing.T) {
 		t.Fatalf("err = %v, want ErrResumeExpired", err)
 	}
 	row := loadCall(t, gdb, callID)
-	if row.Status != StatusFailed || row.CostAmount != 0 {
+	if row.Status != service.StatusFailed || row.CostAmount != 0 {
 		t.Fatalf("ledger row = %s cost=%v, want failed/zero", row.Status, row.CostAmount)
 	}
 }
@@ -241,7 +243,7 @@ func TestResumeVideoTaskUnsupportedMapsSentinel(t *testing.T) {
 		t.Fatalf("err = %v, want ErrResumeUnsupported", err)
 	}
 	// 不支持不等于过期：不补账，pending 行保留（与 Python 口径一致）。
-	if row := loadCall(t, gdb, callID); row.Status != StatusPending {
+	if row := loadCall(t, gdb, callID); row.Status != service.StatusPending {
 		t.Fatalf("ledger status = %s, want pending untouched", row.Status)
 	}
 }

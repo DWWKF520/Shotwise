@@ -3,7 +3,7 @@
 //
 // 与工具侧（internal/agent/tools_generate_video.go）同口径：能力闸门、时长守卫与桶全部由
 // VideoGenerator 门面统一承担，执行层不各写一份。
-package service
+package generation
 
 import (
 	"context"
@@ -17,6 +17,8 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service/reference"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // executeVideoTask 执行一个分镜镜头的视频生成并把产物路径/缩略图写回剧本。
@@ -63,7 +65,7 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 	// 优先读取 generated_assets.storyboard_image，回退默认路径。校验口径与路由入队预检、
 	// SDK 工具入队预检共用同一份 resolveStoryboardImageRef。
 	storyboardRel := domain.GeneratedAssets(item)["storyboard_image"]
-	storyboardFile, err := ResolveStoryboardImageRef(projectDir, storyboardRel)
+	storyboardFile, err := service.ResolveStoryboardImageRef(projectDir, storyboardRel)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +74,7 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 	}
 	// is_file 而非 exists：字段被外部编辑指向目录（如 storyboards 本身）时 exists 仍为真，
 	// 目录会被当作 start_image 传给视频后端，在编码阶段才失败且原因不可读。
-	if !pathIsFile(storyboardFile) {
+	if !reference.PathIsFile(storyboardFile) {
 		return nil, fmt.Errorf("storyboard not found: %s", filepath.Base(storyboardFile))
 	}
 
@@ -80,7 +82,7 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 	// Voice_Profiles 声明段唯一来源是本函数下方的戏剧台词派生：调用方（WebUI 请求体 / 剧本 JSON
 	// 残留）自带的 voice_profiles 一律先剥离，不因 utterances 门控不触发而绕过真无声门控直达 YAML。
 	if m, ok := prompt.(map[string]any); ok {
-		prompt = StripVoiceProfiles(m)
+		prompt = service.StripVoiceProfiles(m)
 	}
 
 	// drama 口型台词单一真相源在场景级有序 utterances：从 dialogue-kind 条目取台词注入 video YAML
@@ -94,11 +96,11 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 			utterances, hasUtterances = item["utterances"]
 		}
 		if hasUtterances {
-			prompt = BuildDramaVideoPrompt(m, utterances, voiceCharacters)
+			prompt = service.BuildDramaVideoPrompt(m, utterances, voiceCharacters)
 		} else {
 			// utterances 迁移前的存量剧本：load_script 按原始 JSON 读盘不过校验，不会被自动
 			// 补齐，台词仍留在 video_prompt.dialogue。
-			prompt = BuildDramaVideoPromptFromLegacyDialogue(m, voiceCharacters)
+			prompt = service.BuildDramaVideoPromptFromLegacyDialogue(m, voiceCharacters)
 		}
 	}
 
@@ -106,7 +108,7 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 	if err != nil {
 		return nil, err
 	}
-	aspectRatio := aspectRatioFor(project, "videos")
+	aspectRatio := service.AspectRatioFor(project, "videos")
 	seed := payloadInt64(task.Payload, "seed")
 	serviceTier := payloadNestedString(task.Payload, "video_provider_settings", "service_tier")
 	if serviceTier == "" {
@@ -169,7 +171,7 @@ func (d *TaskDispatcher) dramaVoiceCharacters(
 		// 开关解析失败按 Python 侧独立解析失败的降级口径处理：有信号才判定为真无声。
 		requested = true
 	}
-	if voiceConsistencyForCaps(target.Caps(), target.ProviderModel, project.GenerationMode) == "none" || !requested {
+	if service.VoiceConsistencyForCaps(target.Caps(), target.ProviderModel, project.GenerationMode) == "none" || !requested {
 		return nil
 	}
 	return &project.Characters
@@ -184,7 +186,7 @@ func (d *TaskDispatcher) resolveVideoDuration(
 	task *repository.TaskData, project *domain.ProjectFile,
 	registryProviderID, modelName string, supportedDurations []int, resolution string,
 ) (int, error) {
-	if raw, present := task.Payload["duration_seconds"]; present && raw != nil && refPresenceTruthy(raw) {
+	if raw, present := task.Payload["duration_seconds"]; present && raw != nil && service.RefPresenceTruthy(raw) {
 		return videoDurationSeconds(raw)
 	}
 	if project.DefaultDuration != nil && *project.DefaultDuration != 0 {
@@ -227,7 +229,7 @@ func (d *TaskDispatcher) finalizeVideoTask(
 		_ = os.Remove(thumbFile)
 	}
 
-	createdAt, err := NewVersions(projectDir).LatestCreatedAt("videos", task.ResourceID)
+	createdAt, err := service.NewVersions(projectDir).LatestCreatedAt("videos", task.ResourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +253,7 @@ func normalizeVideoPrompt(raw any) (string, error) {
 		}
 		return appendVideoNegativeTail(p), nil
 	case map[string]any:
-		if !IsStructuredVideoPrompt(p) {
+		if !service.IsStructuredVideoPrompt(p) {
 			return "", fmt.Errorf("prompt must be a string or include action/camera_motion")
 		}
 		action, _ := p["action"].(string)
@@ -274,7 +276,7 @@ func normalizeVideoPrompt(raw any) (string, error) {
 		if normalized["camera_motion"] == "" {
 			normalized["camera_motion"] = "Static"
 		}
-		body, err := VideoPromptToYAML(normalized)
+		body, err := service.VideoPromptToYAML(normalized)
 		if err != nil {
 			return "", err
 		}
@@ -339,7 +341,7 @@ func resolveEndFrameImage(projectDir string, item map[string]any, resourceID str
 	if !strings.Contains(normalized, "/") {
 		candidate = "end_frames/" + normalized
 	}
-	expectedRel, err := resourceRelativePath("end_frames", resourceID)
+	expectedRel, err := service.ResourceRelativePath("end_frames", resourceID)
 	if err != nil {
 		return "", err
 	}
@@ -356,7 +358,7 @@ func resolveEndFrameImage(projectDir string, item map[string]any, resourceID str
 	if endFrameFile == "" || endFrameFile != expectedFile || canonicalPathTampered(projectDir, expectedRel) {
 		return "", fmt.Errorf("invalid end frame snapshot path: %v", raw)
 	}
-	if !pathIsFile(endFrameFile) {
+	if !reference.PathIsFile(endFrameFile) {
 		return "", fmt.Errorf("end frame snapshot not found: %s", filepath.Base(endFrameFile))
 	}
 	return endFrameFile, nil

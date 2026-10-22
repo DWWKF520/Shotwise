@@ -18,6 +18,7 @@ import (
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -62,8 +63,8 @@ func newGenerateFixture(t *testing.T) generateFixture {
 	q := queue.NewQueue(gdb)
 	RegisterGenerate(v1, GenerateDeps{
 		Store: store,
-		Generate: service.NewGenerateService(
-			store, q, config.NewResolver(gdb), service.NewAudioGenerator(gdb, nil)),
+		Generate: generation.NewGenerateService(
+			store, q, config.NewResolver(gdb), generation.NewAudioGenerator(gdb, nil)),
 	})
 	return generateFixture{router: r, store: store, repo: repository.NewTaskRepo(gdb)}
 }
@@ -328,7 +329,7 @@ func TestVoiceSampleRejectsMalformedInput(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("空文本: status = %d body=%v", status, body)
 	}
-	long := strings.Repeat("字", service.VoiceSampleTextMaxLength+1)
+	long := strings.Repeat("字", generation.VoiceSampleTextMaxLength+1)
 	status, body = f.post(t, path, map[string]any{"text": long, "voice": "v1"}, "en")
 	if status != http.StatusBadRequest {
 		t.Fatalf("超长文本: status = %d body=%v", status, body)

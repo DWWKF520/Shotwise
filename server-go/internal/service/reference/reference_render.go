@@ -5,9 +5,10 @@
 // 渲染期机械生成，不依赖 LLM 自觉。渲染是纯函数、结果不落盘。
 //
 // 所有偏移与切片按 rune（Python 是码点坐标系；Go 的 len(string) 是字节）。
-package service
+package reference
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,8 +24,8 @@ const AssetAudioSubdir = "characters/refs_audio"
 
 // 第三段约束包。面向视频模型的提示词文本（非用户可见文案），按仓库口径豁免 i18n。
 const (
-	qualityPack   = "高清，细节丰富，电影质感，色彩自然，光影柔和。"
-	stabilityPack = "人物面部稳定不变形、五官清晰、动作连贯自然，不僵硬，无穿模无卡顿。"
+	QualityPack   = "高清，细节丰富，电影质感，色彩自然，光影柔和。"
+	StabilityPack = "人物面部稳定不变形、五官清晰、动作连贯自然，不僵硬，无穿模无卡顿。"
 	subtitlePack  = "保持无字幕，避免生成任何文字或字幕。"
 	watermarkPack = "不要生成水印；不要生成 Logo。"
 	noBGMPack     = "禁止出现背景音乐。"
@@ -32,12 +33,12 @@ const (
 		"双胞胎效果，同一画面中仅保留单个对应人物，不出现人物重复复刻。"
 )
 
-// renderedUnitPrompt 是一个 unit 的渲染产物。
+// RenderedUnitPrompt 是一个 unit 的渲染产物。
 //
 // AudioSpeakers 的顺序即「@音频N」编号，调用方须按同一顺序组装 reference_audio_files——这是
 // prompt 文本与请求字段之间唯一的绑定契约。AudioSpeakerReferenceIndex 与之等长同序：第 i 项
 // 是该 speaker 对应的 reference_images 下标（0-based），没有参考图（纯画外角色）时为 nil。
-type renderedUnitPrompt struct {
+type RenderedUnitPrompt struct {
 	Prompt                     string
 	AudioSpeakers              []string
 	AudioSpeakerReferenceIndex []*int
@@ -57,14 +58,14 @@ func voiceWarningsAsMaps(warnings []voiceWarning) []map[string]any {
 	return out
 }
 
-// renderUnitPrompt 把一个 unit 的书写文稿渲染成三段论 backend prompt（对应 render_unit_prompt）。
+// RenderUnitPrompt 把一个 unit 的书写文稿渲染成三段论 backend prompt（对应 render_unit_prompt）。
 //
 // references 是本次实际随请求发出的参考图列表（已按能力上限裁剪），其顺序即「图片N」编号——与
 // reference_images 严格等长同序，被裁掉的名字退化为原文不产生悬空绑定。
-func renderUnitPrompt(
+func RenderUnitPrompt(
 	text string, project *domain.ProjectFile, references []map[string]any,
 	settings VoiceRenderSettings, style string,
-) renderedUnitPrompt {
+) RenderedUnitPrompt {
 	shots, mentions := parsePrompt(text)
 	utterances, warnings := deriveUtterances(shots)
 
@@ -130,7 +131,7 @@ func renderUnitPrompt(
 		renderSegmentTwo(shots, subjects, characters),
 		renderSegmentThree(characterRefCount, style),
 	}
-	return renderedUnitPrompt{
+	return RenderedUnitPrompt{
 		Prompt:                     joinNonEmpty(segments, "\n\n"),
 		AudioSpeakers:              append([]string(nil), bindings.audioSpeakers...),
 		AudioSpeakerReferenceIndex: referenceIndex,
@@ -138,15 +139,15 @@ func renderUnitPrompt(
 	}
 }
 
-// renderAdBackendPrompt 把 ad 派生 unit 的结构化镜头渲染成三段论 backend prompt
+// RenderAdBackendPrompt 把 ad 派生 unit 的结构化镜头渲染成三段论 backend prompt
 // （对应 render_ad_backend_prompt），与剧集路径共用第一、三段与音频接线。
-func renderAdBackendPrompt(
+func RenderAdBackendPrompt(
 	shots []map[string]any, entries []map[string]any, project *domain.ProjectFile,
 	settings VoiceRenderSettings, style string,
-) (renderedUnitPrompt, error) {
+) (RenderedUnitPrompt, error) {
 	body := domain.RenderAdUnitPrompt(shots, nil)
 	if strings.TrimSpace(body) == "" {
-		return renderedUnitPrompt{}, fmt.Errorf("reference video unit prompt is empty: all member shots have no visual content")
+		return RenderedUnitPrompt{}, fmt.Errorf("reference video unit prompt is empty: all member shots have no visual content")
 	}
 
 	characters := characterBucket(project)
@@ -176,7 +177,7 @@ func renderAdBackendPrompt(
 		body,
 		renderSegmentThree(len(characterImageNo), style),
 	}
-	return renderedUnitPrompt{
+	return RenderedUnitPrompt{
 		Prompt:                     joinNonEmpty(segments, "\n\n"),
 		AudioSpeakers:              append([]string(nil), bindings.audioSpeakers...),
 		AudioSpeakerReferenceIndex: referenceIndex,
@@ -334,10 +335,10 @@ func renderSegmentTwo(shots []map[string]any, subjects []string, characters doma
 // renderSegmentThree 渲染第三段：风格锚定 + 画质/稳定/字幕/水印约束包；≥2 角色参考图时补双胞胎兜底。
 func renderSegmentThree(characterReferenceCount int, style string) string {
 	var lines []string
-	if normalized := normalizeStylePrefix(style); normalized != "" {
+	if normalized := service.NormalizeStylePrefix(style); normalized != "" {
 		lines = append(lines, "整体视觉风格："+normalized+"。")
 	}
-	lines = append(lines, qualityPack+stabilityPack)
+	lines = append(lines, QualityPack+StabilityPack)
 	lines = append(lines, subtitlePack+watermarkPack+noBGMPack)
 	if characterReferenceCount >= 2 {
 		lines = append(lines, twinPack)
@@ -406,22 +407,22 @@ func renderMentionsAsSubjects(text string, names []string) string {
 	return b.String()
 }
 
-// resolveReferenceAudioPaths 返回项目内「参考音频确实可用」的角色名 → 绝对路径映射
+// ResolveReferenceAudioPaths 返回项目内「参考音频确实可用」的角色名 → 绝对路径映射
 // （对应 resolve_reference_audio_paths）。
 //
 // 只收录字段指向 characters/refs_audio 内且文件确实存在的条目；key 是归一后的角色名。
-func resolveReferenceAudioPaths(project *domain.ProjectFile, projectDir string) map[string]string {
+func ResolveReferenceAudioPaths(project *domain.ProjectFile, projectDir string) map[string]string {
 	resolved := map[string]string{}
 	for name, entry := range characterBucket(project) {
 		if entry == nil {
 			continue
 		}
 		rel := entry.MustString("reference_audio")
-		path := resolveAudioRefPath(projectDir, rel)
+		path := ResolveAudioRefPath(projectDir, rel)
 		if path == "" {
 			continue
 		}
-		if !pathIsFile(path) {
+		if !PathIsFile(path) {
 			continue
 		}
 		resolved[name] = path
@@ -429,8 +430,8 @@ func resolveReferenceAudioPaths(project *domain.ProjectFile, projectDir string) 
 	return resolved
 }
 
-// audioPathSet 把「参考音频确实可用」的角色名映射收成集合（键已归一）。
-func audioPathSet(audioPaths map[string]string) map[string]bool {
+// AudioPathSet 把「参考音频确实可用」的角色名映射收成集合（键已归一）。
+func AudioPathSet(audioPaths map[string]string) map[string]bool {
 	out := make(map[string]bool, len(audioPaths))
 	for name := range audioPaths {
 		out[domain.NormalizeAssetName(name)] = true
@@ -438,9 +439,9 @@ func audioPathSet(audioPaths map[string]string) map[string]bool {
 	return out
 }
 
-// resolveAudioRefPath 解析 reference_audio 字段值，仅当其确实落在 characters/refs_audio 内才返回
+// ResolveAudioRefPath 解析 reference_audio 字段值，仅当其确实落在 characters/refs_audio 内才返回
 // （对应 lib/audio_utils.py::resolve_audio_ref_path）：该字段可经资产 PATCH 被写成项目内任意字符串。
-func resolveAudioRefPath(projectDir, rel string) string {
+func ResolveAudioRefPath(projectDir, rel string) string {
 	if strings.TrimSpace(rel) == "" {
 		return ""
 	}
@@ -466,9 +467,9 @@ func resolveAudioRefPath(projectDir, rel string) string {
 const productFidelityCore = "画面中的产品必须与产品参考图完全一致——" +
 	"包装、配色、字体、材质与结构细节均不得改动，不得重新设计或美化产品本身"
 
-// appendProductFidelityTail 给产品镜头的生成 prompt 追加高保真还原指令
+// AppendProductFidelityTail 给产品镜头的生成 prompt 追加高保真还原指令
 // （对应 append_product_fidelity_tail）。productNames 为空返回原 prompt；重复调用幂等。
-func appendProductFidelityTail(prompt string, productNames []string) string {
+func AppendProductFidelityTail(prompt string, productNames []string) string {
 	var names strings.Builder
 	for _, name := range productNames {
 		if name != "" {
@@ -598,11 +599,11 @@ func (e *missingReferenceError) Error() string {
 	return "Missing references: " + strings.Join(parts, ", ")
 }
 
-// dedupeTypedReferences 按 (type, 归一名, 衍生键) 去重 reference 字典，保留首次出现顺序。
+// DedupeTypedReferences 按 (type, 归一名, 衍生键) 去重 reference 字典，保留首次出现顺序。
 //
 // 同一资产可能以 NFC/NFD 两条等价记录同时留在 unit.references 里；参考图解析与 prompt 渲染前的
 // 裁剪必须共用同一份去重结果，否则图片列表与逻辑引用列表长度不一致会造成编号错位。
-func dedupeTypedReferences(references []map[string]any) []map[string]any {
+func DedupeTypedReferences(references []map[string]any) []map[string]any {
 	seen := map[string]bool{}
 	var deduped []map[string]any
 	for _, ref := range references {
@@ -622,13 +623,13 @@ func dedupeTypedReferences(references []map[string]any) []map[string]any {
 	return deduped
 }
 
-// resolveUnitReferences 把 unit.references 转成绝对路径列表（按 references 顺序、按类型+归一名去重）。
+// ResolveUnitReferences 把 unit.references 转成绝对路径列表（按 references 顺序、按类型+归一名去重）。
 //
 // 任一 reference 在 project.json 对应 bucket 缺失或 sheet 不存在时返回 *missingReferenceError。
-func resolveUnitReferences(project *domain.ProjectFile, projectDir string, references []map[string]any) ([]string, error) {
+func ResolveUnitReferences(project *domain.ProjectFile, projectDir string, references []map[string]any) ([]string, error) {
 	var missing []missingReference
 	var resolved []string
-	for _, ref := range dedupeTypedReferences(references) {
+	for _, ref := range DedupeTypedReferences(references) {
 		refType, _ := ref["type"].(string)
 		name, _ := ref["name"].(string)
 		spec, ok := domain.Spec(domain.AssetKind(refType))
@@ -660,7 +661,7 @@ func resolveUnitReferences(project *domain.ProjectFile, projectDir string, refer
 			continue
 		}
 		path, err := fs.SafeJoin(projectDir, false, filepath.FromSlash(sheetRel))
-		if err != nil || !pathIsFile(path) {
+		if err != nil || !PathIsFile(path) {
 			missing = append(missing, missingReference{AssetType: refType, Name: name})
 			continue
 		}
@@ -705,11 +706,11 @@ func characterVariantEntry(character *domain.AssetEntry, identifier string) map[
 	return nil
 }
 
-// resolveAdUnitReferenceEntries 解析 ad 派生 unit 的参考：返回 (entries, warnings)。
+// ResolveAdUnitReferenceEntries 解析 ad 派生 unit 的参考：返回 (entries, warnings)。
 //
-// 与 narration/drama 的 resolveUnitReferences（缺图硬失败）不同，ad 的参考集由分组器从镜头字段
+// 与 narration/drama 的 ResolveUnitReferences（缺图硬失败）不同，ad 的参考集由分组器从镜头字段
 // 自动继承，缺图按软口径跳过并记 warning。产品沿用注入二元规则且排在所有其它参考之前。
-func resolveAdUnitReferenceEntries(
+func ResolveAdUnitReferenceEntries(
 	project *domain.ProjectFile, projectDir string, references []map[string]any,
 ) ([]map[string]any, []map[string]any) {
 	var warnings []map[string]any
@@ -780,8 +781,8 @@ func resolveAdUnitReferenceEntries(
 	return entries, warnings
 }
 
-// clampAdReferenceEntries 超出后端参考张数上限时裁剪 ad 参考条目；产品参考的 sheet 跨产品稳定前置。
-func clampAdReferenceEntries(
+// ClampAdReferenceEntries 超出后端参考张数上限时裁剪 ad 参考条目；产品参考的 sheet 跨产品稳定前置。
+func ClampAdReferenceEntries(
 	entries []map[string]any, maxRefs *int, providerName, model string,
 ) ([]map[string]any, []map[string]any) {
 	if maxRefs == nil || len(entries) <= *maxRefs {
@@ -822,11 +823,11 @@ func kindRank(kind string) int {
 	return 1
 }
 
-// applyProviderConstraints 按供应商能力取时长档位、裁剪 references；回传 warnings
+// ApplyProviderConstraints 按供应商能力取时长档位、裁剪 references；回传 warnings
 // （i18n key + 参数）。
 //
 // maxRefs 为 nil 表示不裁参考图；supportedDurations 为空表示能力不可解析、时长原样透传。
-func applyProviderConstraints(
+func ApplyProviderConstraints(
 	providerName, model string, maxRefs *int, supportedDurations []int,
 	references []string, durationSeconds int, registryProviderID, resolution string,
 ) ([]string, int, []map[string]any) {
@@ -850,7 +851,7 @@ func applyProviderConstraints(
 		}
 	}
 
-	slot := ResolveDurationSlot(float64(durationSeconds), EffectiveReferenceDurations(
+	slot := service.ResolveDurationSlot(float64(durationSeconds), service.EffectiveReferenceDurations(
 		registryProviderID, model, supportedDurations, resolution, len(newRefs) > 0,
 	))
 	displayModel := model
@@ -864,12 +865,12 @@ func applyProviderConstraints(
 }
 
 // durationSlotWarning 是取档偏移了剧本编排时的任务 warning（i18n key + 参数）；未偏移返回 nil。
-func durationSlotWarning(slot DurationSlot, model string) map[string]any {
+func durationSlotWarning(slot service.DurationSlot, model string) map[string]any {
 	if !slot.NeedsConfirmation() {
 		return nil
 	}
 	key := "ref_duration_exceeded"
-	if slot.Adjustment == AdjustmentUp {
+	if slot.Adjustment == service.AdjustmentUp {
 		key = "ref_duration_rounded_up"
 	}
 	return map[string]any{
@@ -880,12 +881,12 @@ func durationSlotWarning(slot DurationSlot, model string) map[string]any {
 	}
 }
 
-// buildReferenceAudioWiring 把渲染产物的 audio_speakers（+ 图号对齐下标）组装成请求字段
+// BuildReferenceAudioWiring 把渲染产物的 audio_speakers（+ 图号对齐下标）组装成请求字段
 // （对应 _build_reference_audio_wiring）。
 //
 // referenceAudioPerImage 为 true 时按下标同时过滤两个列表而非直接 zip 全量，保证两列表等长同序。
-func buildReferenceAudioWiring(
-	rendered renderedUnitPrompt, audioPaths map[string]string, referenceAudioPerImage bool,
+func BuildReferenceAudioWiring(
+	rendered RenderedUnitPrompt, audioPaths map[string]string, referenceAudioPerImage bool,
 ) ([]string, []int) {
 	if referenceAudioPerImage {
 		var files []string
@@ -910,8 +911,8 @@ func buildReferenceAudioWiring(
 	return files, nil
 }
 
-// pathIsFile 判定路径指向一个已存在的普通文件（目录或缺失均为 false）。
-func pathIsFile(path string) bool {
+// PathIsFile 判定路径指向一个已存在的普通文件（目录或缺失均为 false）。
+func PathIsFile(path string) bool {
 	if path == "" {
 		return false
 	}

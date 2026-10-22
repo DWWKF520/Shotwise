@@ -23,12 +23,12 @@ import (
 
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/auth"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
 )
 
 // CustomProviderDeps 是自定义供应商路由的依赖。
 type CustomProviderDeps struct {
-	Providers *service.CustomProviderService
+	Providers *admin.CustomProviderService
 }
 
 // RegisterCustomProviders 注册自定义供应商路由。
@@ -73,8 +73,8 @@ type customModelBody struct {
 	EndpointDeclaration map[string]any `json:"endpoint_declaration"`
 }
 
-func (b customModelBody) toInput() service.CustomModelInput {
-	return service.CustomModelInput{
+func (b customModelBody) toInput() admin.CustomModelInput {
+	return admin.CustomModelInput{
 		ModelID:             b.ModelID,
 		DisplayName:         b.DisplayName,
 		Endpoint:            b.Endpoint,
@@ -91,11 +91,11 @@ func (b customModelBody) toInput() service.CustomModelInput {
 	}
 }
 
-func customModelInputs(bodies []customModelBody) []service.CustomModelInput {
+func customModelInputs(bodies []customModelBody) []admin.CustomModelInput {
 	if bodies == nil {
 		return nil
 	}
-	out := make([]service.CustomModelInput, 0, len(bodies))
+	out := make([]admin.CustomModelInput, 0, len(bodies))
 	for _, body := range bodies {
 		out = append(out, body.toInput())
 	}
@@ -172,7 +172,7 @@ func createCustomProvider(d CustomProviderDeps) gin.HandlerFunc {
 		if !decodeJSONBody(c, &body) {
 			return
 		}
-		out, err := d.Providers.CreateProvider(c.Request.Context(), service.CustomProviderCreateInput{
+		out, err := d.Providers.CreateProvider(c.Request.Context(), admin.CustomProviderCreateInput{
 			DisplayName:                body.DisplayName,
 			DiscoveryFormat:            body.DiscoveryFormat,
 			BaseURL:                    body.BaseURL,
@@ -219,7 +219,7 @@ func patchCustomProvider(d CustomProviderDeps) gin.HandlerFunc {
 		if !decodeJSONBody(c, &body) {
 			return
 		}
-		out, err := d.Providers.PatchProvider(c.Request.Context(), id, service.CustomProviderPatchInput{
+		out, err := d.Providers.PatchProvider(c.Request.Context(), id, admin.CustomProviderPatchInput{
 			DisplayName: body.DisplayName,
 			BaseURL:     body.BaseURL,
 			APIKey:      body.APIKey,
@@ -244,7 +244,7 @@ func replaceCustomProvider(d CustomProviderDeps) gin.HandlerFunc {
 		if !decodeJSONBody(c, &body) {
 			return
 		}
-		out, err := d.Providers.ReplaceProvider(c.Request.Context(), id, service.CustomProviderReplaceInput{
+		out, err := d.Providers.ReplaceProvider(c.Request.Context(), id, admin.CustomProviderReplaceInput{
 			DisplayName:                body.DisplayName,
 			BaseURL:                    body.BaseURL,
 			APIKey:                     body.APIKey,

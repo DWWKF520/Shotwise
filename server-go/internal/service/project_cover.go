@@ -9,6 +9,7 @@
 package service
 
 import (
+	"time"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,4 +177,17 @@ func scanFingerprintDir(prefix, dirPath string, out map[string]int64) {
 			out[prefix+"/"+entry.Name()] = info.ModTime().UnixNano()
 		}
 	}
+}
+
+// ProjectFingerprint 按 project.json 的 mtime 计算项目指纹。
+//
+// 口径与 transport/http 里项目事件流首帧的指纹一致：快照序列化差分（Python 侧 sha1 of stable
+// json）尚未迁移，Go 侧以 project.json mtime 作指纹——足以驱动前端「指纹变了就重拉」的刷新语义。
+// 文件不存在时返回空串。
+func ProjectFingerprint(dir string) string {
+	st, err := os.Stat(filepath.Join(dir, "project.json"))
+	if err != nil {
+		return ""
+	}
+	return st.ModTime().UTC().Format(time.RFC3339Nano)
 }

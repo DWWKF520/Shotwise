@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 type assetFixture struct {
@@ -47,7 +48,7 @@ func newAssetFixture(t *testing.T) assetFixture {
 	v1.DELETE("/projects/:name", DeleteProject(deps))
 	v1.GET("/projects/:name/events/stream", ProjectEventStream(deps))
 
-	RegisterAssets(v1, AssetDeps{Assets: service.NewAssetService(store), Store: store})
+	RegisterAssets(v1, AssetDeps{Assets: asset.NewAssetService(store), Store: store})
 	return assetFixture{router: r, store: store, root: root}
 }
 

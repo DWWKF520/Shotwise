@@ -7,9 +7,10 @@
 //
 // 并发正确性：设置与清除都在同一把剧本锁临界区内完成「文件副作用 + 字段写回」，两者互斥；
 // 落盘失败时按「操作代次」条件回滚快照文件（只撤销自己的效果，不覆盖并发请求已落盘的成果）。
-package service
+package asset
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"errors"
 	"os"
@@ -68,10 +69,10 @@ func advanceShotGeneration(key shotGenerationKey) int {
 }
 
 // EndFrameService 承载尾帧设置/清除。
-type EndFrameService struct{ store *ProjectStore }
+type EndFrameService struct{ store *service.ProjectStore }
 
 // NewEndFrameService 构造。
-func NewEndFrameService(store *ProjectStore) *EndFrameService {
+func NewEndFrameService(store *service.ProjectStore) *EndFrameService {
 	return &EndFrameService{store: store}
 }
 
@@ -112,7 +113,7 @@ func (s *EndFrameService) Clear(ctx context.Context, projectName, scriptFile, sh
 		return err
 	}
 	key := shotGenerationKey{
-		project: projectName, script: NormalizeScriptFilename(scriptFile), shot: shotID,
+		project: projectName, script: service.NormalizeScriptFilename(scriptFile), shot: shotID,
 	}
 	var (
 		generation int
@@ -198,7 +199,7 @@ func (s *EndFrameService) applySnapshot(
 	}
 
 	key := shotGenerationKey{
-		project: projectName, script: NormalizeScriptFilename(scriptFile), shot: shotID,
+		project: projectName, script: service.NormalizeScriptFilename(scriptFile), shot: shotID,
 	}
 	var (
 		generation int
@@ -215,7 +216,7 @@ func (s *EndFrameService) applySnapshot(
 		generation = advanceShotGeneration(key)
 		entered = true
 		// 先写文件：字段写回后若落盘失败，要靠代次补偿把文件还原。
-		if err := writeFileAtomic(target, pngBytes); err != nil {
+		if err := service.WriteFileAtomic(target, pngBytes); err != nil {
 			return err
 		}
 		matched["end_frame_image"] = relative
@@ -244,7 +245,7 @@ func (s *EndFrameService) restoreAfterPersistFailure(
 			return errSkipWrite
 		}
 		if hadOld {
-			_ = writeFileAtomic(target, oldBytes)
+			_ = service.WriteFileAtomic(target, oldBytes)
 		} else if removeErr := os.Remove(target); removeErr != nil && !os.IsNotExist(removeErr) {
 			return errSkipWrite
 		}
@@ -263,7 +264,7 @@ func findShot(script map[string]any, shotID string) (map[string]any, error) {
 		if !ok {
 			continue
 		}
-		if pythonStrLike(item[idField]) == shotID {
+		if service.PythonStrLike(item[idField]) == shotID {
 			return item, nil
 		}
 	}
@@ -272,7 +273,7 @@ func findShot(script map[string]any, shotID string) (map[string]any, error) {
 
 // snapshotTarget 返回尾帧快照的 (绝对路径, 项目内相对路径)；路径越界时是 400。
 func snapshotTarget(projectDir, shotID string) (string, string, error) {
-	relative, err := resourceRelativePath(EndFrameImageDir, shotID)
+	relative, err := service.ResourceRelativePath(EndFrameImageDir, shotID)
 	if err != nil {
 		return "", "", endFrameErr(400, "invalid_resource_id", map[string]any{"resource_id": shotID})
 	}

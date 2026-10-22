@@ -7,16 +7,13 @@
 //
 // 适用范围（拥有结构化 step1 中间态的三条两段式路径）：drama / narration 的图生 / 宫格路径；
 // reference_video 路径（跨 narration / drama）。ad 无 step1，不纳入 gate。
-package service
+package script
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/shotwise/shotwise/internal/domain"
 )
@@ -57,73 +54,19 @@ func Step1Path(projectDir string, pf *domain.ProjectFile, episode int) (string, 
 	}
 	filename := step1Filenames[kind]
 	if kind == step1KindReferenceVideo {
-		filename = ReferenceVideoStep1Filename
+		filename = service.ReferenceVideoStep1Filename
 	}
-	return filepath.Join(EpisodeDraftsDir(projectDir, episode), filename), true
+	return filepath.Join(service.EpisodeDraftsDir(projectDir, episode), filename), true
 }
 
-// ContentFingerprintOfData 计算已解析 JSON 对象的指纹：规范化 dump（键序 / 空白重排不改指纹）的 sha256。
-//
-// 规范形状与 Python 侧 content_fingerprint_of_data 对齐：键排序、紧凑分隔符、不转义非 ASCII。
-func ContentFingerprintOfData(data any) string {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(data) // 末尾带换行，去掉后与 Python 的 dumps 一致。
-	canonical := strings.TrimRight(buf.String(), "\n")
-	sum := sha256.Sum256([]byte(canonical))
-	return hex.EncodeToString(sum[:])
-}
 
-// ContentFingerprint 计算 step1 文件的内容指纹：合法 JSON 取规范化 dump 的 sha256，
-// 非 JSON 退化为原始字节 sha256；文件不存在返回 (nil, nil)。
-//
-// 只把「文件不存在」降级为 nil（→ no_step1、gate 放行）；其它读错误向上抛，避免把文件系统
-// 故障静默当成「step1 未产出」而误放行 step2。
-func ContentFingerprint(path string) (*string, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var parsed any
-	if json.Unmarshal(raw, &parsed) == nil {
-		value := ContentFingerprintOfData(parsed)
-		return &value, nil
-	}
-	sum := sha256.Sum256(raw)
-	value := hex.EncodeToString(sum[:])
-	return &value, nil
-}
 
-// FindEpisodeEntry 返回该集条目；不存在返回 nil。
-func FindEpisodeEntry(pf *domain.ProjectFile, episode int) *domain.EpisodeMeta {
-	if pf == nil {
-		return nil
-	}
-	for i := range pf.Episodes {
-		if pf.Episodes[i].Episode == episode {
-			return &pf.Episodes[i]
-		}
-	}
-	return nil
-}
 
-// StoredReview 返回该集已存的确认记录；缺失返回 nil。
-func StoredReview(pf *domain.ProjectFile, episode int) *domain.Step1Review {
-	entry := FindEpisodeEntry(pf, episode)
-	if entry == nil {
-		return nil
-	}
-	return entry.Step1Review
-}
 
 // Step2Generated 判定该集 step2 产物（生成的剧本 JSON）是否已存在——存量 grandfather 判据。
 func Step2Generated(projectDir string, pf *domain.ProjectFile, episode int) bool {
 	scriptFile := ""
-	if entry := FindEpisodeEntry(pf, episode); entry != nil {
+	if entry := service.FindEpisodeEntry(pf, episode); entry != nil {
 		scriptFile = entry.ScriptFile
 	}
 	if scriptFile == "" {
@@ -145,14 +88,14 @@ func ReviewStatus(projectDir string, pf *domain.ProjectFile, episode int) string
 	if Step1Quarantined(projectDir, pf, episode) {
 		return ReviewStatusPendingReview
 	}
-	live, err := ContentFingerprint(path)
+	live, err := service.ContentFingerprint(path)
 	if err != nil {
 		return ReviewStatusPendingReview
 	}
 	if live == nil {
 		return ReviewStatusNoStep1
 	}
-	if review := StoredReview(pf, episode); review != nil && review.Fingerprint != "" {
+	if review := service.StoredReview(pf, episode); review != nil && review.Fingerprint != "" {
 		if review.Fingerprint == *live {
 			return ReviewStatusConfirmed
 		}
@@ -175,7 +118,7 @@ func Step1QuarantinePath(projectDir string, pf *domain.ProjectFile, episode int)
 	if Step1Kind(pf) != step1KindReferenceVideo {
 		return "", false
 	}
-	return QuarantinePath(projectDir, episode, QuarantineKindStep1), true
+	return reference.QuarantinePath(projectDir, episode, reference.QuarantineKindStep1), true
 }
 
 // Step1Quarantined 判定该集 step1 是否有违约产物被隔离——gate 与 step2 的独立阻塞判据。
@@ -183,15 +126,6 @@ func Step1Quarantined(projectDir string, pf *domain.ProjectFile, episode int) bo
 	if Step1Kind(pf) != step1KindReferenceVideo {
 		return false
 	}
-	return QuarantineExists(projectDir, episode, QuarantineKindStep1)
+	return reference.QuarantineExists(projectDir, episode, reference.QuarantineKindStep1)
 }
 
-// ApplyConfirmation 就地把确认记录写入 project episodes[i].step1_review；集条目不存在返回 false。
-func ApplyConfirmation(pf *domain.ProjectFile, episode int, fingerprint, confirmedAt string) bool {
-	entry := FindEpisodeEntry(pf, episode)
-	if entry == nil {
-		return false
-	}
-	entry.Step1Review = &domain.Step1Review{Fingerprint: fingerprint, ConfirmedAt: confirmedAt}
-	return true
-}

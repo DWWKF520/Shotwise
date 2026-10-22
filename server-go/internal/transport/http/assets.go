@@ -12,11 +12,12 @@ import (
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 // AssetDeps 是资产 handler 的依赖。
 type AssetDeps struct {
-	Assets *service.AssetService
+	Assets *asset.AssetService
 	Store  *service.ProjectStore
 }
 
@@ -186,10 +187,10 @@ func deleteAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
 func abortAssetErr(c *gin.Context, kind domain.AssetKind, err error, subject string) {
 	keys := assetI18nKeys[kind]
 	var (
-		nameErr    *service.AssetNameError
-		existsErr  *service.AssetExistsError
-		fieldErr   *service.AssetFieldError
-		collision  *service.RenameFileCollisionError
+		nameErr    *asset.AssetNameError
+		existsErr  *asset.AssetExistsError
+		fieldErr   *asset.AssetFieldError
+		collision  *asset.RenameFileCollisionError
 		invalid    *service.ProjectInvalidError
 		traversal  *fs.PathTraversalError
 		statusCode int
@@ -207,9 +208,9 @@ func abortAssetErr(c *gin.Context, kind domain.AssetKind, err error, subject str
 		// 类型不匹配是调用方构造出的非法请求，文案与 Python 侧一样是不走翻译的英文原文；
 		// voice_notice_dismissed_at 过期则真实用户也会看到，须翻译。
 		switch fieldErr.Kind {
-		case service.FieldVoiceNoticeStale:
+		case asset.FieldVoiceNoticeStale:
 			statusCode, key = http.StatusUnprocessableEntity, "asset_voice_notice_dismissed_at_stale"
-		case service.FieldMustBeList:
+		case asset.FieldMustBeList:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"detail": "field '" + fieldErr.Field + "' must be a list of strings"})
 			return
 		default:

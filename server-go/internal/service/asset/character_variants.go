@@ -1,8 +1,9 @@
 // 角色变体 CRUD 与头像上传。对应 project_manager.py 的 create/update/delete_character_variant
 // 与 replace_project_character_avatar，加上 characters.py 的 upload_character_avatar。
-package service
+package asset
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,9 +15,9 @@ import (
 )
 
 // 变体域错误。传输层按类型映射状态码：
-//   - *CharacterVariantSlugExistsError → 409（Python ValueError）
+//   - *CharacterVariantSlugExistsError → 409（Python service.ValueError）
 //   - ErrVariantInvalidSlug / ErrVariantInvalidStatus / ErrVariantInvalidPath → 422
-//   - ErrAssetNotFound → 角色 404
+//   - service.ErrAssetNotFound → 角色 404
 //   - ErrVariantNotFound → 变体 404
 var (
 	ErrVariantNotFound      = errors.New("character variant not found")
@@ -42,11 +43,11 @@ const AvatarMaxBytes = 10 << 20
 
 // CharacterVariants 承载角色变体与头像操作。
 type CharacterVariants struct {
-	store *ProjectStore
+	store *service.ProjectStore
 }
 
 // NewCharacterVariants 构造服务。
-func NewCharacterVariants(store *ProjectStore) *CharacterVariants {
+func NewCharacterVariants(store *service.ProjectStore) *CharacterVariants {
 	return &CharacterVariants{store: store}
 }
 
@@ -292,7 +293,7 @@ func (s *CharacterVariants) UploadCharacterAvatar(project, name string, content 
 	relativePath := "characters/" + safeName + "_avatar_manual.png"
 	projectDir, err := s.store.Dir(project)
 	if err != nil {
-		return "", ErrAssetNotFound
+		return "", service.ErrAssetNotFound
 	}
 	target, err := fs.SafeJoin(projectDir, false, filepath.FromSlash(relativePath))
 	if err != nil {
@@ -379,17 +380,17 @@ func copyAvatarBytes(source, target string) error {
 func locateCharacter(pf *domain.ProjectFile, name string) (*domain.AssetEntry, string, error) {
 	bucket, ok := pf.BucketRef(domain.AssetCharacter)
 	if !ok {
-		return nil, "", ErrAssetNotFound
+		return nil, "", service.ErrAssetNotFound
 	}
 	if *bucket == nil {
 		*bucket = domain.AssetBucket{}
 	}
 	key, ok := (*bucket).ResolveKey(name)
 	if !ok {
-		return nil, "", ErrAssetNotFound
+		return nil, "", service.ErrAssetNotFound
 	}
 	if (*bucket)[key] == nil {
-		return nil, "", ErrAssetNotFound
+		return nil, "", service.ErrAssetNotFound
 	}
 	return (*bucket)[key], key, nil
 }
@@ -433,15 +434,15 @@ func rawVariantsResolveKey(variants map[string]any, slug string) (string, bool) 
 func (s *CharacterVariants) characterEntry(project, name string) (*domain.AssetEntry, string, error) {
 	pf, err := s.store.Get(project)
 	if err != nil {
-		return nil, "", ErrAssetNotFound
+		return nil, "", service.ErrAssetNotFound
 	}
 	bucket, ok := pf.BucketRef(domain.AssetCharacter)
 	if !ok {
-		return nil, "", ErrAssetNotFound
+		return nil, "", service.ErrAssetNotFound
 	}
 	key, ok := (*bucket).ResolveKey(name)
 	if !ok || (*bucket)[key] == nil {
-		return nil, "", ErrAssetNotFound
+		return nil, "", service.ErrAssetNotFound
 	}
 	return (*bucket)[key], key, nil
 }
@@ -458,7 +459,7 @@ func (s *CharacterVariants) validateVariantImagePath(project string, image *stri
 	}
 	dir, err := s.store.Dir(project)
 	if err != nil {
-		return nil, ErrAssetNotFound
+		return nil, service.ErrAssetNotFound
 	}
 	if _, err := fs.SafeJoin(dir, false, filepath.FromSlash(*image)); err != nil {
 		return nil, ErrVariantInvalidPath

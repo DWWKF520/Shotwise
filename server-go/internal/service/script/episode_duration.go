@@ -6,9 +6,10 @@
 //   - 「预览」是纯读，永不自施加；「应用」才写回分镜时长；
 //   - 所有写路径都在脚本锁内做修订号比对（乐观并发），过期快照一律 409 带 actual_revision，
 //     让前端拿到新基线后重算，而不是静默覆盖别人的改动。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"errors"
 	"strings"
@@ -25,7 +26,7 @@ type EpisodeDurationRevisionConflictError struct {
 
 func (e *EpisodeDurationRevisionConflictError) Error() string { return "episode duration revision is stale" }
 
-// EpisodeDurationInvalidError 对应 Python ValueError：422 episode_duration_invalid。
+// EpisodeDurationInvalidError 对应 Python service.ValueError：422 episode_duration_invalid。
 type EpisodeDurationInvalidError struct{ Detail string }
 
 func (e *EpisodeDurationInvalidError) Error() string { return e.Detail }
@@ -37,12 +38,12 @@ func (e *EpisodeDurationNotFoundError) Error() string { return "episode_duration
 
 // EpisodeDurationService 承载分集时长规划的读写。
 type EpisodeDurationService struct {
-	store *ProjectStore
-	caps  VideoCapabilityResolver
+	store *service.ProjectStore
+	caps  service.VideoCapabilityResolver
 }
 
 // NewEpisodeDurationService 构造；caps 用于解析「后端真正支持的时长档位」。
-func NewEpisodeDurationService(store *ProjectStore, caps VideoCapabilityResolver) *EpisodeDurationService {
+func NewEpisodeDurationService(store *service.ProjectStore, caps service.VideoCapabilityResolver) *EpisodeDurationService {
 	return &EpisodeDurationService{store: store, caps: caps}
 }
 
@@ -276,9 +277,9 @@ func (s *EpisodeDurationService) SetLock(
 // ---- 内部 ----
 
 // episodeResolver 构造「按集号找 script_file」的解析器；缺集/缺 script_file 都是 404。
-func episodeResolver(episode int) EpisodeScriptResolver {
+func episodeResolver(episode int) service.EpisodeScriptResolver {
 	return func(project *domain.ProjectFile) (string, error) {
-		scriptFile, err := EpisodeScriptFile(project, episode)
+		scriptFile, err := service.EpisodeScriptFile(project, episode)
 		if err != nil {
 			return "", &EpisodeDurationNotFoundError{}
 		}
@@ -292,7 +293,7 @@ func (s *EpisodeDurationService) snapshot(projectName string, episode int) (*dom
 	if err != nil {
 		return nil, nil, err
 	}
-	scriptFile, err := EpisodeScriptFile(pf, episode)
+	scriptFile, err := service.EpisodeScriptFile(pf, episode)
 	if err != nil {
 		return nil, nil, &EpisodeDurationNotFoundError{}
 	}
@@ -303,7 +304,7 @@ func (s *EpisodeDurationService) snapshot(projectName string, episode int) (*dom
 	return pf, script, nil
 }
 
-// supportedDurations 解析项目视频后端支持的时长档位；不可用按 422 处理（对应 Python ValueError）。
+// supportedDurations 解析项目视频后端支持的时长档位；不可用按 422 处理（对应 Python service.ValueError）。
 func (s *EpisodeDurationService) supportedDurations(ctx context.Context, projectName string) ([]int, error) {
 	pf, err := s.store.Get(projectName)
 	if err != nil {
@@ -312,7 +313,7 @@ func (s *EpisodeDurationService) supportedDurations(ctx context.Context, project
 	if s.caps == nil {
 		return nil, &EpisodeDurationInvalidError{Detail: "supported durations are unavailable"}
 	}
-	dctx := ResolveProjectDurationContext(
+	dctx := service.ResolveProjectDurationContext(
 		ctx, s.caps, pf, provider.VideoBucketForGenerationMode(pf.GenerationMode))
 	durations := dedupePositiveInts(dctx.SupportedDurations)
 	if len(durations) == 0 {
@@ -416,7 +417,7 @@ func projectAsMap(pf *domain.ProjectFile) map[string]any {
 }
 
 // pythonStrOf 把条目里的标识取成字符串（缺省空串），与 Python str(item.get(id_field, "")) 同口径。
-func pythonStrOf(value any) string { return pythonStrLike(value) }
+func pythonStrOf(value any) string { return service.PythonStrLike(value) }
 
 // scriptInt 取 JSON 里的整数；布尔与浮点非整数值一律视为「没有」。
 func scriptInt(value any) (int, bool) {

@@ -1,39 +1,17 @@
-package service
+package reference
+
+import "github.com/shotwise/shotwise/internal/service"
 
 // 参考生视频 unit 的 router 侧领域逻辑（对应 server/routers/reference_videos.py 的
 // 集解析、锁内读-改-写与读时派生注入）。纯函数与锁语义收敛在此，transport 只做装配。
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
-// ErrEpisodeScriptRebound 表示解析候选与锁内复核之间 episode→script 绑定被并发改动。
-//
-// 对应 Python EpisodeScriptReboundError：调用方转 409 ref_script_rebound 提示前端重试，
-// 不外泄内部绑定细节。
-var ErrEpisodeScriptRebound = errors.New("episode script binding changed")
-
-// EpisodeNotFoundError 表示目标集缺失或其未绑定剧本（404 ref_episode_not_found）。
-type EpisodeNotFoundError struct{ Episode int }
-
-func (e *EpisodeNotFoundError) Error() string { return fmt.Sprintf("episode %d not found", e.Episode) }
-
-// NotReferenceVideoModeError 表示该集剧本不在参考生视频模式（409 ref_not_reference_video_mode）。
-type NotReferenceVideoModeError struct{}
-
-func (e *NotReferenceVideoModeError) Error() string { return "episode script is not in reference-video mode" }
-
-// EpisodeScriptMissingError 表示 project.json 绑定的剧本文件缺失（404 ref_script_missing）。
-type EpisodeScriptMissingError struct{}
-
-func (e *EpisodeScriptMissingError) Error() string { return "episode script file missing" }
 
 // UnregisteredReferencesError 表示 references 引用了未登记的资产（400 ref_not_registered）。
 type UnregisteredReferencesError struct{ Missing []string }
@@ -64,8 +42,6 @@ type ReorderValidationError struct{ Kind string }
 
 func (e *ReorderValidationError) Error() string { return "unit_ids validation failed: " + e.Kind }
 
-// EpisodeScriptResolver 从 project.json 解析目标集的 script_file（在项目锁内被调用）。
-type EpisodeScriptResolver func(project *domain.ProjectFile) (string, error)
 
 // assetKindForRefType 把参考类型映射到资产种类。
 func assetKindForRefType(refType string) (domain.AssetKind, bool) {
@@ -101,15 +77,6 @@ func UnregisteredReferences(project *domain.ProjectFile, refs []domain.AdReferen
 	return missing
 }
 
-// EpisodeScriptFile 从 project.json 找目标集绑定的剧本文件名；缺失时返回 EpisodeNotFoundError。
-func EpisodeScriptFile(project *domain.ProjectFile, episode int) (string, error) {
-	for _, meta := range project.Episodes {
-		if meta.Episode == episode && meta.ScriptFile != "" {
-			return meta.ScriptFile, nil
-		}
-	}
-	return "", &EpisodeNotFoundError{Episode: episode}
-}
 
 // requireAdProject 守卫端点适用的项目类型：ad 的 unit 是 shots 的派生索引（手工增删改重排走不通），
 // narration/drama 的 unit 内容自包含（派生走不通），互斥拒绝。
@@ -128,19 +95,19 @@ func requireAdProject(project *domain.ProjectFile, required bool) error {
 //
 // 校验顺序与 Python _episode_script_resolver 一致：可选 ad 守卫 → 找集 → 参考模式 → 可选引用存在性。
 // requireAd 为 nil 时跳过 ad 守卫；refs 为 nil 时跳过引用存在性校验。
-func EpisodeScriptResolverFor(episode int, requireAd *bool, refs []domain.AdReference) EpisodeScriptResolver {
+func EpisodeScriptResolverFor(episode int, requireAd *bool, refs []domain.AdReference) service.EpisodeScriptResolver {
 	return func(project *domain.ProjectFile) (string, error) {
 		if requireAd != nil {
 			if err := requireAdProject(project, *requireAd); err != nil {
 				return "", err
 			}
 		}
-		scriptFile, err := EpisodeScriptFile(project, episode)
+		scriptFile, err := service.EpisodeScriptFile(project, episode)
 		if err != nil {
 			return "", err
 		}
 		if !project.IsReferenceVideo() {
-			return "", &NotReferenceVideoModeError{}
+			return "", &service.NotReferenceVideoModeError{}
 		}
 		if refs != nil {
 			if missing := UnregisteredReferences(project, refs); len(missing) > 0 {
@@ -149,127 +116,6 @@ func EpisodeScriptResolverFor(episode int, requireAd *bool, refs []domain.AdRefe
 		}
 		return scriptFile, nil
 	}
-}
-
-// LoadEpisodeScript 只读加载指定集的剧本（对应 _load_episode_script）。
-//
-// 返回 (project, script, script_file)；任一前置校验失败时返回对应错误，script 可能为 nil。
-func (s *ProjectStore) LoadEpisodeScript(project string, episode int) (*domain.ProjectFile, map[string]any, string, error) {
-	dir, err := s.Dir(project)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	pf, err := s.load(dir)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	scriptFile, err := EpisodeScriptFile(pf, episode)
-	if err != nil {
-		return pf, nil, "", err
-	}
-	if !pf.IsReferenceVideo() {
-		return pf, nil, scriptFile, &NotReferenceVideoModeError{}
-	}
-	script, err := s.ReadScriptJSON(project, scriptFile)
-	if err != nil {
-		return pf, nil, scriptFile, &EpisodeScriptMissingError{}
-	}
-	return pf, script, scriptFile, nil
-}
-
-// UpdateEpisodeScript 在「脚本锁 → 项目锁」顺序下解析 episode→script_file、复核绑定并做读-改-写。
-//
-// 对应 Python ProjectManager.locked_episode_script：候选解析在锁外，锁内复核绑定未变（被并发改绑
-// 时返回 ErrEpisodeScriptRebound）；mutate 抛错则跳过写盘。写盘不触发 syncEpisodeFromScript（会
-// 二次取项目锁自死锁），改在已持项目锁内联同步 project.json 集元数据。
-func (s *ProjectStore) UpdateEpisodeScript(
-	project string, resolver EpisodeScriptResolver, mutate func(script map[string]any) error,
-) error {
-	return s.updateEpisodeScript(project, resolver, mutate, true)
-}
-
-// UpdateEpisodeScriptNoValidate 与 UpdateEpisodeScript 同源，但跳过结构校验与元数据重算。
-//
-// 对应 Python `locked_episode_script(..., validate=False)`：只动 duration_seconds /
-// duration_locked 这类热路径字段时既不重算metadata（否则 updated_at 与统计被刷新，
-// 剧本修订号随之漂移），也不做「不更坏」比对。
-func (s *ProjectStore) UpdateEpisodeScriptNoValidate(
-	project string, resolver EpisodeScriptResolver, mutate func(script map[string]any) error,
-) error {
-	return s.updateEpisodeScript(project, resolver, mutate, false)
-}
-
-func (s *ProjectStore) updateEpisodeScript(
-	project string, resolver EpisodeScriptResolver, mutate func(script map[string]any) error, validate bool,
-) error {
-	dir, err := s.Dir(project)
-	if err != nil {
-		return err
-	}
-	candidateProject, err := s.load(dir)
-	if err != nil {
-		return err
-	}
-	candidate, err := resolver(candidateProject)
-	if err != nil {
-		return err
-	}
-	norm := NormalizeScriptFilename(candidate)
-	if err := validateScriptBase(norm); err != nil {
-		return err
-	}
-
-	var runErr error
-	s.locks.WithLock(project+"/scripts/"+norm, func() {
-		s.locks.WithLock(project, func() {
-			current, loadErr := s.load(dir)
-			if loadErr != nil {
-				runErr = loadErr
-				return
-			}
-			cur, resolveErr := resolver(current)
-			if resolveErr != nil {
-				runErr = resolveErr
-				return
-			}
-			if NormalizeScriptFilename(cur) != norm {
-				runErr = ErrEpisodeScriptRebound
-				return
-			}
-
-			target, joinErr := fs.SafeJoin(filepath.Join(dir, "scripts"), false, norm)
-			if joinErr != nil {
-				runErr = joinErr
-				return
-			}
-			if _, statErr := os.Stat(target); statErr != nil {
-				runErr = &EpisodeScriptMissingError{}
-				return
-			}
-			script, _, readErr := readScriptMigrated(target)
-			if readErr != nil {
-				runErr = readErr
-				return
-			}
-			before := cloneScript(script)
-			if mutateErr := mutate(script); mutateErr != nil {
-				runErr = mutateErr
-				return
-			}
-			if writeErr := s.writeScriptFile(dir, norm, script, before, validate); writeErr != nil {
-				runErr = writeErr
-				return
-			}
-			if _, isInt := scriptEpisodeNumber(script); isInt {
-				if syncErr := applyEpisodeSync(current, script, norm); syncErr != nil {
-					runErr = syncErr
-					return
-				}
-			}
-			runErr = s.touchAndWrite(dir, current)
-		})
-	})
-	return runErr
 }
 
 // AnnotateAdUnitStaleness 给对外透出的 unit 列表注入读时派生的 stale（返回浅拷贝，不落盘）。

@@ -3,9 +3,11 @@
 //
 // 只测外部可观察行为：状态流转（step1 产出 → pending → 阻塞 → 确认 → confirmed → 放行）、
 // 结构校验拒绝、基线指纹冲突、隔离草稿阻塞、迁移收编与确认平移。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service/reference"
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"errors"
@@ -52,9 +54,9 @@ func (s *stubReviewCaps) ResolveResolution(_ context.Context, _ *domain.ProjectF
 }
 
 // makeReviewProject 建测试项目：登记第 1 集与两个角色（references 派生的解析依赖资产登记）。
-func makeReviewProject(t *testing.T, mode domain.ContentMode, generationMode domain.GenerationMode) (*ProjectStore, string) {
+func makeReviewProject(t *testing.T, mode domain.ContentMode, generationMode domain.GenerationMode) (*service.ProjectStore, string) {
 	t.Helper()
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("demo", "Demo", mode, generationMode, "Anime"); err != nil {
 		t.Fatal(err)
 	}
@@ -79,9 +81,9 @@ func makeReviewProject(t *testing.T, mode domain.ContentMode, generationMode dom
 }
 
 // makeManualSplitProject 建手动预拆分场景的项目：账本为空，仅靠派生文件自愈。
-func makeManualSplitProject(t *testing.T, mode domain.ContentMode) (*ProjectStore, string) {
+func makeManualSplitProject(t *testing.T, mode domain.ContentMode) (*service.ProjectStore, string) {
 	t.Helper()
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("demo", "Demo", mode, domain.GenerationStoryboard, "Anime"); err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +488,7 @@ func TestScriptReviewRVNoStep1ThenPendingThenConfirmed(t *testing.T) {
 		t.Fatalf("step1 未产出时状态 = %s", reviewStatus(t, state))
 	}
 
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, rvStep1())
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	state, err = svc.GetState(ctx, "demo", 1)
 	if err != nil {
 		t.Fatal(err)
@@ -542,7 +544,7 @@ func TestScriptReviewRVEditingShotTextRependsAndRederivesReferences(t *testing.T
 		t.Fatal(err)
 	}
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, rvStep1())
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	if _, err := svc.Confirm(ctx, "demo", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -578,7 +580,7 @@ func TestScriptReviewRVQuarantinedStep1BlocksConfirmAndStep2(t *testing.T) {
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, rvStep1())
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	if _, err := svc.Confirm(ctx, "demo", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -590,9 +592,9 @@ func TestScriptReviewRVQuarantinedStep1BlocksConfirmAndStep2(t *testing.T) {
 		t.Fatalf("确认后状态 = %s", reviewStatus(t, state))
 	}
 
-	if _, err := WriteQuarantine(dir, 1, QuarantineKindStep1,
+	if _, err := reference.WriteQuarantine(dir, 1, reference.QuarantineKindStep1,
 		map[string]any{"units": []any{}},
-		[]DraftViolation{{Code: "empty_text", Label: "unit E1U01", Message: "坏"}},
+		[]reference.DraftViolation{{Code: "empty_text", Label: "unit E1U01", Message: "坏"}},
 		nil, nil,
 	); err != nil {
 		t.Fatal(err)
@@ -615,7 +617,7 @@ func TestScriptReviewRVQuarantinedStep1BlocksConfirmAndStep2(t *testing.T) {
 	_, err = svc.Confirm(ctx, "demo", 1)
 	requireReviewCode(t, err, ScriptReviewCodeQuarantined)
 
-	if err := ClearQuarantine(dir, 1, QuarantineKindStep1); err != nil {
+	if err := reference.ClearQuarantine(dir, 1, reference.QuarantineKindStep1); err != nil {
 		t.Fatal(err)
 	}
 	state, err = svc.GetState(ctx, "demo", 1)
@@ -647,7 +649,7 @@ func TestScriptReviewRVConfirmRejectsUnitDurationOutOfRange(t *testing.T) {
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	bad := rvStep1()
 	bad["units"].([]any)[0].(map[string]any)["duration_seconds"] = float64(9999)
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, bad)
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, bad)
 
 	_, err := svc.Confirm(ctx, "demo", 1)
 	requireReviewCode(t, err, ScriptReviewCodeInvalidContent)
@@ -669,7 +671,7 @@ func TestScriptReviewRVConfirmRederivesReferencesWhenEditedOutsideSave(t *testin
 
 	stale := rvStep1()
 	stale["units"].([]any)[0].(map[string]any)["shots"].([]any)[1].(map[string]any)["text"] = "镜头扫过 @[屋檐]。"
-	path := writeReviewStep1(t, dir, ReferenceVideoStep1Filename, stale)
+	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, stale)
 
 	confirmed, err := svc.Confirm(ctx, "demo", 1)
 	if err != nil {
@@ -795,17 +797,17 @@ func TestScriptReviewMigrationTakesSlotFromCaps(t *testing.T) {
 		},
 	}
 	svc := NewScriptReviewService(store, resolver)
-	path := writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 6, 4))
+	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 6, 4))
 
 	state, err := svc.GetState(ctx, "demo", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := intValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 12 {
+	if got := service.IntValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 12 {
 		t.Fatalf("迁移后 duration_seconds = %d，期望取档 12", got)
 	}
 	onDisk := readReviewStep1File(t, path)
-	if got := intValueOrZero(onDisk["units"].([]any)[0].(map[string]any)["duration_seconds"]); got != 12 {
+	if got := service.IntValueOrZero(onDisk["units"].([]any)[0].(map[string]any)["duration_seconds"]); got != 12 {
 		t.Fatalf("落盘 duration_seconds = %d，期望 12", got)
 	}
 }
@@ -821,20 +823,20 @@ func TestScriptReviewMigrationCustomProviderTakesSlotFromCaps(t *testing.T) {
 		},
 	}
 	svc := NewScriptReviewService(store, resolver)
-	path := writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 4, 3))
+	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 4, 3))
 
 	state, err := svc.GetState(ctx, "demo", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := intValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 10 {
+	if got := service.IntValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 10 {
 		t.Fatalf("迁移后 duration_seconds = %d，期望取档 10", got)
 	}
 	if got := state["supported_durations"].([]int); !reflect.DeepEqual(got, []int{5, 10}) {
 		t.Fatalf("supported_durations = %v，期望 [5 10]", got)
 	}
 	onDisk := readReviewStep1File(t, path)
-	if got := intValueOrZero(onDisk["units"].([]any)[0].(map[string]any)["duration_seconds"]); got != 10 {
+	if got := service.IntValueOrZero(onDisk["units"].([]any)[0].(map[string]any)["duration_seconds"]); got != 10 {
 		t.Fatalf("落盘 duration_seconds = %d，期望 10", got)
 	}
 }
@@ -850,7 +852,7 @@ func TestScriptReviewMigrationCustomProviderDirectConfirmTakesSlot(t *testing.T)
 		},
 	}
 	svc := NewScriptReviewService(store, resolver)
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 4, 3))
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 4, 3))
 
 	state, err := svc.Confirm(ctx, "demo", 1)
 	if err != nil {
@@ -859,7 +861,7 @@ func TestScriptReviewMigrationCustomProviderDirectConfirmTakesSlot(t *testing.T)
 	if reviewStatus(t, state) != ReviewStatusConfirmed {
 		t.Fatalf("直连确认后状态 = %s", reviewStatus(t, state))
 	}
-	if got := intValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 10 {
+	if got := service.IntValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 10 {
 		t.Fatalf("确认收编后 duration_seconds = %d，期望 10", got)
 	}
 }
@@ -875,7 +877,7 @@ func TestScriptReviewMigrationBuiltinFallsBackToRegistryWhenCapsUnavailable(t *t
 	}
 	resolver := &stubReviewCaps{resolveErr: errors.New("video_capabilities backend unreachable")}
 	svc := NewScriptReviewService(store, resolver)
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 4, 3))
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 4, 3))
 
 	state, err := svc.GetState(ctx, "demo", 1)
 	if err != nil {
@@ -884,7 +886,7 @@ func TestScriptReviewMigrationBuiltinFallsBackToRegistryWhenCapsUnavailable(t *t
 	if got := state["supported_durations"].([]int); !reflect.DeepEqual(got, []int{4, 6, 8}) {
 		t.Fatalf("supported_durations = %v，期望 registry 档位 [4 6 8]", got)
 	}
-	if got := intValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 8 {
+	if got := service.IntValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 8 {
 		t.Fatalf("迁移后 duration_seconds = %d，期望按 registry 档位取 8", got)
 	}
 }
@@ -893,13 +895,13 @@ func TestScriptReviewMigrationFallsBackToStructuralClamp(t *testing.T) {
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 6, 4))
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 6, 4))
 
 	state, err := svc.GetState(ctx, "demo", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := intValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 10 {
+	if got := service.IntValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 10 {
 		t.Fatalf("无档位表时应按结构区间保留 10s，得到 %d", got)
 	}
 }
@@ -908,21 +910,21 @@ func TestScriptReviewLegacyDraftMigratedOnReadWrittenBackIdempotent(t *testing.T
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	path := writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1())
+	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1())
 
 	state, err := svc.GetState(ctx, "demo", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	unit := reviewListItem(t, state, "units", 0)
-	if got := intValueOrZero(unit["duration_seconds"]); got != 8 {
+	if got := service.IntValueOrZero(unit["duration_seconds"]); got != 8 {
 		t.Fatalf("收编后 duration_seconds = %d，期望求和 8", got)
 	}
 	reviewShotsHaveNoDurationKey(t, unit)
 
 	onDisk := readReviewStep1File(t, path)
 	diskUnit := onDisk["units"].([]any)[0].(map[string]any)
-	if got := intValueOrZero(diskUnit["duration_seconds"]); got != 8 {
+	if got := service.IntValueOrZero(diskUnit["duration_seconds"]); got != 8 {
 		t.Fatalf("落盘 duration_seconds = %d", got)
 	}
 	reviewShotsHaveNoDurationKey(t, diskUnit)
@@ -947,7 +949,7 @@ func TestScriptReviewLegacyDraftCanBeConfirmedAndSaved(t *testing.T) {
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1())
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1())
 
 	confirmed, err := svc.Confirm(ctx, "demo", 1)
 	if err != nil {
@@ -972,14 +974,14 @@ func TestScriptReviewConfirmSurvivesMigrationWithoutReopening(t *testing.T) {
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	path := writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1())
+	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1())
 
-	before, err := ContentFingerprint(path)
+	before, err := service.ContentFingerprint(path)
 	if err != nil || before == nil {
 		t.Fatalf("取迁移前指纹失败: %v", err)
 	}
 	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
-		ApplyConfirmation(pf, 1, *before, "2026-01-01T00:00:00Z")
+		service.ApplyConfirmation(pf, 1, *before, "2026-01-01T00:00:00Z")
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -1002,7 +1004,7 @@ func TestScriptReviewConfirmSurvivesMigrationWithoutReopening(t *testing.T) {
 	if confirmedAt, _ := state["confirmed_at"].(string); confirmedAt != "2026-01-01T00:00:00Z" {
 		t.Fatalf("confirmed_at = %v", state["confirmed_at"])
 	}
-	if got := intValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 8 {
+	if got := service.IntValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 8 {
 		t.Fatalf("收编后 duration_seconds = %d", got)
 	}
 }
@@ -1018,14 +1020,14 @@ func TestScriptReviewConfirmReopensWhenMigrationClampsDuration(t *testing.T) {
 		},
 	}
 	svc := NewScriptReviewService(store, resolver)
-	path := writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 60, 30))
+	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 60, 30))
 
-	before, err := ContentFingerprint(path)
+	before, err := service.ContentFingerprint(path)
 	if err != nil || before == nil {
 		t.Fatalf("取迁移前指纹失败: %v", err)
 	}
 	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
-		ApplyConfirmation(pf, 1, *before, "2026-01-01T00:00:00Z")
+		service.ApplyConfirmation(pf, 1, *before, "2026-01-01T00:00:00Z")
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -1038,7 +1040,7 @@ func TestScriptReviewConfirmReopensWhenMigrationClampsDuration(t *testing.T) {
 	if reviewStatus(t, state) != ReviewStatusPendingReview {
 		t.Fatalf("clamp 改写时长后应退回待审，状态 = %s", reviewStatus(t, state))
 	}
-	if got := intValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 12 {
+	if got := service.IntValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 12 {
 		t.Fatalf("clamp 后 duration_seconds = %d，期望 12", got)
 	}
 }
@@ -1054,7 +1056,7 @@ func TestScriptReviewClampingMigrationReopensGrandfatheredEpisode(t *testing.T) 
 		},
 	}
 	svc := NewScriptReviewService(store, resolver)
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 60, 30))
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 60, 30))
 	writeReviewStep2(t, dir)
 
 	state, err := svc.GetState(ctx, "demo", 1)
@@ -1084,7 +1086,7 @@ func TestScriptReviewConfirmDirectCallConfirmsMigratedContent(t *testing.T) {
 		},
 	}
 	svc := NewScriptReviewService(store, resolver)
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 60, 30))
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 60, 30))
 
 	state, err := svc.Confirm(ctx, "demo", 1)
 	if err != nil {
@@ -1093,7 +1095,7 @@ func TestScriptReviewConfirmDirectCallConfirmsMigratedContent(t *testing.T) {
 	if reviewStatus(t, state) != ReviewStatusConfirmed {
 		t.Fatalf("直连确认后状态 = %s", reviewStatus(t, state))
 	}
-	if got := intValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 12 {
+	if got := service.IntValueOrZero(reviewListItem(t, state, "units", 0)["duration_seconds"]); got != 12 {
 		t.Fatalf("确认收编后 duration_seconds = %d，期望 12", got)
 	}
 }
@@ -1102,10 +1104,10 @@ func TestScriptReviewMigrationDoesNotConfirmUnconfirmedEpisode(t *testing.T) {
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, legacyRVStep1())
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1())
 
 	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
-		ApplyConfirmation(pf, 1, strings.Repeat("0", 64), "2026-01-01T00:00:00Z")
+		service.ApplyConfirmation(pf, 1, strings.Repeat("0", 64), "2026-01-01T00:00:00Z")
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -1145,7 +1147,7 @@ func TestScriptReviewReferenceVideoApplicable(t *testing.T) {
 
 func TestScriptReviewAdNotApplicable(t *testing.T) {
 	ctx := context.Background()
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("addemo", "Ad", domain.ContentAd, domain.GenerationStoryboard, "Anime"); err != nil {
 		t.Fatal(err)
 	}
@@ -1192,7 +1194,7 @@ func TestScriptReviewConfirmWithoutStep1Rejected(t *testing.T) {
 
 func TestScriptReviewSaveNotApplicableRejected(t *testing.T) {
 	ctx := context.Background()
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("addemo", "Ad", domain.ContentAd, domain.GenerationStoryboard, "Anime"); err != nil {
 		t.Fatal(err)
 	}
@@ -1228,7 +1230,7 @@ func TestScriptReviewSaveStaleFingerprintConflictsReferenceVideo(t *testing.T) {
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	path := writeReviewStep1(t, dir, ReferenceVideoStep1Filename, rvStep1())
+	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	state, err := svc.GetState(ctx, "demo", 1)
 	if err != nil {
 		t.Fatal(err)
@@ -1312,7 +1314,7 @@ func TestScriptReviewSaveWithoutFingerprintSkipsBaselineCheck(t *testing.T) {
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, rvStep1())
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	other := rvStep1()
 	other["units"].([]any)[0].(map[string]any)["shots"].([]any)[0].(map[string]any)["text"] = "@[阿离] 转身离开。"
 	if _, err := svc.SaveContent(ctx, "demo", 1, other, nil); err != nil {
@@ -1332,13 +1334,13 @@ func TestScriptReviewRVSaveClearsStaleStep2QuarantineOnChange(t *testing.T) {
 	ctx := context.Background()
 	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
-	writeReviewStep1(t, dir, ReferenceVideoStep1Filename, rvStep1())
+	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	// 先经一次保存把归一化形状落盘，「内容未变」的比较才有同一基准。
 	if _, err := svc.SaveContent(ctx, "demo", 1, rvStep1(), nil); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := WriteQuarantine(dir, 1, QuarantineKindStep2,
+	if _, err := reference.WriteQuarantine(dir, 1, reference.QuarantineKindStep2,
 		map[string]any{"units": []any{map[string]any{"text": "旧基底"}}}, nil, nil, nil,
 	); err != nil {
 		t.Fatal(err)
@@ -1346,7 +1348,7 @@ func TestScriptReviewRVSaveClearsStaleStep2QuarantineOnChange(t *testing.T) {
 	if _, err := svc.SaveContent(ctx, "demo", 1, rvStep1(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if !QuarantineExists(dir, 1, QuarantineKindStep2) {
+	if !reference.QuarantineExists(dir, 1, reference.QuarantineKindStep2) {
 		t.Fatal("内容未变的保存不应清 step2 隔离草稿")
 	}
 
@@ -1355,7 +1357,7 @@ func TestScriptReviewRVSaveClearsStaleStep2QuarantineOnChange(t *testing.T) {
 	if _, err := svc.SaveContent(ctx, "demo", 1, edited, nil); err != nil {
 		t.Fatal(err)
 	}
-	if QuarantineExists(dir, 1, QuarantineKindStep2) {
+	if reference.QuarantineExists(dir, 1, reference.QuarantineKindStep2) {
 		t.Fatal("内容变更的保存应清 step2 隔离草稿")
 	}
 }
@@ -1456,7 +1458,7 @@ func TestScriptReviewGetStateSelfHealsOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := FindEpisodeEntry(pf, 1)
+	entry := service.FindEpisodeEntry(pf, 1)
 	if entry == nil {
 		t.Fatal("自愈应登记第 1 集条目")
 	}
@@ -1503,7 +1505,7 @@ func TestScriptReviewSelfHealNeverAnchorsEvenWhenSourceTextMatches(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := FindEpisodeEntry(pf, 1)
+	entry := service.FindEpisodeEntry(pf, 1)
 	if entry == nil {
 		t.Fatal("自愈应登记条目")
 	}
@@ -1525,7 +1527,7 @@ func TestScriptReviewSelfHealRegistersAllOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if FindEpisodeEntry(pf, 1) == nil || FindEpisodeEntry(pf, 2) == nil {
+	if service.FindEpisodeEntry(pf, 1) == nil || service.FindEpisodeEntry(pf, 2) == nil {
 		t.Fatalf("自愈应登记全部孤儿集号: %+v", pf.Episodes)
 	}
 }
@@ -1552,7 +1554,7 @@ func TestScriptReviewSelfHealPreservesExistingLedgerEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := FindEpisodeEntry(pf, 1)
+	entry := service.FindEpisodeEntry(pf, 1)
 	if entry == nil {
 		t.Fatal("第 1 集条目应保留")
 	}
@@ -1563,7 +1565,7 @@ func TestScriptReviewSelfHealPreservesExistingLedgerEntries(t *testing.T) {
 	if entry.SourceRange == nil || *entry.SourceRange != want {
 		t.Fatalf("已登记条目的 source_range 被改写: %+v", entry.SourceRange)
 	}
-	if FindEpisodeEntry(pf, 2) == nil {
+	if service.FindEpisodeEntry(pf, 2) == nil {
 		t.Fatal("孤儿集 2 应被登记")
 	}
 }
@@ -1597,7 +1599,7 @@ func TestScriptReviewSelfHealIdempotentNoDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstEntry := FindEpisodeEntry(first, 1)
+	firstEntry := service.FindEpisodeEntry(first, 1)
 	if firstEntry == nil {
 		t.Fatal("首次自愈应登记条目")
 	}
@@ -1621,7 +1623,7 @@ func TestScriptReviewSelfHealIdempotentNoDuplicates(t *testing.T) {
 	if matches != 1 {
 		t.Fatalf("重复自愈产生 %d 条集号 1 条目", matches)
 	}
-	if entry := FindEpisodeEntry(pf, 1); entry.LedgerStatus != firstEntry.LedgerStatus {
+	if entry := service.FindEpisodeEntry(pf, 1); entry.LedgerStatus != firstEntry.LedgerStatus {
 		t.Fatalf("重复自愈改写了已登记条目: %s", entry.LedgerStatus)
 	}
 }

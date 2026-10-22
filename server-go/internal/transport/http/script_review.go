@@ -7,6 +7,7 @@ package http
 // generate_episode_script 工具执行，读时经 gate 校验阻塞到确认）。
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"errors"
 	"net/http"
 	"strconv"
@@ -20,7 +21,7 @@ import (
 // ScriptReviewDeps 是审核 gate handler 的依赖。
 type ScriptReviewDeps struct {
 	Store   *service.ProjectStore
-	Reviews *service.ScriptReviewService
+	Reviews *servicescript.ScriptReviewService
 }
 
 // RegisterScriptReview 注册审核 gate 路由；调用方负责鉴权。
@@ -51,34 +52,34 @@ func episodeFromPath(c *gin.Context) (int, bool) {
 // 在 abortReviewErr 单独处理。
 var (
 	reviewErrorStatus = map[string]int{
-		service.ScriptReviewCodeNotApplicable: http.StatusConflict,
-		service.ScriptReviewCodeNoStep1:       http.StatusConflict,
-		service.ScriptReviewCodeQuarantined:   http.StatusConflict,
-		service.ScriptReviewCodeConflict:      http.StatusConflict,
+		servicescript.ScriptReviewCodeNotApplicable: http.StatusConflict,
+		servicescript.ScriptReviewCodeNoStep1:       http.StatusConflict,
+		servicescript.ScriptReviewCodeQuarantined:   http.StatusConflict,
+		servicescript.ScriptReviewCodeConflict:      http.StatusConflict,
 	}
 	reviewErrorI18N = map[string]string{
-		service.ScriptReviewCodeNotApplicable: "script_review_not_applicable",
-		service.ScriptReviewCodeNoStep1:       "script_review_no_step1",
-		service.ScriptReviewCodeQuarantined:   "script_review_quarantined",
-		service.ScriptReviewCodeConflict:      "script_review_conflict",
+		servicescript.ScriptReviewCodeNotApplicable: "script_review_not_applicable",
+		servicescript.ScriptReviewCodeNoStep1:       "script_review_no_step1",
+		servicescript.ScriptReviewCodeQuarantined:   "script_review_quarantined",
+		servicescript.ScriptReviewCodeConflict:      "script_review_conflict",
 	}
 )
 
 // abortReviewErr 把 ScriptReviewError 写成对应的错误响应；未登记的错误码落 400
 // （对应 Python raise_review_error）。非领域错误按 500 处理。
 func abortReviewErr(c *gin.Context, err error, episode int) {
-	var reviewErr *service.ScriptReviewError
+	var reviewErr *servicescript.ScriptReviewError
 	if !errors.As(err, &reviewErr) {
 		apperr.Abort(c, apperr.Internal(err))
 		return
 	}
 	switch reviewErr.Code {
-	case service.ScriptReviewCodeInvalidContent:
+	case servicescript.ScriptReviewCodeInvalidContent:
 		apperr.Abort(c, apperr.NewText(
 			http.StatusUnprocessableEntity, "script_review_invalid_content",
 			map[string]any{"details": reviewErr.Message},
 		))
-	case service.ScriptReviewCodeEpisodeNotFound:
+	case servicescript.ScriptReviewCodeEpisodeNotFound:
 		apperr.Abort(c, apperr.NewText(
 			http.StatusNotFound, "episode_not_found", map[string]any{"episode": episode},
 		))
@@ -198,7 +199,7 @@ func getPendingAuthoring(d ScriptReviewDeps) gin.HandlerFunc {
 			apperr.Abort(c, apperr.Internal(err))
 			return
 		}
-		c.JSON(http.StatusOK, service.PendingAuthoringReportFor(dir, pf, episode).ToDict())
+		c.JSON(http.StatusOK, servicescript.PendingAuthoringReportFor(dir, pf, episode).ToDict())
 	}
 }
 

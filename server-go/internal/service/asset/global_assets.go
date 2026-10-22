@@ -2,9 +2,10 @@
 //
 // DB 与磁盘的一致性约定与 Python 侧一致:先落盘再写 DB;任何失败路径清理已落盘
 // 文件不留孤儿;覆盖写时旧文件在 DB 写入成功后才删除。
-package service
+package asset
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"errors"
 	"fmt"
@@ -24,11 +25,11 @@ import (
 // GlobalAssetService 承载 assets 表 + _global_assets/ 目录的读写。
 type GlobalAssetService struct {
 	repo  *repository.GlobalAssetRepository
-	store *ProjectStore
+	store *service.ProjectStore
 }
 
 // NewGlobalAssetService 构造全局资产库服务。
-func NewGlobalAssetService(repo *repository.GlobalAssetRepository, store *ProjectStore) *GlobalAssetService {
+func NewGlobalAssetService(repo *repository.GlobalAssetRepository, store *service.ProjectStore) *GlobalAssetService {
 	return &GlobalAssetService{repo: repo, store: store}
 }
 
@@ -556,7 +557,7 @@ func (s *GlobalAssetService) ApplyToProject(ctx context.Context, in ApplyToProje
 	switch in.ConflictPolicy {
 	case "skip", "overwrite", "rename":
 	default:
-		return result, &ValueError{Msg: "asset_invalid_conflict_policy"}
+		return result, &service.ValueError{Msg: "asset_invalid_conflict_policy"}
 	}
 	pf, err := s.store.Get(in.TargetProject)
 	if err != nil {
@@ -705,7 +706,7 @@ func (s *GlobalAssetService) ApplyToProject(ctx context.Context, in ApplyToProje
 					if plan.targetAudio != "" {
 						payload["reference_audio"] = plan.targetAudio
 						// 资产即开关：导入即等效「设置了这个声音」，过渡横幅计数须能感知。
-						payload["voice_updated_at"] = nowISO()
+						payload["voice_updated_at"] = service.NowISO()
 					}
 				}
 				if plan.targetSheet != "" {

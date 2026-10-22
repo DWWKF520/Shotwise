@@ -4,9 +4,10 @@
 // 自上次编写后变了，该条目的视觉层即与正文脱钩、须重新生成提示词。正文的「当前值」取自该变体的
 // step1 结构化中间态（drafts/episode_N/step1_*.json）；两侧按条目 id（scene_id / segment_id /
 // unit_id）对齐，只比对 step1 定稿、step2 不重写的字段（内容投影）。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 
@@ -107,9 +108,9 @@ func pendingAuthoringNotApplicable() PendingAuthoringReport {
 
 // loadJSONMapOrNone 读 JSON 文件并要求顶层为对象；文件缺失 / 损坏 / 顶层非对象 / 读失败一律
 // 返回 nil（对应 Python 的 load_json_or_none 在本模块的降级语义：只读提示路径不做 fail-loud，
-// 读失败复用 quarantine.go 的 readJSONObjectOrNone 并吞掉非缺失类错误）。
+// 读失败复用 quarantine.go 的 service.ReadJSONObjectOrNone 并吞掉非缺失类错误）。
 func loadJSONMapOrNone(path string) map[string]any {
-	data, _ := readJSONObjectOrNone(path)
+	data, _ := service.ReadJSONObjectOrNone(path)
 	return data
 }
 
@@ -170,14 +171,14 @@ func pendingAuthoringContentProjection(step1Item map[string]any, ignored map[str
 // pendingAuthoringSameContent 判定两侧内容投影是否一致：对 step1 声明的键逐一取值，规范化后比对。
 //
 // 用 step1 的键在剧本条目上取值：剧本缺某个 step1 声明过的字段时取到 nil、与 step1 的实值不等，
-// 判为不一致而非静默通过。规范化复用 ContentFingerprintOfData（键序 / 空白重排不改判定）。
+// 判为不一致而非静默通过。规范化复用 service.ContentFingerprintOfData（键序 / 空白重排不改判定）。
 func pendingAuthoringSameContent(step1Item, scriptItem map[string]any, ignored map[string]bool) bool {
 	projection := pendingAuthoringContentProjection(step1Item, ignored)
 	counterpart := make(map[string]any, len(projection))
 	for key := range projection {
 		counterpart[key] = scriptItem[key]
 	}
-	return ContentFingerprintOfData(projection) == ContentFingerprintOfData(counterpart)
+	return service.ContentFingerprintOfData(projection) == service.ContentFingerprintOfData(counterpart)
 }
 
 // pendingAuthoringCompare 按 id 对齐两侧条目，产出待编写列表。
@@ -229,7 +230,7 @@ func PendingAuthoringReportFor(projectDir string, pf *domain.ProjectFile, episod
 	}
 
 	scriptFile := ""
-	if entry := FindEpisodeEntry(pf, episode); entry != nil {
+	if entry := service.FindEpisodeEntry(pf, episode); entry != nil {
 		scriptFile = entry.ScriptFile
 	}
 	if scriptFile == "" {

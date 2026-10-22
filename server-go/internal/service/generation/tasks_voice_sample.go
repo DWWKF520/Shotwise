@@ -1,7 +1,7 @@
 // 角色试听样本任务（对应 server/services/generation_tasks.py::execute_character_voice_sample_task）：
 // 为角色参考音频候选合成一段 TTS 预览，产物满足参考音频同口径校验，confirm 端点据此提升为
 // 角色 reference_audio。
-package service
+package generation
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // 试听样本的参考音频同口径校验阈值（对应 lib/audio_utils.py 的三个常量）。
@@ -110,7 +111,7 @@ func (d *TaskDispatcher) executeVoiceSampleTask(ctx context.Context, task *repos
 		return nil, err
 	}
 
-	audioRel, err := resourceRelativePath("audio", sampleID)
+	audioRel, err := service.ResourceRelativePath("audio", sampleID)
 	if err != nil {
 		return nil, err
 	}

@@ -10,10 +10,13 @@
 // 校验通过即返回规范化后的完整内容（等价 Python 的 model_dump()）：未知顶层键被剥掉、
 // 默认值填充、utterance.speaker 空串归一为 null。落盘与指纹都取这份规范化结果，与
 // Python 侧写盘内容语义一致（键序不影响指纹，指纹按键排序的规范化 dump 计算）。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"fmt"
+
+	"github.com/shotwise/shotwise/internal/service"
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/domain"
@@ -66,7 +69,7 @@ func validateDramaSceneContent(raw any, where string) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s 必须是对象", where)
 	}
-	if err := rejectUnknownKeys(scene, dramaSceneContentAllowed, where); err != nil {
+	if err := service.RejectUnknownKeys(scene, dramaSceneContentAllowed, where); err != nil {
 		return nil, err
 	}
 	sceneID, err := step1RequireNonEmptyString(scene, "scene_id", where)
@@ -133,7 +136,7 @@ func validateUtterance(raw any, where string) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s 必须是对象", where)
 	}
-	if err := rejectUnknownKeys(item, utteranceAllowed, where); err != nil {
+	if err := service.RejectUnknownKeys(item, utteranceAllowed, where); err != nil {
 		return nil, err
 	}
 	kind, err := step1RequireString(item, "kind", where)
@@ -202,7 +205,7 @@ func validateNarrationStep1Segment(raw any, where string) (map[string]any, error
 	if !ok {
 		return nil, fmt.Errorf("%s 必须是对象", where)
 	}
-	if err := rejectUnknownKeys(segment, narrationSegmentAllowed, where); err != nil {
+	if err := service.RejectUnknownKeys(segment, narrationSegmentAllowed, where); err != nil {
 		return nil, err
 	}
 	segmentID, err := step1RequireNonEmptyString(segment, "segment_id", where)
@@ -282,7 +285,7 @@ func validateReferenceStep1Unit(raw any, where string) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s 必须是对象", where)
 	}
-	if err := rejectUnknownKeys(unit, referenceStep1UnitAllowed, where); err != nil {
+	if err := service.RejectUnknownKeys(unit, referenceStep1UnitAllowed, where); err != nil {
 		return nil, err
 	}
 	unitID, err := step1RequireNonEmptyString(unit, "unit_id", where)
@@ -339,7 +342,7 @@ func validateReferenceShot(raw any, where string) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s 必须是对象", where)
 	}
-	if err := rejectUnknownKeys(shot, referenceShotAllowed, where); err != nil {
+	if err := service.RejectUnknownKeys(shot, referenceShotAllowed, where); err != nil {
 		return nil, err
 	}
 	text, err := step1RequireString(shot, "text", where)
@@ -354,7 +357,7 @@ func validateReferenceResource(raw any, where string) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s 必须是对象", where)
 	}
-	if err := rejectUnknownKeys(resource, referenceResourceAllowed, where); err != nil {
+	if err := service.RejectUnknownKeys(resource, referenceResourceAllowed, where); err != nil {
 		return nil, err
 	}
 	refType, err := step1RequireString(resource, "type", where)
@@ -408,8 +411,8 @@ func rederiveUnitReferences(units any, project *domain.ProjectFile) {
 				parts = append(parts, text)
 			}
 		}
-		refs, _ := deriveReferencesFromText(strings.Join(parts, "\n"), project)
-		unit["references"] = renderUnitReferences(refs)
+		refs, _ := reference.DeriveReferencesFromText(strings.Join(parts, "\n"), project)
+		unit["references"] = reference.RenderUnitReferences(refs)
 	}
 }
 

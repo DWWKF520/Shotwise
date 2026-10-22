@@ -17,6 +17,8 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
+	"github.com/shotwise/shotwise/internal/service/asset"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -72,8 +74,8 @@ func newMediaFixture(t *testing.T) mediaFixture {
 	r := gin.New()
 	r.NoRoute(func(c *gin.Context) { c.JSON(http.StatusNotFound, gin.H{"detail": "Not Found"}) })
 	v1 := r.Group("/api/v1")
-	RegisterEndFrames(v1, EndFrameDeps{Store: store, EndFrame: service.NewEndFrameService(store)})
-	RegisterShotUploads(v1, ShotUploadDeps{Store: store, Uploads: service.NewShotUploadService(store)})
+	RegisterEndFrames(v1, EndFrameDeps{Store: store, EndFrame: asset.NewEndFrameService(store)})
+	RegisterShotUploads(v1, ShotUploadDeps{Store: store, Uploads: media.NewShotUploadService(store)})
 	return mediaFixture{router: r, store: store}
 }
 

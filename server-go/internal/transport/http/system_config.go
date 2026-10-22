@@ -9,12 +9,12 @@ import (
 
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/auth"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
 )
 
 // SystemConfigDeps 聚合系统配置依赖（诊断日志下载在 system.go 另有 SystemDeps）。
 type SystemConfigDeps struct {
-	Config *service.SystemConfigService
+	Config *admin.SystemConfigService
 }
 
 // systemConfigAllowedKeys 是 PATCH /system/config 的合法字段集（extra="forbid"）。
@@ -60,7 +60,7 @@ func (h *systemConfigHandlers) modelCandidates(c *gin.Context) {
 }
 
 func (h *systemConfigHandlers) version(c *gin.Context) {
-	c.JSON(http.StatusOK, service.GetVersion(c.Request.Context()))
+	c.JSON(http.StatusOK, admin.GetVersion(c.Request.Context()))
 }
 
 // patchConfig 只收已知字段（extra="forbid"）；字段集校验在原始键值表上做，
@@ -83,9 +83,9 @@ func (h *systemConfigHandlers) patchConfig(c *gin.Context) {
 		}
 		fields[key] = value
 	}
-	payload, err := h.deps.Config.PatchConfig(c.Request.Context(), service.ConfigPatchInput{Fields: fields})
+	payload, err := h.deps.Config.PatchConfig(c.Request.Context(), admin.ConfigPatchInput{Fields: fields})
 	if err != nil {
-		var invalid *service.ConfigValidationError
+		var invalid *admin.ConfigValidationError
 		if asConfigValidation(err, &invalid) {
 			apperr.Abort(c, apperr.NewText(invalid.Status, invalid.Msg, nil))
 			return
@@ -110,9 +110,9 @@ func readRawJSONBody(c *gin.Context) (map[string]json.RawMessage, error) {
 }
 
 // asConfigValidation 是 errors.As 的本地薄封装（避免 import errors 链扩散到每个分支）。
-func asConfigValidation(err error, target **service.ConfigValidationError) bool {
+func asConfigValidation(err error, target **admin.ConfigValidationError) bool {
 	for err != nil {
-		if typed, ok := err.(*service.ConfigValidationError); ok {
+		if typed, ok := err.(*admin.ConfigValidationError); ok {
 			*target = typed
 			return true
 		}

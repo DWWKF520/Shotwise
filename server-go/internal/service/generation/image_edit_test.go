@@ -1,6 +1,9 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
+	"github.com/shotwise/shotwise/internal/service/asset"
 	"context"
 	"os"
 	"path/filepath"
@@ -105,7 +108,7 @@ func TestExecuteImageEditCharacterWritesSheetAndVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("project dir: %v", err)
 	}
-	assets := NewAssetService(store)
+	assets := asset.NewAssetService(store)
 	if _, err := assets.Create(projectName, domain.AssetCharacter, "阿明", "少年", nil); err != nil {
 		t.Fatalf("create asset: %v", err)
 	}

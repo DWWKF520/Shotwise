@@ -48,6 +48,7 @@ import (
 	"github.com/shotwise/shotwise/internal/agent/tools/video"
 	"github.com/shotwise/shotwise/internal/agent/workspace"
 	"github.com/shotwise/shotwise/internal/service"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 )
 
 // 进入 checkpoint / 事件流的 Shotwise 自定义类型在此统一注册 gob 名。
@@ -264,11 +265,11 @@ type Runtime struct {
 	gridCaps     service.ImageCapabilityResolver
 	gridSplitter storyboard.GridSplitter
 	// episodeStore / episodeTextGen 为分集规划工具的依赖（WithEpisodePlanning 注入）。
-	episodeStore   service.EpisodeStore
-	episodeTextGen service.TextCompletionFactory
+	episodeStore   servicescript.EpisodeStore
+	episodeTextGen servicescript.TextCompletionFactory
 	// textGen / scriptProjects 为剧本生成类工具（说书片段拆分 / 剧本规范化等）的依赖
 	// （WithTextGenerationTools 注入）。
-	textGen        service.TextCompletionFactory
+	textGen        servicescript.TextCompletionFactory
 	scriptProjects tools.TextGenerationProjects
 	// reviewProjects 为 step1 审核确认工具的依赖（WithScriptReviewTools 注入）。
 	reviewProjects script.ScriptReviewProjects
@@ -360,7 +361,7 @@ func WithAssetRename(renamer assets.AssetRenamer) RuntimeOption {
 }
 
 // WithTextGenerationTools 注入剧本生成类工具的文本模型工厂与项目依赖；任一缺失则不注册。
-func WithTextGenerationTools(gen service.TextCompletionFactory, projects tools.TextGenerationProjects) RuntimeOption {
+func WithTextGenerationTools(gen servicescript.TextCompletionFactory, projects tools.TextGenerationProjects) RuntimeOption {
 	return func(r *Runtime) {
 		r.textGen = gen
 		r.scriptProjects = projects
@@ -375,7 +376,7 @@ func WithScriptReviewTools(projects script.ScriptReviewProjects) RuntimeOption {
 // WithReferenceTools 注入参考生视频工具链依赖；复用剧本生成类工具已注入的 textGen / scriptProjects，
 // 并确保视频能力解析器在场。未注入时参考工具不注册。
 func WithReferenceTools(
-	gen service.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
+	gen servicescript.TextCompletionFactory, projects tools.TextGenerationProjects, caps tools.VideoCapabilityReader,
 ) RuntimeOption {
 	return func(r *Runtime) {
 		if gen != nil {
@@ -433,7 +434,7 @@ func WithGridTools(
 }
 
 // WithEpisodePlanning 注入分集规划工具的账本存储与文本模型工厂；store 缺失时不注册。
-func WithEpisodePlanning(store service.EpisodeStore, gen service.TextCompletionFactory) RuntimeOption {
+func WithEpisodePlanning(store servicescript.EpisodeStore, gen servicescript.TextCompletionFactory) RuntimeOption {
 	return func(r *Runtime) {
 		r.episodeStore = store
 		r.episodeTextGen = gen

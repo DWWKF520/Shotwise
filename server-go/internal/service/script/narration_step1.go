@@ -3,14 +3,14 @@
 //
 // step1 产物落 drafts/episode_N/step1_segments.json，供 generate_episode_script（narration）
 // 透传消费：novel_text 逐字保留原文、由 step2 透传，不经 step2 的 LLM 重出。
-package service
+package script
 
 import (
-	"encoding/json"
+
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -44,7 +44,7 @@ func NarrationStep1DraftSchema() map[string]any {
 
 // ParseNarrationStep1Draft 解析 step1 拆分响应并校验顶层形状为 {segments: [...]}（非空数组）。
 func ParseNarrationStep1Draft(responseText string) ([]map[string]any, error) {
-	root, err := parseJSONObject(responseText)
+	root, err := service.ParseJSONObject(responseText)
 	if err != nil {
 		return nil, err
 	}
@@ -93,14 +93,14 @@ func ValidateNarrationSegments(segments []map[string]any, supportedDurations []i
 	}
 	var bad []int
 	for _, segment := range segments {
-		duration := intValueOrZero(segment["duration_seconds"])
+		duration := service.IntValueOrZero(segment["duration_seconds"])
 		if !allowed[duration] {
 			bad = append(bad, duration)
 		}
 	}
 	if len(bad) > 0 {
 		bad = uniqueSortedInts(bad)
-		allowedList := normalizeDurations(supportedDurations)
+		allowedList := service.NormalizeDurations(supportedDurations)
 		return fmt.Errorf("step1 拆分内容 duration_seconds 非法（不在 %v 内）: %v", allowedList, bad)
 	}
 	return nil
@@ -113,9 +113,9 @@ func ValidateNarrationAssetReferences(
 	segments []map[string]any, characters, scenes, props []string,
 ) error {
 	known := map[string]map[string]bool{
-		"characters_in_segment": stringSet(characters),
-		"scenes":                stringSet(scenes),
-		"props":                 stringSet(props),
+		"characters_in_segment": service.StringSet(characters),
+		"scenes":                service.StringSet(scenes),
+		"props":                 service.StringSet(props),
 	}
 	missing := map[string][]string{}
 	for _, segment := range segments {
@@ -166,18 +166,6 @@ func ValidateNarrationNovelTextCoverage(segments []map[string]any, novelText str
 	return nil
 }
 
-// parseJSONObject 剥离 markdown 代码栅栏后解析为 JSON 对象（顶层须为对象）。
-func parseJSONObject(responseText string) (map[string]any, error) {
-	text := stripJSONCodeFences(responseText)
-	var root map[string]any
-	if err := json.Unmarshal([]byte(text), &root); err != nil {
-		return nil, fmt.Errorf("JSON 解析失败: %w", err)
-	}
-	if root == nil {
-		return nil, fmt.Errorf("结构异常：顶层应为对象")
-	}
-	return root, nil
-}
 
 // --- 小工具 ---
 
@@ -224,29 +212,4 @@ func uniqueSortedInts(values []int) []int {
 	return out
 }
 
-func stringSet(values []string) map[string]bool {
-	out := make(map[string]bool, len(values))
-	for _, v := range values {
-		out[v] = true
-	}
-	return out
-}
 
-// intValueOrZero 取整数语义的值（JSON 数字的整数值 / 纯数字字符串），否则 0。
-func intValueOrZero(value any) int {
-	switch v := value.(type) {
-	case int:
-		return v
-	case int64:
-		return int(v)
-	case float64:
-		if v == float64(int(v)) {
-			return int(v)
-		}
-	case string:
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return n
-		}
-	}
-	return 0
-}

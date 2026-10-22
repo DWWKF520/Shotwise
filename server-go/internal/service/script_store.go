@@ -60,15 +60,15 @@ func trimScriptsPrefix(name string) string {
 // 写盘走 writeScript：结构不更坏 + 集号一致性 + metadata 重算 + 集元数据同步。
 func (s *ProjectStore) UpdateScript(project, scriptFilename string, mutate func(script map[string]any) error) error {
 	return s.WithScriptLock(project, scriptFilename, func(dir, filename string) error {
-		script, err := s.loadScriptOrNew(dir, filename)
+		script, err := s.LoadScriptOrNew(dir, filename)
 		if err != nil {
 			return err
 		}
-		before := cloneScript(script)
+		before := CloneScript(script)
 		if err := mutate(script); err != nil {
 			return err
 		}
-		return s.writeScript(project, dir, filename, script, before, true)
+		return s.WriteScript(project, dir, filename, script, before, true)
 	})
 }
 
@@ -79,14 +79,14 @@ func (s *ProjectStore) SaveScript(project, scriptFilename string, script map[str
 		if err != nil {
 			return err
 		}
-		return s.writeScript(project, dir, filename, script, before, true)
+		return s.WriteScript(project, dir, filename, script, before, true)
 	})
 }
 
 // WithScriptLock 在按剧本身份取的锁内执行 fn；fn 拿到项目目录与归一后的文件名。
 func (s *ProjectStore) WithScriptLock(project, scriptFilename string, fn func(dir, filename string) error) error {
 	filename := NormalizeScriptFilename(scriptFilename)
-	if err := validateScriptBase(filename); err != nil {
+	if err := ValidateScriptBase(filename); err != nil {
 		return err
 	}
 	dir, err := s.Dir(project)
@@ -102,7 +102,7 @@ func (s *ProjectStore) WithScriptLock(project, scriptFilename string, fn func(di
 //
 // 顺序与 Python 一致：结构守卫 → 集号一致性 → metadata 重算 → 原子写 → 集元数据同步。
 // validate 为 false 时整体豁免结构校验与 metadata 重算（资产回写热路径专用）。
-func (s *ProjectStore) writeScript(project, dir, filename string, script map[string]any, before map[string]any, validate bool) error {
+func (s *ProjectStore) WriteScript(project, dir, filename string, script map[string]any, before map[string]any, validate bool) error {
 	if err := s.writeScriptFile(dir, filename, script, before, validate); err != nil {
 		return err
 	}
@@ -330,7 +330,7 @@ func (s *ProjectStore) readScriptByFilename(project, filename string) (map[strin
 //
 // 读后就地跑时长收编迁移（对应 Python _read_script_unlocked 被锁定链复用）：迁移结果随
 // 调用方的正常写盘落盘，与外部读路径（ReadScriptJSON）「谁先跑谁定终局」。
-func (s *ProjectStore) loadScriptOrNew(dir, filename string) (map[string]any, error) {
+func (s *ProjectStore) LoadScriptOrNew(dir, filename string) (map[string]any, error) {
 	target, err := fs.SafeJoin(filepath.Join(dir, "scripts"), false, filename)
 	if err != nil {
 		return nil, err
@@ -347,7 +347,7 @@ func (s *ProjectStore) loadScriptOrNew(dir, filename string) (map[string]any, er
 }
 
 // readScriptMigrated 裸读剧本并就地跑存量迁移，返回 (剧本, 是否发生迁移)。
-func readScriptMigrated(path string) (map[string]any, bool, error) {
+func ReadScriptMigrated(path string) (map[string]any, bool, error) {
 	var script map[string]any
 	if err := fs.ReadJSON(path, &script); err != nil {
 		return nil, false, err
@@ -361,7 +361,10 @@ func readScriptMigrated(path string) (map[string]any, bool, error) {
 
 // migrateScriptInPlace 就地跑剧集脚本的时长收编迁移并记日志；返回是否发生迁移。
 func migrateScriptInPlace(script map[string]any, path string) bool {
-	migrated, warnings := MigrateScriptUnitDurations(script)
+	if MigrateScriptUnitDurationsHook == nil {
+		return false
+	}
+	migrated, warnings := MigrateScriptUnitDurationsHook(script)
 	for _, message := range warnings {
 		slog.Warn("剧本时长收编迁移",
 			"file", filepath.Base(path), "key", message.Key, "params", message.Params)
@@ -381,7 +384,7 @@ func readScriptOrNone(path string) (map[string]any, error) {
 	return script, nil
 }
 
-func cloneScript(script map[string]any) map[string]any {
+func CloneScript(script map[string]any) map[string]any {
 	out := make(map[string]any, len(script))
 	for k, v := range script {
 		out[k] = cloneScriptValue(v)
@@ -392,7 +395,7 @@ func cloneScript(script map[string]any) map[string]any {
 func cloneScriptValue(value any) any {
 	switch v := value.(type) {
 	case map[string]any:
-		return cloneScript(v)
+		return CloneScript(v)
 	case []any:
 		out := make([]any, len(v))
 		for i, item := range v {
@@ -405,7 +408,7 @@ func cloneScriptValue(value any) any {
 }
 
 // validateScriptBase 拒绝任何非纯文件名的剧本参数。
-func validateScriptBase(filename string) error {
+func ValidateScriptBase(filename string) error {
 	if filename == "" {
 		return errors.New("script 文件名不能为空")
 	}
@@ -425,3 +428,13 @@ func joinErrors(list []string) string {
 	}
 	return out
 }
+
+// MigrationWarning 是剧本时长收编迁移的告警（reference 域产出，根包仅承载类型）。
+type MigrationWarning struct {
+	Key    string
+	Params map[string]any
+}
+
+// MigrateScriptUnitDurationsHook 由 reference 包 init 注册（依赖倒置：写盘守卫
+// 触发存量迁移，根包不反向依赖 reference 域）。
+var MigrateScriptUnitDurationsHook func(script any) (bool, []MigrationWarning)

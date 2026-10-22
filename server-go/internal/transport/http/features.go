@@ -17,7 +17,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
 )
 
 // featureFlagEnvNames 是开关名 → env 变量名（与 Python _ENV_NAMES 逐条对应）。
@@ -76,7 +76,7 @@ func readFeatureFlagState(name string) featureFlagState {
 
 // FeaturesDeps 是放量诊断路由的依赖。
 type FeaturesDeps struct {
-	Plans *service.CreationPlanService
+	Plans *creative.CreationPlanService
 }
 
 // RegisterFeatures 注册放量诊断路由。

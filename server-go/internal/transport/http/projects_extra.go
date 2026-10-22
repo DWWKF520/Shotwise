@@ -5,6 +5,7 @@
 package http
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"errors"
 	"net/http"
 
@@ -16,7 +17,7 @@ import (
 // ProjectExtraDeps 是项目扩展路由的依赖。
 type ProjectExtraDeps struct {
 	Store *service.ProjectStore
-	Extra *service.ProjectExtraService
+	Extra *servicescript.ProjectExtraService
 }
 
 // RegisterProjectExtras 注册项目扩展端点。
@@ -82,7 +83,7 @@ func patchProjectOverview(d ProjectExtraDeps) gin.HandlerFunc {
 		if !decodeJSONBody(c, &body) {
 			return
 		}
-		input := service.OverviewInput{
+		input := servicescript.OverviewInput{
 			Synopsis: body.Synopsis, Genre: body.Genre, Theme: body.Theme, WorldSetting: body.WorldSetting,
 		}
 		overview, err := d.Extra.UpdateOverview(c.Param("name"), input)
@@ -216,7 +217,7 @@ func patchProjectSegment(d ProjectExtraDeps) gin.HandlerFunc {
 			return
 		}
 		segment, err := d.Extra.UpdateScriptSegment(
-			c.Param("name"), *body.ScriptFile, c.Param("segment_id"), service.SegmentPatchInput{
+			c.Param("name"), *body.ScriptFile, c.Param("segment_id"), servicescript.SegmentPatchInput{
 				DurationSeconds:     body.DurationSeconds,
 				SegmentBreak:        body.SegmentBreak,
 				ImagePrompt:         &body.ImagePrompt,
@@ -331,19 +332,19 @@ func decodeScriptUpdates(c *gin.Context) (string, map[string]any, bool) {
 func abortProjectExtraErr(c *gin.Context, err error) {
 	var valueErr *service.ValueError
 	switch {
-	case errors.Is(err, service.ErrScriptNotFound):
+	case errors.Is(err, servicescript.ErrScriptNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "script_not_found",
 			map[string]any{"name": c.Param("script_file")}))
-	case errors.Is(err, service.ErrSceneNotFound):
+	case errors.Is(err, servicescript.ErrSceneNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "scene_not_found",
 			map[string]any{"id": c.Param("scene_id")}))
-	case errors.Is(err, service.ErrShotNotFound):
+	case errors.Is(err, servicescript.ErrShotNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "shot_not_found",
 			map[string]any{"id": c.Param("shot_id")}))
-	case errors.Is(err, service.ErrSegmentNotFound):
+	case errors.Is(err, servicescript.ErrSegmentNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "segment_not_found",
 			map[string]any{"id": c.Param("segment_id")}))
-	case errors.Is(err, service.ErrEpisodeNotFound):
+	case errors.Is(err, servicescript.ErrEpisodeNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "episode_not_found",
 			map[string]any{"episode": c.Param("episode")}))
 	case errors.Is(err, service.ErrEpisodeScriptRebound):

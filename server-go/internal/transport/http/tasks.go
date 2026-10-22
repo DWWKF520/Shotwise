@@ -18,7 +18,7 @@ import (
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 )
 
 // TaskQueue 是任务路由依赖的队列能力（*queue.Queue 满足）。
@@ -98,7 +98,7 @@ func writeTaskList(c *gin.Context, d TaskDeps, params repository.ListTasksParams
 	loc := i18n.FromRequest(c.Request)
 	items := make([]map[string]any, 0, len(result.Items))
 	for _, task := range result.Items {
-		items = append(items, service.LocalizeTask(task, loc))
+		items = append(items, generation.LocalizeTask(task, loc))
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"items":     items,
@@ -186,7 +186,7 @@ func getTask(d TaskDeps) gin.HandlerFunc {
 			apperr.Abort(c, apperr.NotFound("task_not_found", map[string]any{"id": taskID}))
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"task": service.LocalizeTask(*task, i18n.FromRequest(c.Request))})
+		c.JSON(http.StatusOK, gin.H{"task": generation.LocalizeTask(*task, i18n.FromRequest(c.Request))})
 	}
 }
 
@@ -251,7 +251,7 @@ func optionalQuery(c *gin.Context, name string) *string {
 func localizeTasks(tasks []repository.TaskData, loc i18n.Locale) []map[string]any {
 	out := make([]map[string]any, 0, len(tasks))
 	for _, task := range tasks {
-		out = append(out, service.LocalizeTask(task, loc))
+		out = append(out, generation.LocalizeTask(task, loc))
 	}
 	return out
 }

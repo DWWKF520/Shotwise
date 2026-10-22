@@ -12,11 +12,12 @@ import (
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
 )
 
 // CreativeContextDeps 是创建上下文 handler 的依赖。
 type CreativeContextDeps struct {
-	Context *service.CreativeContextService
+	Context *creative.CreativeContextService
 	Store   *service.ProjectStore
 }
 
@@ -69,38 +70,38 @@ func resolveCreativeReferences(d CreativeContextDeps) gin.HandlerFunc {
 // parseCreativeContextBody 解析两个端点共用的请求体；withPlan 为 true 时
 // 校验 resolve 端点的必填 plan 字段，false 时校验 references 端点的
 // context_references min_length=1。
-func parseCreativeContextBody(c *gin.Context, withPlan bool) (service.CreativeContextRequest, bool) {
+func parseCreativeContextBody(c *gin.Context, withPlan bool) (creative.CreativeContextRequest, bool) {
 	body, ok := decodeBody(c)
 	if !ok {
-		return service.CreativeContextRequest{}, false
+		return creative.CreativeContextRequest{}, false
 	}
 	creativeBoardID, ok := requiredString(c, body, "creative_board_id")
 	if !ok {
-		return service.CreativeContextRequest{}, false
+		return creative.CreativeContextRequest{}, false
 	}
 	creationPlanID := ""
 	if withPlan {
 		creationPlanID, ok = requiredString(c, body, "creation_plan_id")
 		if !ok {
-			return service.CreativeContextRequest{}, false
+			return creative.CreativeContextRequest{}, false
 		}
 	}
 	selected, ok := parseSelectedResources(c, body)
 	if !ok {
-		return service.CreativeContextRequest{}, false
+		return creative.CreativeContextRequest{}, false
 	}
 	references, ok := parseContextReferences(c, body)
 	if !ok {
-		return service.CreativeContextRequest{}, false
+		return creative.CreativeContextRequest{}, false
 	}
 	if !withPlan && len(references) == 0 {
 		apperr.Abort(c, &apperr.Validation{Items: []apperr.ValidationItem{
 			{Loc: []string{"body", "context_references"}, Msg: "List should have at least 1 item after validation, not 0",
 				Type: "too_short"},
 		}})
-		return service.CreativeContextRequest{}, false
+		return creative.CreativeContextRequest{}, false
 	}
-	return service.CreativeContextRequest{
+	return creative.CreativeContextRequest{
 		CreativeBoardID:        creativeBoardID,
 		EpisodeID:              optionalBodyString(body, "episode_id"),
 		ShotID:                 optionalBodyString(body, "shot_id"),

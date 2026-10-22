@@ -3,9 +3,10 @@
 //
 // 渲染层（解析预览 / 三段论渲染 / 执行期组装）对声音的判定全部取自同一组入参。本模块把
 // 「谁在说话、谁绑到第几段参考音频」收敛到一处，并渲染回给 agent 的容忍类 warning 文案。
-package service
+package reference
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"sort"
 	"strings"
@@ -60,13 +61,13 @@ func (s VoiceRenderSettings) isSilent() bool {
 }
 
 // VoiceRenderSettingsFromCaps 从项目视频能力派生声音输入档，与解析预览 / 执行层同源。
-func VoiceRenderSettingsFromCaps(caps ProjectVideoCaps, project *domain.ProjectFile) VoiceRenderSettings {
+func VoiceRenderSettingsFromCaps(caps service.ProjectVideoCaps, project *domain.ProjectFile) VoiceRenderSettings {
 	settings := VoiceRenderSettings{
 		VoiceConsistency:       "soft",
 		RequestedGenerateAudio: caps.RequestedGenerateAudio,
 	}
 	if caps.Resolved {
-		settings.VoiceConsistency = deriveVoiceConsistency(caps.View, project.GenerationMode)
+		settings.VoiceConsistency = service.DeriveVoiceConsistency(caps.View, project.GenerationMode)
 		settings.MaxReferenceAudio = caps.View.Caps.MaxReferenceAudioCount
 		settings.ModelID = caps.View.ModelID
 		settings.RequiresReferenceImage = caps.View.Caps.ReferenceAudioPerImage
@@ -141,7 +142,7 @@ func deriveVoiceBindings(
 	var seen []string
 	for _, entry := range utterances {
 		speaker := domain.NormalizeAssetName(entry.speaker)
-		if speaker != "" && !containsString(seen, speaker) {
+		if speaker != "" && !service.ContainsString(seen, speaker) {
 			seen = append(seen, speaker)
 		}
 	}
@@ -219,15 +220,6 @@ func resolveEntry(bucket domain.AssetBucket, name string) *domain.AssetEntry {
 	return nil
 }
 
-// containsString 判定切片是否含某值。
-func containsString(list []string, value string) bool {
-	for _, item := range list {
-		if item == value {
-			return true
-		}
-	}
-	return false
-}
 
 // referenceVoiceWarningLines 逐 unit 派生声音绑定，取容忍类 warning 的渲染文本（去重、保持首现顺序）。
 //

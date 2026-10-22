@@ -1,6 +1,7 @@
 package video
 
 import (
+	serviceref "github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"encoding/json"
 	"os"
@@ -101,7 +102,7 @@ func TestSplitReferenceVideoUnitsTool(t *testing.T) {
 	if unit["unit_id"] != "E1U01" || unit["duration_seconds"] != float64(6) {
 		t.Fatalf("machine-derived unit fields wrong: %v", unit)
 	}
-	if service.QuarantineExists(dir, 1, service.QuarantineKindStep1) {
+	if serviceref.QuarantineExists(dir, 1, serviceref.QuarantineKindStep1) {
 		t.Fatal("quarantine should be cleared after successful split")
 	}
 }
@@ -121,7 +122,7 @@ func TestSplitReferenceVideoUnitsQuarantinesViolation(t *testing.T) {
 	if !strings.Contains(res, "已隔离到草稿") {
 		t.Fatalf("violation should quarantine: %s", res)
 	}
-	if !service.QuarantineExists(dir, 1, service.QuarantineKindStep1) {
+	if !serviceref.QuarantineExists(dir, 1, serviceref.QuarantineKindStep1) {
 		t.Fatal("quarantine should exist after violation")
 	}
 	if _, err := os.Stat(filepath.Join(service.EpisodeDraftsDir(dir, 1), service.ReferenceVideoStep1Filename)); err == nil {
@@ -150,7 +151,7 @@ func TestOpenReferenceStep1ForEditTool(t *testing.T) {
 	if !strings.Contains(res, "已取回可编辑草稿") {
 		t.Fatalf("unexpected result: %s", res)
 	}
-	draft, err := service.ReadQuarantine(dir, 1, service.QuarantineKindStep1)
+	draft, err := serviceref.ReadQuarantine(dir, 1, serviceref.QuarantineKindStep1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +165,7 @@ func TestOpenReferenceStep1ForEditTool(t *testing.T) {
 
 func TestValidateAndPromoteReferenceDraftStep1(t *testing.T) {
 	projects, dir := newReferenceProject(t)
-	if _, err := service.WriteQuarantine(dir, 1, service.QuarantineKindStep1,
+	if _, err := serviceref.WriteQuarantine(dir, 1, serviceref.QuarantineKindStep1,
 		map[string]any{"units": []any{map[string]any{
 			"duration_seconds": 6, "source_text": "他推开门。", "text": "镜头1：他推开门走进屋。",
 		}}}, nil, map[string]any{"source": nil, "base_fingerprint": nil}, nil); err != nil {
@@ -185,7 +186,7 @@ func TestValidateAndPromoteReferenceDraftStep1(t *testing.T) {
 	if _, err := os.Stat(step1); err != nil {
 		t.Fatalf("official step1 should be written: %v", err)
 	}
-	if service.QuarantineExists(dir, 1, service.QuarantineKindStep1) {
+	if serviceref.QuarantineExists(dir, 1, serviceref.QuarantineKindStep1) {
 		t.Fatal("quarantine should be cleared after promotion")
 	}
 }

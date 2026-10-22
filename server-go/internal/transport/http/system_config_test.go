@@ -14,7 +14,7 @@ import (
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/infra/db"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
 	"github.com/shotwise/shotwise/migrations"
 	"gorm.io/gorm/logger"
 )
@@ -39,7 +39,7 @@ func newSystemConfigFixture(t *testing.T) *gin.Engine {
 	// （单用户模式注入 admin 身份），让 PATCH 的管理员分支可达。
 	authService := auth.New(nil, false, nil)
 	RegisterSystemConfig(r.Group("/api/v1", authService.Middleware()), SystemConfigDeps{
-		Config: service.NewSystemConfigService(gdb, config.NewConfigService(gdb)),
+		Config: admin.NewSystemConfigService(gdb, config.NewConfigService(gdb)),
 	})
 	return r
 }

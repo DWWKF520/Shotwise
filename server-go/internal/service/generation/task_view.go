@@ -3,7 +3,7 @@
 // 存储态里 error_message 是 `[code] {params}` 信封、result.warnings 是 {key, params}
 // 条目；两者都要按请求语言渲染成自然语言。渲染只发生在响应副本上——队列层持有的
 // dict 保持语言中立，不会被某个请求的 locale 污染。
-package service
+package generation
 
 import (
 	"encoding/json"
@@ -11,6 +11,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // assetTypeParamByWarning 是 warning key → 其 params 中需替换为本地化资产类型名的字段。
@@ -37,7 +38,7 @@ func LocalizeTask(task repository.TaskData, loc i18n.Locale) map[string]any {
 		}
 	}
 	if result, ok := localized["result"].(map[string]any); ok {
-		if warnings, present := result["warnings"]; present && pyTruthy(warnings) {
+		if warnings, present := result["warnings"]; present && service.PyTruthy(warnings) {
 			rendered := make(map[string]any, len(result))
 			for k, v := range result {
 				rendered[k] = v

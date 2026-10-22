@@ -2,17 +2,15 @@
 //
 // 本服务只把持久化委托给 media_catalog，绝不改变既有的上传 / 生成 / 公开文件 URL /
 // project.json 路径契约。索引本身在 SHOTWISE_MEDIA_ASSET_INDEX 关闭时是空操作。
-package service
+package media
 
 import (
 	"path/filepath"
 	"strings"
+
+	"github.com/shotwise/shotwise/internal/service"
 )
 
-// MediaAssetNotFoundError 表示索引里没有这条媒体资产（对应 Python 的 KeyError）。
-type MediaAssetNotFoundError struct{ MediaAssetID string }
-
-func (e *MediaAssetNotFoundError) Error() string { return e.MediaAssetID }
 
 // RegisterMediaAssetParams 是 RegisterMediaAsset 的入参。
 type RegisterMediaAssetParams struct {
@@ -36,7 +34,7 @@ func RegisterMediaAsset(p RegisterMediaAssetParams) (*MediaAsset, error) {
 		return nil, nil
 	}
 	if filepath.IsAbs(p.RelativePath) || containsDotDot(p.RelativePath) {
-		return nil, &ValueError{Msg: "relative_path must stay inside the project root"}
+		return nil, &service.ValueError{Msg: "relative_path must stay inside the project root"}
 	}
 	path := filepath.Join(p.ProjectRoot, filepath.FromSlash(p.RelativePath))
 	return ProjectMediaCatalog(p.ProjectRoot).Register(catalogRegisterParams{
@@ -52,10 +50,6 @@ func RegisterMediaAsset(p RegisterMediaAssetParams) (*MediaAsset, error) {
 	})
 }
 
-// ValueError 对应 Python 的 ValueError（如非法相对路径）。
-type ValueError struct{ Msg string }
-
-func (e *ValueError) Error() string { return e.Msg }
 
 // ListProjectMediaAssetsParams 是 ListProjectMediaAssets 的过滤条件。
 type ListProjectMediaAssetsParams struct {
@@ -162,7 +156,7 @@ func GetProjectMediaAsset(projectRoot, mediaAssetID string) (map[string]any, err
 		return nil, err
 	}
 	if asset == nil {
-		return nil, &MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
+		return nil, &service.MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
 	}
 	bindings, err := catalog.BindingsFor(mediaAssetID)
 	if err != nil {
@@ -202,7 +196,7 @@ func BindProjectMediaAsset(projectRoot, projectID, mediaAssetID, bindingKind str
 	binding, err := ProjectMediaCatalog(projectRoot).Bind(mediaAssetID, projectID, bindingKind, targetID, purpose)
 	if err != nil {
 		if strings.HasPrefix(err.Error(), "unknown MediaAsset") {
-			return nil, &MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
+			return nil, &service.MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
 		}
 		return nil, err
 	}
@@ -214,7 +208,7 @@ func ArchiveProjectMediaAsset(projectRoot, mediaAssetID string, archived bool) (
 	asset, err := ProjectMediaCatalog(projectRoot).SetArchived(mediaAssetID, archived)
 	if err != nil {
 		if strings.HasPrefix(err.Error(), "unknown MediaAsset") {
-			return nil, &MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
+			return nil, &service.MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
 		}
 		return nil, err
 	}
@@ -229,7 +223,7 @@ func DeleteProjectMediaAsset(projectRoot, mediaAssetID string) (map[string]any, 
 		return nil, err
 	}
 	if asset == nil {
-		return nil, &MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
+		return nil, &service.MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
 	}
 	legacyReferences, inspectionErrors := legacyMediaAssetReferences(projectRoot, asset.PhysicalPath)
 	if len(inspectionErrors) > 0 {
@@ -249,7 +243,7 @@ func DeleteProjectMediaAsset(projectRoot, mediaAssetID string) (map[string]any, 
 	deleted, err := catalog.Delete(mediaAssetID)
 	if err != nil {
 		if strings.HasPrefix(err.Error(), "unknown MediaAsset") {
-			return nil, &MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
+			return nil, &service.MediaAssetNotFoundError{MediaAssetID: mediaAssetID}
 		}
 		return nil, err
 	}
@@ -258,4 +252,48 @@ func DeleteProjectMediaAsset(projectRoot, mediaAssetID string) (map[string]any, 
 		"media_asset_id": deleted.ID,
 		"physical_path":  deleted.PhysicalPath,
 	}, nil
+}
+
+func init() {
+	service.GetProjectMediaAssetHook = GetProjectMediaAsset
+	service.RegisterMediaAssetHook = func(p service.RegisterMediaAssetHookParams) (*service.RegisteredMediaAsset, error) {
+		asset, err := RegisterMediaAsset(RegisterMediaAssetParams{
+			ProjectID:       p.ProjectID,
+			ProjectRoot:     p.ProjectRoot,
+			RelativePath:    p.RelativePath,
+			Origin:          p.Origin,
+			WorkflowRunID:   p.WorkflowRunID,
+			WorkflowNodeKey: p.WorkflowNodeKey,
+			ProviderID:      p.ProviderID,
+			ModelID:         p.ModelID,
+			PromptSnapshot:  p.PromptSnapshot,
+			OriginalName:    p.OriginalName,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &service.RegisteredMediaAsset{
+			ID:           asset.ID,
+			Kind:         string(asset.Kind),
+			OriginalName: asset.OriginalName,
+			PhysicalPath: asset.PhysicalPath,
+			MimeType:     derefS(asset.MimeType),
+			Width:        derefInt(asset.Width),
+			Height:       derefInt(asset.Height),
+		}, nil
+	}
+}
+
+func derefS(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func derefInt(v *int) int {
+	if v == nil {
+		return 0
+	}
+	return *v
 }

@@ -1,4 +1,6 @@
-package service
+package media
+
+import "github.com/shotwise/shotwise/internal/service"
 
 // 不可变 AssemblyPlanRevision 的剪映兼容草稿包导出（对应
 // server/services/jianying_assembly_export.py）。
@@ -46,11 +48,11 @@ type JianyingExportBundle struct {
 // JianyingExportService 承载剪映草稿导出。
 type JianyingExportService struct {
 	repo  *repository.AssemblyPlanRepo
-	store *ProjectStore
+	store *service.ProjectStore
 }
 
 // NewJianyingExportService 构造服务；store 用于解析项目根目录。
-func NewJianyingExportService(gdb *gorm.DB, store *ProjectStore) *JianyingExportService {
+func NewJianyingExportService(gdb *gorm.DB, store *service.ProjectStore) *JianyingExportService {
 	return &JianyingExportService{repo: repository.NewAssemblyPlanRepo(gdb), store: store}
 }
 

@@ -26,8 +26,8 @@ var (
 	// ErrInvalidResourceID 表示 resource_id 拼出的路径逃出了项目目录。
 	ErrInvalidResourceID = errors.New("invalid_resource_id")
 
-	// errResourceMissingInScript 是「该集剧本不引用此资源」的哨兵：跨集同步属正常跳过。
-	errResourceMissingInScript = errors.New("resource_not_in_script")
+	// ErrResourceMissingInScript 是「该集剧本不引用此资源」的哨兵：跨集同步属正常跳过。
+	ErrResourceMissingInScript = errors.New("resource_not_in_script")
 )
 
 // restorableResourceTypes 是经 API 面可还原的资源类型。路径形状委托 resourcePatterns，
@@ -96,7 +96,7 @@ func (s *VersionService) Restore(
 	if err != nil {
 		return nil, err
 	}
-	relative, err := resourceRelativePath(resourceType, resourceID)
+	relative, err := ResourceRelativePath(resourceType, resourceID)
 	if err != nil {
 		return nil, ErrUnsupportedResourceType
 	}
@@ -197,20 +197,20 @@ func (s *VersionService) updateAssetSheet(kind domain.AssetKind, projectName, na
 	err := s.store.Update(projectName, func(pf *domain.ProjectFile) error {
 		bucket, ok := pf.BucketRef(kind)
 		if !ok || bucket == nil {
-			return errResourceMissingInScript
+			return ErrResourceMissingInScript
 		}
 		key, ok := bucket.ResolveKey(name)
 		if !ok {
-			return errResourceMissingInScript
+			return ErrResourceMissingInScript
 		}
 		entry := (*bucket)[key]
 		if entry == nil {
-			return errResourceMissingInScript
+			return ErrResourceMissingInScript
 		}
 		entry.SetString(spec.SheetKey, sheetPath)
 		return nil
 	})
-	if err != nil && !errors.Is(err, errResourceMissingInScript) {
+	if err != nil && !errors.Is(err, ErrResourceMissingInScript) {
 		slog.Warn("还原后同步资产表字段失败", "project", projectName, "asset", name, "err", err)
 	}
 }
@@ -233,7 +233,7 @@ func (s *VersionService) syncStoryboardMetadata(projectName, sceneID, relative s
 			s.setGeneratedAssets(entry, map[string]any{"storyboard_image": relative}, nil)
 			return nil
 		}
-		return errResourceMissingInScript
+		return ErrResourceMissingInScript
 	})
 }
 
@@ -258,7 +258,7 @@ func (s *VersionService) syncVideoMetadata(projectName, sceneID, relative string
 				[]string{"video_uri", "video_thumbnail"})
 			return nil
 		}
-		return errResourceMissingInScript
+		return ErrResourceMissingInScript
 	})
 }
 
@@ -269,8 +269,8 @@ func (s *VersionService) syncReferenceVideoMetadata(
 ) {
 	s.syncScriptsBestEffort(projectName, func(script map[string]any) error {
 		// 该集脚本不含此 unit 时 applyUnitVideoAssets 返回错误，按正常跳过处理。
-		if _, err := applyUnitVideoAssets(script, unitID, "", "", generatedAt, signatureValue, signature); err != nil {
-			return errResourceMissingInScript
+		if _, err := ApplyUnitVideoAssetsHook(script, unitID, "", "", generatedAt, SignatureValue, signature); err != nil {
+			return ErrResourceMissingInScript
 		}
 		return nil
 	})
@@ -309,7 +309,7 @@ func (s *VersionService) syncScriptsBestEffort(projectName string, apply func(sc
 			continue
 		}
 		err := s.store.UpdateScript(projectName, entry.Name(), apply)
-		if err == nil || errors.Is(err, errResourceMissingInScript) {
+		if err == nil || errors.Is(err, ErrResourceMissingInScript) {
 			continue
 		}
 		slog.Warn("还原后跨集同步元数据跳过", "project", projectName, "script", entry.Name(), "err", err)

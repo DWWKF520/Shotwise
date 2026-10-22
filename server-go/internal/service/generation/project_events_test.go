@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -14,9 +16,9 @@ import (
 )
 
 // newProjectEventsFixture 建一个真实落盘的项目目录，返回 store 与项目名。
-func newProjectEventsFixture(t *testing.T) (*ProjectStore, string) {
+func newProjectEventsFixture(t *testing.T) (*service.ProjectStore, string) {
 	t.Helper()
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -125,7 +127,7 @@ func TestComputeAffectedFingerprintsGridCells(t *testing.T) {
 	cellRel := "storyboards/scene_E1S02.png"
 	escapeRel := "../outside.png"
 	absRel := filepath.Join(t.TempDir(), "abs.png")
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +165,7 @@ func TestEmitGenerationSuccessBatchPublishesWorkerChange(t *testing.T) {
 		t.Fatalf("write script: %v", err)
 	}
 
-	hub := NewEventHub()
+	hub := service.NewEventHub()
 	ch, cancel := hub.Subscribe(projectName)
 	defer cancel()
 
@@ -207,7 +209,7 @@ func TestEmitGenerationSuccessBatchPublishesWorkerChange(t *testing.T) {
 
 func TestEmitGenerationSuccessBatchReferenceVideoNoun(t *testing.T) {
 	store, projectName := newProjectEventsFixture(t)
-	hub := NewEventHub()
+	hub := service.NewEventHub()
 	ch, cancel := hub.Subscribe(projectName)
 	defer cancel()
 
@@ -228,7 +230,7 @@ func TestEmitGenerationSuccessBatchReferenceVideoNoun(t *testing.T) {
 
 func TestEmitGenerationSuccessBatchAssetSpecDerived(t *testing.T) {
 	store, projectName := newProjectEventsFixture(t)
-	hub := NewEventHub()
+	hub := service.NewEventHub()
 	ch, cancel := hub.Subscribe(projectName)
 	defer cancel()
 
@@ -249,7 +251,7 @@ func TestEmitGenerationSuccessBatchAssetSpecDerived(t *testing.T) {
 
 func TestEmitGenerationSuccessBatchUnknownTypeIsSilent(t *testing.T) {
 	store, projectName := newProjectEventsFixture(t)
-	hub := NewEventHub()
+	hub := service.NewEventHub()
 	ch, cancel := hub.Subscribe(projectName)
 	defer cancel()
 
@@ -291,7 +293,7 @@ func TestTerminalEmitterSkipsFailuresAndEmitsSuccess(t *testing.T) {
 		t.Fatalf("enqueue: %v", err)
 	}
 
-	hub := NewEventHub()
+	hub := service.NewEventHub()
 	ch, cancel := hub.Subscribe(projectName)
 	defer cancel()
 	emitter := NewTerminalEmitter(hub, store, gdb)
@@ -316,20 +318,20 @@ func TestTerminalEmitterSkipsFailuresAndEmitsSuccess(t *testing.T) {
 	}
 }
 
-// readChangeBatch 从 hub 的 SSE 帧里解出 ChangeBatch。
-func readChangeBatch(t *testing.T, ch <-chan []byte) ChangeBatch {
+// readChangeBatch 从 hub 的 SSE 帧里解出 service.ChangeBatch。
+func readChangeBatch(t *testing.T, ch <-chan []byte) service.ChangeBatch {
 	t.Helper()
 	select {
 	case frame := <-ch:
 		trimmed := strings.TrimPrefix(string(frame), "event: changes\ndata: ")
 		trimmed = strings.TrimSuffix(trimmed, "\n\n")
-		var batch ChangeBatch
+		var batch service.ChangeBatch
 		if err := json.Unmarshal([]byte(trimmed), &batch); err != nil {
 			t.Fatalf("decode batch frame %q: %v", frame, err)
 		}
 		return batch
 	case <-time.After(time.Second):
 		t.Fatal("no change event broadcast")
-		return ChangeBatch{}
+		return service.ChangeBatch{}
 	}
 }

@@ -18,12 +18,12 @@ import (
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
 )
 
 // WorkflowDeps 是工作流 handler 的依赖。
 type WorkflowDeps struct {
-	Workflows *service.WorkflowService
+	Workflows *creative.WorkflowService
 }
 
 // RegisterWorkflows 注册工作流路由。
@@ -352,8 +352,8 @@ func workflowQueryInt(c *gin.Context, name string, def, min, max int) (int, bool
 // abortWorkflowErr 把工作流领域错误映射成统一 {"detail": ...} 信封。
 func abortWorkflowErr(c *gin.Context, err error) {
 	var (
-		notFound   *service.WorkflowNotFoundError
-		conflict   *service.WorkflowConflictError
+		notFound   *creative.WorkflowNotFoundError
+		conflict   *creative.WorkflowConflictError
 		validation *domain.WorkflowValidationError
 	)
 	switch {
@@ -389,7 +389,7 @@ func createWorkflow(d WorkflowDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := d.Workflows.CreateDefinition(c.Request.Context(), service.WorkflowDefinitionParams{
+		result, err := d.Workflows.CreateDefinition(c.Request.Context(), creative.WorkflowDefinitionParams{
 			WorkspaceID: workspaceID, ProjectID: projectID, Name: name, ActorID: currentUserID(c),
 		})
 		if err != nil {
@@ -484,7 +484,7 @@ func createRevision(d WorkflowDeps) gin.HandlerFunc {
 		if req.InputSchema != nil {
 			inputSchema = req.InputSchema
 		}
-		result, err := d.Workflows.CreateRevision(c.Request.Context(), service.WorkflowRevisionParams{
+		result, err := d.Workflows.CreateRevision(c.Request.Context(), creative.WorkflowRevisionParams{
 			DefinitionID:   c.Param("definition_id"),
 			Nodes:          nodes,
 			Edges:          edges,
@@ -585,7 +585,7 @@ func planRun(d WorkflowDeps) gin.HandlerFunc {
 		if inputSnapshot == nil {
 			inputSnapshot = map[string]any{}
 		}
-		result, err := d.Workflows.PlanRun(c.Request.Context(), service.WorkflowPlanRunParams{
+		result, err := d.Workflows.PlanRun(c.Request.Context(), creative.WorkflowPlanRunParams{
 			RevisionID:       c.Param("revision_id"),
 			WorkspaceID:      workspaceID,
 			ProjectID:        projectID,
@@ -708,7 +708,7 @@ func listWorkflowTemplates(d WorkflowDeps) gin.HandlerFunc {
 				return
 			}
 		}
-		builtin := service.ListBuiltinTemplates()
+		builtin := creative.ListBuiltinTemplates()
 		builtinItems, _ := builtin["items"].([]any)
 		marketItems, _ := marketplace["items"].([]any)
 		items := make([]any, 0, len(builtinItems)+len(marketItems))
@@ -757,52 +757,52 @@ func updateWorkflowTemplate(d WorkflowDeps) gin.HandlerFunc {
 	}
 }
 
-func bindWorkflowTemplateDraft(c *gin.Context) (service.WorkflowTemplateParams, bool) {
+func bindWorkflowTemplateDraft(c *gin.Context) (creative.WorkflowTemplateParams, bool) {
 	var req workflowTemplateDraftRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		abortBodyBind(c, err)
-		return service.WorkflowTemplateParams{}, false
+		return creative.WorkflowTemplateParams{}, false
 	}
 	name, ok := requiredWorkflowString(c, req.Name, "name", 200)
 	if !ok {
-		return service.WorkflowTemplateParams{}, false
+		return creative.WorkflowTemplateParams{}, false
 	}
 	description := ""
 	if req.Description != nil {
 		description, ok = workflowString(c, *req.Description, "description", 0, 5000)
 		if !ok {
-			return service.WorkflowTemplateParams{}, false
+			return creative.WorkflowTemplateParams{}, false
 		}
 	}
 	templateType, ok := requiredWorkflowString(c, req.TemplateType, "template_type", 32)
 	if !ok {
-		return service.WorkflowTemplateParams{}, false
+		return creative.WorkflowTemplateParams{}, false
 	}
 	if !workflowTemplateTypes[templateType] {
 		abortWorkflowField(c, "template_type", "string_pattern_mismatch")
-		return service.WorkflowTemplateParams{}, false
+		return creative.WorkflowTemplateParams{}, false
 	}
 	if len(req.Nodes) == 0 {
 		abortWorkflowField(c, "nodes", "too_short")
-		return service.WorkflowTemplateParams{}, false
+		return creative.WorkflowTemplateParams{}, false
 	}
 	if len(req.Nodes) > 1000 || len(req.Edges) > 5000 {
 		abortWorkflowField(c, "nodes", "too_long")
-		return service.WorkflowTemplateParams{}, false
+		return creative.WorkflowTemplateParams{}, false
 	}
 	nodes, ok := decodeWorkflowNodes(c, req.Nodes)
 	if !ok {
-		return service.WorkflowTemplateParams{}, false
+		return creative.WorkflowTemplateParams{}, false
 	}
 	edges, ok := decodeWorkflowEdges(c, req.Edges)
 	if !ok {
-		return service.WorkflowTemplateParams{}, false
+		return creative.WorkflowTemplateParams{}, false
 	}
 	contentMode := "drama"
 	if req.ContentMode != nil {
 		if !domain.WorkflowContentModes[*req.ContentMode] {
 			abortWorkflowField(c, "content_mode", "string_pattern_mismatch")
-			return service.WorkflowTemplateParams{}, false
+			return creative.WorkflowTemplateParams{}, false
 		}
 		contentMode = *req.ContentMode
 	}
@@ -810,20 +810,20 @@ func bindWorkflowTemplateDraft(c *gin.Context) (service.WorkflowTemplateParams, 
 	if req.GenerationMode != nil {
 		if !domain.WorkflowGenerationModes[*req.GenerationMode] {
 			abortWorkflowField(c, "generation_mode", "string_pattern_mismatch")
-			return service.WorkflowTemplateParams{}, false
+			return creative.WorkflowTemplateParams{}, false
 		}
 		generationMode = *req.GenerationMode
 	}
 	if req.CoverRef != nil {
 		if _, ok := workflowString(c, *req.CoverRef, "cover_ref", 0, 500); !ok {
-			return service.WorkflowTemplateParams{}, false
+			return creative.WorkflowTemplateParams{}, false
 		}
 	}
 	contract := req.Contract
 	if contract == nil {
 		contract = map[string]any{}
 	}
-	return service.WorkflowTemplateParams{
+	return creative.WorkflowTemplateParams{
 		Name:           name,
 		Description:    description,
 		TemplateType:   templateType,
@@ -938,7 +938,7 @@ func deriveWorkflowTemplate(d WorkflowDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := d.Workflows.DeriveTemplate(c.Request.Context(), service.DeriveTemplateParams{
+		result, err := d.Workflows.DeriveTemplate(c.Request.Context(), creative.DeriveTemplateParams{
 			TemplateID:  c.Param("template_id"),
 			WorkspaceID: workspaceID,
 			ProjectID:   projectID,
@@ -972,7 +972,7 @@ func reviewWorkflowTemplate(d WorkflowDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := d.Workflows.ReviewTemplate(c.Request.Context(), service.ReviewTemplateParams{
+		result, err := d.Workflows.ReviewTemplate(c.Request.Context(), creative.ReviewTemplateParams{
 			TemplateID: c.Param("template_id"),
 			ReviewerID: currentUserID(c),
 			Decision:   decision,
@@ -1326,7 +1326,7 @@ func importWorkflow(d WorkflowDeps) gin.HandlerFunc {
 		if req.InputSchema != nil {
 			inputSchema = req.InputSchema
 		}
-		result, err := d.Workflows.ImportDefinition(c.Request.Context(), service.WorkflowImportParams{
+		result, err := d.Workflows.ImportDefinition(c.Request.Context(), creative.WorkflowImportParams{
 			WorkspaceID:    workspaceID,
 			ProjectID:      c.Param("name"),
 			Name:           name,

@@ -2,8 +2,8 @@
 //
 // resource_id 即 grid_id。步骤：加载记录 → 置 generating → 收集参考图 → 生成联合图
 // （按资源类型 "grids" 记账与登记版本）→ 置 completed。只产出联合图，不触碰任何分镜格；
-// 落格由独立的切分操作（GridService.ApplySplit）显式执行。
-package service
+// 落格由独立的切分操作（service.GridService.ApplySplit）显式执行。
+package generation
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -44,7 +45,7 @@ func (d *TaskDispatcher) executeGrid(ctx context.Context, task *repository.TaskD
 	if err != nil {
 		return nil, err
 	}
-	manager, err := NewGridManager(projectDir)
+	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func (d *TaskDispatcher) executeGrid(ctx context.Context, task *repository.TaskD
 	}
 	aspectRatio := payloadString(task.Payload, "grid_aspect_ratio")
 	if aspectRatio == "" {
-		aspectRatio = aspectRatioFor(pf, "storyboards")
+		aspectRatio = service.AspectRatioFor(pf, "storyboards")
 	}
 
 	// 回填 grid metadata：创建/重建时无法预知 needs_i2i，由此处补齐。
@@ -109,12 +110,12 @@ func (d *TaskDispatcher) executeGrid(ctx context.Context, task *repository.TaskD
 	}
 
 	// 保底档与档位门控取自同一常量，避免门控按 2K 判定、渲染却按别的档位下发。
-	imageSize := resolveImageResolutionFor(ctx, d.images.resolver, pf, task.Payload, capability)
+	imageSize := service.ResolveImageResolutionFor(ctx, d.images.resolver, pf, task.Payload, capability)
 	if imageSize == "" {
 		imageSize = domain.GRIDFallbackResolution
 	}
 
-	outRel, err := resourceRelativePath("grids", task.ResourceID)
+	outRel, err := service.ResourceRelativePath("grids", task.ResourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +124,7 @@ func (d *TaskDispatcher) executeGrid(ctx context.Context, task *repository.TaskD
 		return nil, fmt.Errorf("非法资源 ID: %s", task.ResourceID)
 	}
 	// 旧联合图若已存在（重生成路径）先补登版本，否则重生成会原地覆盖、历史内容不可回溯。
-	versions := NewVersions(projectDir)
+	versions := service.NewVersions(projectDir)
 	if _, err := versions.EnsureCurrentTracked("grids", task.ResourceID, promptText, outPath, map[string]any{
 		"aspect_ratio": aspectRatio,
 	}); err != nil {
@@ -232,7 +233,7 @@ func collectGridReferenceImages(
 			if group.field == "" {
 				continue
 			}
-			names := stringList(entry[group.field])
+			names := service.StringList(entry[group.field])
 			for _, name := range names {
 				if len(refs) >= gridMaxReferenceImages {
 					break

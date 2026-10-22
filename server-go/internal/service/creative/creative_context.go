@@ -1,4 +1,6 @@
-package service
+package creative
+
+import "github.com/shotwise/shotwise/internal/service"
 
 // 创意板创建上下文的持久化装配（对应 server/routers/creative_context.py 的
 // _load_persisted_context：从 DB 加载 board / plan / run 并组装 payload，
@@ -17,12 +19,12 @@ import (
 // CreativeContextService 承载创建上下文解析的持久化装配。
 type CreativeContextService struct {
 	boards *repository.CreativeBoardRepo
-	store  *ProjectStore
+	store  *service.ProjectStore
 	db     *gorm.DB
 }
 
 // NewCreativeContextService 构造服务。
-func NewCreativeContextService(gdb *gorm.DB, store *ProjectStore) *CreativeContextService {
+func NewCreativeContextService(gdb *gorm.DB, store *service.ProjectStore) *CreativeContextService {
 	return &CreativeContextService{boards: repository.NewCreativeBoardRepo(gdb), store: store, db: gdb}
 }
 
@@ -95,7 +97,7 @@ func (s *CreativeContextService) ResolveCreationContext(
 	})
 }
 
-// ResolveContextReferences 在 Creation Plan 存在之前解析自然语言引用
+// ResolveContextReferences 在 Creation service.Plan 存在之前解析自然语言引用
 // （对应 resolve_references 端点）。
 func (s *CreativeContextService) ResolveContextReferences(
 	ctx context.Context, projectID, userID string, req CreativeContextRequest,

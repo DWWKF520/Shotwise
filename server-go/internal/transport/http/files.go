@@ -9,6 +9,7 @@
 package http
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"errors"
 	"io"
 	"net/http"
@@ -25,8 +26,8 @@ import (
 // FilesDeps 是文件管理路由的依赖。
 type FilesDeps struct {
 	Store  *service.ProjectStore
-	Files  *service.FileService
-	Review *service.ScriptReviewService
+	Files  *servicescript.FileService
+	Review *servicescript.ScriptReviewService
 }
 
 // RegisterPublicFiles 注册公开静态文件端点（无鉴权，前端 <img>/<video> 直发）。

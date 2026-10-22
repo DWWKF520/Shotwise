@@ -11,7 +11,7 @@ import (
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
 	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 )
 
 
@@ -21,7 +21,7 @@ type planEpisodesIn struct {
 
 // NewPlanEpisodesTool 构造 plan_episodes。
 func NewPlanEpisodesTool(
-	project string, store service.EpisodeStore, gen service.TextCompletionFactory,
+	project string, store servicescript.EpisodeStore, gen servicescript.TextCompletionFactory,
 ) (tool.InvokableTool, error) {
 	return toolutils.InferTool("plan_episodes",
 		"分集规划：从账本 planning_cursor 起读一个源文窗口，调用项目配置的文本模型一次规划出"+
@@ -56,7 +56,7 @@ func NewPlanEpisodesTool(
 			if err != nil {
 				return tools.DenyEnvelope("❌ 分集规划失败：" + err.Error()), nil
 			}
-			planner, err := service.NewEpisodePlanner(store, project, generator)
+			planner, err := servicescript.NewEpisodePlanner(store, project, generator)
 			if err != nil {
 				return tools.DenyEnvelope("❌ 分集规划失败：" + err.Error()), nil
 			}
@@ -74,7 +74,7 @@ func NewPlanEpisodesTool(
 }
 
 // formatPlanSummary 渲染账本摘要：每集标题 + 钩子 + 体量（阅读单位）。
-func formatPlanSummary(result *service.PlanResult) string {
+func formatPlanSummary(result *servicescript.PlanResult) string {
 	lines := []string{fmt.Sprintf("✅ 已规划 %d 集：", len(result.Episodes))}
 	for _, ep := range result.Episodes {
 		statusNote := ""
@@ -101,7 +101,7 @@ func formatPlanSummary(result *service.PlanResult) string {
 }
 
 // renderLedgerStats 渲染全局核对材料。
-func renderLedgerStats(stats *service.LedgerStats) []string {
+func renderLedgerStats(stats *servicescript.LedgerStats) []string {
 	if stats == nil {
 		return nil
 	}
@@ -129,7 +129,7 @@ type resetEpisodePlanningIn struct {
 }
 
 // NewResetEpisodePlanningTool 构造 reset_episode_planning。
-func NewResetEpisodePlanningTool(project string, store service.EpisodeStore) (tool.InvokableTool, error) {
+func NewResetEpisodePlanningTool(project string, store servicescript.EpisodeStore) (tool.InvokableTool, error) {
 	return toolutils.InferTool("reset_episode_planning",
 		"重置分集规划：把账本退回未规划状态的逃生口，不调用文本模型，不受供应商配置影响。"+
 			"from_episode=1 是全量重置（清空整个账本与 planning_cursor），源文被替换或删除重建、"+
@@ -151,7 +151,7 @@ func NewResetEpisodePlanningTool(project string, store service.EpisodeStore) (to
 				return tools.DenyEnvelope("episode planning not configured"), nil
 			}
 			fromEpisode := *in.FromEpisode
-			result, confirmation, err := service.ResetEpisodePlanning(store, project, fromEpisode, in.ConfirmConsumed)
+			result, confirmation, err := servicescript.ResetEpisodePlanning(store, project, fromEpisode, in.ConfirmConsumed)
 			if err != nil {
 				return tools.DenyEnvelope("❌ 分集规划重置失败：" + err.Error()), nil
 			}

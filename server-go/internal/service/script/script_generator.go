@@ -5,9 +5,11 @@
 //
 // 迁移边界（fail loud，不静默降级）：ad（brief + 产品信息 + 审定配比表）与 reference_video
 // （video_unit 拆分 + 保结构合并）两条路径尚未迁移，Generate / BuildPrompt 显式报错。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,12 +23,12 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 )
 
-// ScriptGenStore 是剧本生成器对项目与剧本的读写依赖（*ProjectStore 满足）。
+// ScriptGenStore 是剧本生成器对项目与剧本的读写依赖（*service.ProjectStore 满足）。
 type ScriptGenStore interface {
 	Get(name string) (*domain.ProjectFile, error)
 	Dir(name string) (string, error)
 	SaveScript(project, scriptFilename string, script map[string]any) error
-	// Update 供 step1 存量迁移在项目锁内平移 / 失效审阅确认记录（*ProjectStore 的同名方法）。
+	// service.Update 供 step1 存量迁移在项目锁内平移 / 失效审阅确认记录（*service.ProjectStore 的同名方法）。
 	Update(name string, mutate func(*domain.ProjectFile) error) error
 }
 
@@ -59,7 +61,7 @@ func NewScriptGenerator(
 	}
 	g := &ScriptGenerator{
 		store: store, projectName: projectName, dir: dir, pf: pf,
-		gen: gen, supportedDurs: normalizeDurations(supportedDurations),
+		gen: gen, supportedDurs: service.NormalizeDurations(supportedDurations),
 	}
 	for _, opt := range opts {
 		opt(g)
@@ -286,7 +288,7 @@ func (g *ScriptGenerator) finish(
 // addMetadata 补充剧本元数据（集号、id 前缀改写、钩子/预告、novel、时间戳、统计）。
 //
 // referenceUnitDurations 非 nil 时（参考路径）按 unit_id 机械覆盖 LLM 输出的 unit 时长——
-// step1 确认的原始值，取档按落地后的最终 references 状态逐 unit 重算，越档抛 DraftViolation。
+// step1 确认的原始值，取档按落地后的最终 references 状态逐 unit 重算，越档抛 service.DraftViolation。
 func (g *ScriptGenerator) addMetadata(
 	script map[string]any, episode int, referenceUnitDurations map[string]int, rc *ScriptReferenceContext,
 ) error {
@@ -321,7 +323,7 @@ func (g *ScriptGenerator) addMetadata(
 	}
 
 	if g.contentMode() != "ad" {
-		entry := FindEpisodeEntry(g.pf, episode)
+		entry := service.FindEpisodeEntry(g.pf, episode)
 		if entry != nil {
 			script["hook"] = nilIfEmptyString(entry.Hook)
 			teaser := ""
@@ -340,7 +342,7 @@ func (g *ScriptGenerator) addMetadata(
 	}
 
 	novel, ok := script["novel"].(map[string]any)
-	if !ok || stringValue(novel["title"], "") == "" || stringValue(novel["chapter"], "") == "" {
+	if !ok || service.StringValue(novel["title"], "") == "" || service.StringValue(novel["chapter"], "") == "" {
 		script["novel"] = map[string]any{"title": g.pf.Title, "chapter": fmt.Sprintf("第%d集", episode)}
 	} else {
 		delete(novel, "source_file")
@@ -366,7 +368,7 @@ func (g *ScriptGenerator) addMetadata(
 
 // loadNarrationStep1 加载并校验 narration step1 结构化片段。
 func (g *ScriptGenerator) loadNarrationStep1(episode int) ([]map[string]any, error) {
-	drafts := EpisodeDraftsDir(g.dir, episode)
+	drafts := service.EpisodeDraftsDir(g.dir, episode)
 	step1Name, _ := Step1Filename("narration")
 	step1Path := filepath.Join(drafts, step1Name)
 	if _, err := os.Stat(step1Path); err != nil {
@@ -410,7 +412,7 @@ func (g *ScriptGenerator) loadNarrationStep1(episode int) ([]map[string]any, err
 
 // loadDramaStep1 加载并校验 drama step1 结构化内容（step1_normalized_script.json）。
 func (g *ScriptGenerator) loadDramaStep1(episode int) (map[string]any, error) {
-	drafts := EpisodeDraftsDir(g.dir, episode)
+	drafts := service.EpisodeDraftsDir(g.dir, episode)
 	step1Name, _ := Step1Filename("drama")
 	step1Path := filepath.Join(drafts, step1Name)
 	if _, err := os.Stat(step1Path); err != nil {
@@ -459,7 +461,7 @@ func (g *ScriptGenerator) assertDramaStep1Durations(contentScenes []any) error {
 		if !ok {
 			continue
 		}
-		duration, ok := intValueOK(scene["duration_seconds"])
+		duration, ok := reference.IntValueOK(scene["duration_seconds"])
 		if !ok {
 			duration = 8
 		}
@@ -474,7 +476,7 @@ func (g *ScriptGenerator) assertDramaStep1Durations(contentScenes []any) error {
 	if len(bad) > 0 {
 		bad = uniqueSortedInts(bad)
 		return fmt.Errorf("step1 已定场景时长非法（不在 %v 内）: %v；当前分辨率与型号下这些时长不可用，请重跑 normalize_drama_script 按当前能力规范化",
-			normalizeDurations(g.supportedDurs), bad)
+			service.NormalizeDurations(g.supportedDurs), bad)
 	}
 	return nil
 }

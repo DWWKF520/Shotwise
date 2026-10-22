@@ -20,6 +20,7 @@ import (
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 	"gorm.io/gorm"
 )
 
@@ -28,7 +29,7 @@ type sourceExportDeps struct {
 	Store    *service.ProjectStore
 	Source   *service.ProjectSource
 	Auth     *auth.Service
-	Jianying *service.JianyingDraftService
+	Jianying *media.JianyingDraftService
 }
 
 // RegisterProjectSourceExport 注册四个端点。export/token 在 authed 组内；
@@ -239,7 +240,7 @@ func (h *projectSourceHandlers) exportJianyingDraft(c *gin.Context) {
 
 // abortJianyingExportErr 把剪映导出域错误映射到 Python 同形状态码（与拼装面的 abortJianyingErr 区分）。
 func abortJianyingExportErr(c *gin.Context, err error) {
-	var jyErr *service.JianyingError
+	var jyErr *media.JianyingError
 	var notFound *service.SourceReadError
 	switch {
 	case errors.As(err, &jyErr):
@@ -249,7 +250,7 @@ func abortJianyingExportErr(c *gin.Context, err error) {
 			return
 		}
 		apperr.Abort(c, apperr.Internal(err))
-	case errors.Is(err, service.ErrNoCompletedSegments):
+	case errors.Is(err, media.ErrNoCompletedSegments):
 		apperr.Abort(c, apperr.NewText(http.StatusUnprocessableEntity, "jianying_no_completed_segments",
 			map[string]any{"episode": c.Query("episode")}))
 	case errors.Is(err, os.ErrNotExist), errors.As(err, &notFound):
@@ -340,6 +341,6 @@ func NewSourceExportDeps(store *service.ProjectStore, authService *auth.Service,
 		Store:    store,
 		Source:   service.NewProjectSource(store, gdb),
 		Auth:     authService,
-		Jianying: service.NewJianyingDraftService(store),
+		Jianying: media.NewJianyingDraftService(store),
 	}
 }

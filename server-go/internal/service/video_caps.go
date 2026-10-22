@@ -145,14 +145,14 @@ func ResolveProjectIsSilent(ctx context.Context, r VideoCapabilityResolver, proj
 		// 能力不可解析时档位按 soft 兜底（无信号不判定为真无声），无声与否只由开关决定。
 		return !caps.RequestedGenerateAudio
 	}
-	if deriveVoiceConsistency(caps.View, project.GenerationMode) == "none" {
+	if DeriveVoiceConsistency(caps.View, project.GenerationMode) == "none" {
 		return true
 	}
 	return !caps.RequestedGenerateAudio
 }
 
-// deriveVoiceConsistency 派生三级声音一致性标识（native / soft / none）。
-func deriveVoiceConsistency(view config.VideoCapabilityView, generationMode string) string {
+// DeriveVoiceConsistency 派生三级声音一致性标识（native / soft / none）。
+func DeriveVoiceConsistency(view config.VideoCapabilityView, generationMode string) string {
 	if view.Caps.ReferenceAudioMode == provider.ReferenceAudioDirect &&
 		generationMode == string(domain.GenerationReferenceVideo) {
 		return "native"
@@ -164,9 +164,9 @@ func deriveVoiceConsistency(view config.VideoCapabilityView, generationMode stri
 	return "none"
 }
 
-// voiceConsistencyForCaps 与 deriveVoiceConsistency 同口径，但直接取「已构造 backend 的能力声明」：
+// VoiceConsistencyForCaps 与 DeriveVoiceConsistency 同口径，但直接取「已构造 backend 的能力声明」：
 // 执行层按实际身份（含自定义供应商合成能力）派生，不另走一次项目能力视图查询。
-func voiceConsistencyForCaps(caps provider.VideoCapabilities, model config.ProviderModel, generationMode string) string {
+func VoiceConsistencyForCaps(caps provider.VideoCapabilities, model config.ProviderModel, generationMode string) string {
 	if caps.ReferenceAudioMode == provider.ReferenceAudioDirect &&
 		generationMode == string(domain.GenerationReferenceVideo) {
 		return "native"
@@ -192,7 +192,7 @@ func ResolveProjectDurationContext(
 	out.SupportedDurations = view.SupportedDurations
 	out.ProviderID = view.ProviderID
 	out.ModelName = view.ModelID
-	if maxDuration, ok := maxDurationOf(view.SupportedDurations); ok {
+	if maxDuration, ok := MaxDurationOf(view.SupportedDurations); ok {
 		out.MaxDuration = &maxDuration
 	}
 	if len(out.SupportedDurations) > 0 {
@@ -281,11 +281,11 @@ func referenceImagePresence(unit map[string]any, adShots []map[string]any) bool 
 	if unit == nil {
 		return false
 	}
-	return refPresenceTruthy(unit["references"])
+	return RefPresenceTruthy(unit["references"])
 }
 
-// refPresenceTruthy 复刻 Python bool(value)：非 nil 且非空集合为真。
-func refPresenceTruthy(value any) bool {
+// RefPresenceTruthy 复刻 Python bool(value)：非 nil 且非空集合为真。
+func RefPresenceTruthy(value any) bool {
 	switch v := value.(type) {
 	case nil:
 		return false
@@ -306,7 +306,7 @@ func refPresenceTruthy(value any) bool {
 // ResolveDurationSlot 按容量语义为剧本总时长选择申请档位：申请能装下总时长的最小合法档位。
 // 档位集为空（能力不可解析）时原样透传总时长。
 func ResolveDurationSlot(totalSeconds float64, supportedDurations []int) DurationSlot {
-	slots := sortedUniqueInts(supportedDurations)
+	slots := SortedUniqueInts(supportedDurations)
 	if len(slots) == 0 {
 		return DurationSlot{Seconds: int(totalSeconds), TotalSeconds: totalSeconds, Adjustment: AdjustmentUnconstrained}
 	}
@@ -333,7 +333,7 @@ func UnitScriptDuration(unit map[string]any, adShots []map[string]any) (int, err
 		return FallbackUnitDuration, nil
 	}
 	if unit != nil {
-		if raw, present := unit["duration_seconds"]; present && refPresenceTruthy(raw) {
+		if raw, present := unit["duration_seconds"]; present && RefPresenceTruthy(raw) {
 			return intSeconds(raw)
 		}
 	}
@@ -371,7 +371,7 @@ func ResolveMaxUnitDuration(ctx context.Context, r VideoCapabilityResolver, proj
 	if !caps.Resolved {
 		return nil
 	}
-	if maxDuration, ok := maxDurationOf(caps.View.SupportedDurations); ok {
+	if maxDuration, ok := MaxDurationOf(caps.View.SupportedDurations); ok {
 		return &maxDuration
 	}
 	return nil
@@ -388,7 +388,7 @@ func DefaultUnitDuration(dctx ProjectDurationContext, project *domain.ProjectFil
 	if len(durations) == 0 {
 		return FallbackUnitDuration
 	}
-	if project.DefaultDuration != nil && containsInt(durations, *project.DefaultDuration) {
+	if project.DefaultDuration != nil && ContainsInt(durations, *project.DefaultDuration) {
 		return *project.DefaultDuration
 	}
 	minValue, _ := minDurationOf(durations)
@@ -471,14 +471,14 @@ func resolutionForConstraints(
 func filterDurations(candidates, allowed []int) []int {
 	out := make([]int, 0, len(candidates))
 	for _, d := range candidates {
-		if containsInt(allowed, d) {
+		if ContainsInt(allowed, d) {
 			out = append(out, d)
 		}
 	}
 	return out
 }
 
-func sortedUniqueInts(values []int) []int {
+func SortedUniqueInts(values []int) []int {
 	set := map[int]bool{}
 	for _, v := range values {
 		set[v] = true
@@ -491,7 +491,7 @@ func sortedUniqueInts(values []int) []int {
 	return out
 }
 
-func maxDurationOf(values []int) (int, bool) {
+func MaxDurationOf(values []int) (int, bool) {
 	if len(values) == 0 {
 		return 0, false
 	}

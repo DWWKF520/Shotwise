@@ -17,6 +17,7 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 	"github.com/shotwise/shotwise/migrations"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -99,8 +100,8 @@ func newJianyingHandlerEnv(t *testing.T) (*gin.Engine, string, string) {
 		"trim_start_seconds": 0.0, "trim_end_seconds": 0.0,
 		"audio_policy": "duck", "transition": nil,
 	}}
-	assembly := service.NewMediaAssemblyService(gdb)
-	payload, err := assembly.CreatePlan(context.Background(), service.CreatePlanParams{
+	assembly := media.NewMediaAssemblyService(gdb)
+	payload, err := assembly.CreatePlan(context.Background(), media.CreatePlanParams{
 		UserID: repository.DefaultUserID, ProjectName: "p1", Name: "plan", Scope: "episode",
 		SourceManifest: manifest, Timeline: timeline,
 		Audio:     map[string]any{"tracks": []any{}},
@@ -114,7 +115,7 @@ func newJianyingHandlerEnv(t *testing.T) (*gin.Engine, string, string) {
 
 	r := gin.New()
 	RegisterJianyingAssembly(r.Group("/api/v1"), JianyingAssemblyDeps{
-		Exports: service.NewJianyingExportService(gdb, store),
+		Exports: media.NewJianyingExportService(gdb, store),
 	})
 	return r, planID, dir
 }

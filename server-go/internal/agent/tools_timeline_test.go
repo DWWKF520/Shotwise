@@ -13,7 +13,7 @@ import (
 	"github.com/shotwise/shotwise/internal/agent/tools/timeline"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 	"github.com/shotwise/shotwise/migrations"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -104,7 +104,7 @@ func timelineToolsetForTest(t *testing.T) (*Runtime, map[string]tool.InvokableTo
 	projectDir := filepath.Join(base, "demo")
 	writeTimelineFixture(t, projectDir)
 
-	svc := service.NewMediaAssemblyService(newTimelineTestDB(t))
+	svc := media.NewMediaAssemblyService(newTimelineTestDB(t))
 	r, err := NewRuntime(context.Background(), ModelConfig{}, base, nil, nil, WithTimelineTools(svc))
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)

@@ -3,10 +3,11 @@
 //
 // 同一份口径同时供工具层（入队前校验待编辑项是否真有当前图）与执行层（读图）使用，
 // 两个入口不各自维护一份解析，避免「工具说可编辑、执行时找不到图」的口径分叉。
-package service
+package generation
 
 import (
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // StoryboardResourceType 是分镜图的对外资源类型标识（不属于 ASSET_SPECS 四类）。
@@ -70,7 +71,7 @@ func ResolveCurrentImageRel(
 		if pointer, ok := assets["storyboard_image"].(string); ok && pointer != "" {
 			return pointer, true
 		}
-		canonical, err := resourceRelativePath("storyboards", resourceID)
+		canonical, err := service.ResourceRelativePath("storyboards", resourceID)
 		if err != nil {
 			return "", true
 		}

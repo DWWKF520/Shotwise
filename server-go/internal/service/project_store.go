@@ -105,7 +105,7 @@ func (s *ProjectStore) Get(name string) (*domain.ProjectFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.load(dir)
+	return s.Load(dir)
 }
 
 // ReadProjectRaw 以 map 形式读取 project.json 原文。
@@ -117,7 +117,7 @@ func (s *ProjectStore) ReadProjectRaw(name string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := s.readJSONObject(filepath.Join(dir, "project.json"))
+	raw, err := s.ReadProjectJSON(filepath.Join(dir, "project.json"))
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (s *ProjectStore) Update(name string, mutate func(*domain.ProjectFile) erro
 		if err != nil {
 			return err
 		}
-		pf, err := s.load(dir)
+		pf, err := s.Load(dir)
 		if err != nil {
 			return err
 		}
@@ -150,7 +150,7 @@ func (s *ProjectStore) Update(name string, mutate func(*domain.ProjectFile) erro
 		if err := mutate(pf); err != nil {
 			return err
 		}
-		return s.persistUnlocked(dir, pf, allow)
+		return s.PersistUnlocked(dir, pf, allow)
 	})
 }
 
@@ -177,7 +177,7 @@ func (s *ProjectStore) Save(name string, pf *domain.ProjectFile) error {
 }
 
 // persistUnlocked 供已持项目锁的跨文件级联（资产改名）复用同一套「不更坏」判定。
-func (s *ProjectStore) persistUnlocked(dir string, pf *domain.ProjectFile, allow []string) error {
+func (s *ProjectStore) PersistUnlocked(dir string, pf *domain.ProjectFile, allow []string) error {
 	if fresh := domain.NewErrors(pf.ValidateErrors(), allow); len(fresh) > 0 {
 		return &ProjectInvalidError{Errors: fresh}
 	}
@@ -190,7 +190,7 @@ func (s *ProjectStore) touchAndWrite(dir string, pf *domain.ProjectFile) error {
 }
 
 // load 读取 project.json，不取锁（调用方须已持锁）。
-func (s *ProjectStore) load(dir string) (*domain.ProjectFile, error) {
+func (s *ProjectStore) Load(dir string) (*domain.ProjectFile, error) {
 	pf := &domain.ProjectFile{}
 	if err := fs.ReadJSON(filepath.Join(dir, "project.json"), pf); err != nil {
 		return nil, err
@@ -256,7 +256,7 @@ func (s *ProjectStore) ReadScriptJSON(name, filename string) (map[string]any, er
 		return nil, err
 	}
 	path := filepath.Join(dir, filename)
-	script, migrated, err := readScriptMigrated(path)
+	script, migrated, err := ReadScriptMigrated(path)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func (s *ProjectStore) ReadScriptJSON(name, filename string) (map[string]any, er
 		return script, nil
 	}
 	err = s.WithScriptLock(name, filename, func(_, _ string) error {
-		script, migrated, err = readScriptMigrated(path)
+		script, migrated, err = ReadScriptMigrated(path)
 		if err != nil {
 			return err
 		}
@@ -325,7 +325,7 @@ func (s *ProjectStore) DraftJSONPaths(name string) ([]string, error) {
 	return out, nil
 }
 
-func (s *ProjectStore) readJSONObject(p string) (map[string]any, error) {
+func (s *ProjectStore) ReadProjectJSON(p string) (map[string]any, error) {
 	var payload map[string]any
 	if err := fs.ReadJSON(p, &payload); err != nil {
 		return nil, err

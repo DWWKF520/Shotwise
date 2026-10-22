@@ -1,9 +1,9 @@
 // 生成任务入队服务（对应 server/routers/generate.py 的写侧逻辑）。
 //
-// 路由函数体只保留 happy path：领域失败一律以 *GenerateError 返回（带 HTTP 状态与
+// 路由函数体只保留 happy path：领域失败一律以 *service.GenerateError 返回（带 HTTP 状态与
 // i18n code），由传输层统一翻成 {"detail": ...} 信封。生成本身由 worker 异步执行，
 // 这里只做「校验 + 入队 + 返回 task_id」。
-package service
+package generation
 
 import (
 	"context"
@@ -19,27 +19,16 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service/reference"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
-// GenerateError 是生成入队路径的领域错误：Status 是 HTTP 状态，Code 是 i18n errors key。
-type GenerateError struct {
-	Status int
-	Code   string
-	Params map[string]any
+func generateNotFound(code string, params map[string]any) *service.GenerateError {
+	return &service.GenerateError{Status: http.StatusNotFound, Code: code, Params: params}
 }
 
-func (e *GenerateError) Error() string { return e.Code }
-
-func generateBadRequest(code string, params map[string]any) *GenerateError {
-	return &GenerateError{Status: http.StatusBadRequest, Code: code, Params: params}
-}
-
-func generateNotFound(code string, params map[string]any) *GenerateError {
-	return &GenerateError{Status: http.StatusNotFound, Code: code, Params: params}
-}
-
-func generateConflict(code string) *GenerateError {
-	return &GenerateError{Status: http.StatusConflict, Code: code}
+func generateConflict(code string) *service.GenerateError {
+	return &service.GenerateError{Status: http.StatusConflict, Code: code}
 }
 
 // GenerateQueue 是入队能力（*queue.Queue 满足）。
@@ -50,7 +39,7 @@ type GenerateQueue interface {
 
 // GenerateResolver 是生成路径需要的配置解析能力（*config.Resolver 满足）。
 type GenerateResolver interface {
-	VideoCapabilityResolver
+	service.VideoCapabilityResolver
 	ResolveAudioBackend(ctx context.Context, project *domain.ProjectFile, payload map[string]any) (config.ProviderModel, error)
 	ResolveImageBackend(
 		ctx context.Context, project *domain.ProjectFile, payload map[string]any, capability config.ImageCapability,
@@ -59,7 +48,7 @@ type GenerateResolver interface {
 
 // GenerateService 是生成入队的应用服务。
 type GenerateService struct {
-	store    *ProjectStore
+	store    *service.ProjectStore
 	queue    GenerateQueue
 	resolver GenerateResolver
 	audio    *AudioGenerator
@@ -67,7 +56,7 @@ type GenerateService struct {
 
 // NewGenerateService 构造。audio 仅用于音色目录查询，可为 nil。
 func NewGenerateService(
-	store *ProjectStore, queue GenerateQueue, resolver GenerateResolver, audio *AudioGenerator,
+	store *service.ProjectStore, queue GenerateQueue, resolver GenerateResolver, audio *AudioGenerator,
 ) *GenerateService {
 	return &GenerateService{store: store, queue: queue, resolver: resolver, audio: audio}
 }
@@ -101,9 +90,9 @@ func (s *GenerateService) GenerateStoryboard(
 	if !ok {
 		return nil, generateNotFound("segment_not_found", map[string]any{"id": segmentID})
 	}
-	preflight := ValidateItemAssetReferences(project, dir, item, fields)
+	preflight := service.ValidateItemAssetReferences(project, dir, item, fields)
 	if len(preflight.Issues) > 0 {
-		return nil, generateBadRequest("generation_asset_preflight_failed", preflight.I18NParams())
+		return nil, service.GenerateBadRequest("generation_asset_preflight_failed", preflight.I18NParams())
 	}
 
 	spec, err := BuildTaskSpec("storyboard", "image", segmentID, prompt, &scriptFile, nil)
@@ -145,21 +134,21 @@ func (s *GenerateService) GenerateVideo(
 	if !ok {
 		return nil, generateNotFound("segment_not_found", map[string]any{"id": segmentID})
 	}
-	if preflight := ValidateItemAssetReferences(project, dir, item, fields); len(preflight.Issues) > 0 {
-		return nil, generateBadRequest("generation_asset_preflight_failed", preflight.I18NParams())
+	if preflight := service.ValidateItemAssetReferences(project, dir, item, fields); len(preflight.Issues) > 0 {
+		return nil, service.GenerateBadRequest("generation_asset_preflight_failed", preflight.I18NParams())
 	}
 
 	// 分镜图引用来自磁盘剧本 JSON，不可信任：脏类型 / 越界路径都在这里拦下。
 	storyboardRel := domain.GeneratedAssets(item)["storyboard_image"]
-	storyboardFile, err := ResolveStoryboardImageRef(dir, storyboardRel)
+	storyboardFile, err := service.ResolveStoryboardImageRef(dir, storyboardRel)
 	if err != nil {
-		return nil, generateBadRequest("invalid_storyboard_image_path", map[string]any{"segment_id": segmentID})
+		return nil, service.GenerateBadRequest("invalid_storyboard_image_path", map[string]any{"segment_id": segmentID})
 	}
 	if storyboardFile == "" {
 		storyboardFile = filepath.Join(dir, "storyboards", "scene_"+segmentID+".png")
 	}
 	if info, statErr := os.Stat(storyboardFile); statErr != nil || info.IsDir() {
-		return nil, generateBadRequest("generate_storyboard_first", map[string]any{"segment_id": segmentID})
+		return nil, service.GenerateBadRequest("generate_storyboard_first", map[string]any{"segment_id": segmentID})
 	}
 
 	// 归桶按项目路线求值，与执行层 lane 声明同源；上面的路线闸门已挡掉参考路线。
@@ -171,14 +160,14 @@ func (s *GenerateService) GenerateVideo(
 			for k, v := range capabilityErr.Params() {
 				params[k] = v
 			}
-			return nil, generateBadRequest(string(capabilityErr.Code), params)
+			return nil, service.GenerateBadRequest(string(capabilityErr.Code), params)
 		}
 		return nil, err
 	}
-	if err := AssertAudioSwitchSupported(ctx, s.resolver, project, bucket); err != nil {
-		var conflict *AudioSwitchConflictError
+	if err := service.AssertAudioSwitchSupported(ctx, s.resolver, project, bucket); err != nil {
+		var conflict *service.AudioSwitchConflictError
 		if errors.As(err, &conflict) {
-			return nil, generateBadRequest("video_audio_switch_not_supported", map[string]any{
+			return nil, service.GenerateBadRequest("video_audio_switch_not_supported", map[string]any{
 				"provider": conflict.ProviderID, "model": conflict.ModelID,
 			})
 		}
@@ -292,7 +281,7 @@ func (s *GenerateService) GenerateTTS(
 		return nil, generateNotFound("segment_not_found", map[string]any{"id": segmentID})
 	}
 	if narrationText(item) == "" {
-		return nil, generateBadRequest("tts_novel_text_missing", map[string]any{"segment_id": segmentID})
+		return nil, service.GenerateBadRequest("tts_novel_text_missing", map[string]any{"segment_id": segmentID})
 	}
 	providerID, err := s.audioProviderID(ctx, project)
 	if err != nil {
@@ -327,7 +316,7 @@ func (s *GenerateService) GenerateTTSBatch(
 		if narrationText(item) == "" {
 			continue
 		}
-		if pyTruthy(domain.GeneratedAssets(item)["narration_audio"]) {
+		if service.PyTruthy(domain.GeneratedAssets(item)["narration_audio"]) {
 			continue
 		}
 		if id := strings.TrimSpace(fmt.Sprint(item[idField])); id != "" {
@@ -407,15 +396,15 @@ func (s *GenerateService) GenerateVoiceSample(
 	text = strings.TrimSpace(text)
 	voice = strings.TrimSpace(voice)
 	if text == "" {
-		return nil, generateBadRequest("prompt_text_empty", nil)
+		return nil, service.GenerateBadRequest("prompt_text_empty", nil)
 	}
 	if len([]rune(text)) > VoiceSampleTextMaxLength {
-		return nil, generateBadRequest("voice_sample_text_too_long", map[string]any{
+		return nil, service.GenerateBadRequest("voice_sample_text_too_long", map[string]any{
 			"max_length": VoiceSampleTextMaxLength,
 		})
 	}
 	if voice == "" {
-		return nil, generateBadRequest("voice_sample_voice_required", nil)
+		return nil, service.GenerateBadRequest("voice_sample_voice_required", nil)
 	}
 	project, err := s.store.Get(projectName)
 	if err != nil {
@@ -423,7 +412,7 @@ func (s *GenerateService) GenerateVoiceSample(
 	}
 	charName, err := domain.ValidateAssetName(name)
 	if err != nil {
-		return nil, generateBadRequest("asset_invalid_name", map[string]any{"name": name})
+		return nil, service.GenerateBadRequest("asset_invalid_name", map[string]any{"name": name})
 	}
 	bucket, ok := project.BucketRef(domain.AssetCharacter)
 	if !ok || bucket == nil {
@@ -456,7 +445,7 @@ func (s *GenerateService) ConfirmVoiceSample(
 ) (map[string]any, error) {
 	charName, err := domain.ValidateAssetName(name)
 	if err != nil {
-		return nil, generateBadRequest("asset_invalid_name", map[string]any{"name": name})
+		return nil, service.GenerateBadRequest("asset_invalid_name", map[string]any{"name": name})
 	}
 	task, err := s.queue.GetTask(ctx, taskID)
 	if err != nil {
@@ -466,11 +455,11 @@ func (s *GenerateService) ConfirmVoiceSample(
 		return nil, generateNotFound("task_not_found", map[string]any{"id": taskID})
 	}
 	if task.Status != repository.TaskStatusSucceeded {
-		return nil, generateBadRequest("voice_sample_not_ready", nil)
+		return nil, service.GenerateBadRequest("voice_sample_not_ready", nil)
 	}
 	sampleRel, _ := task.Result["file_path"].(string)
 	if sampleRel == "" {
-		return nil, generateBadRequest("voice_sample_not_ready", nil)
+		return nil, service.GenerateBadRequest("voice_sample_not_ready", nil)
 	}
 
 	project, err := s.store.Get(projectName)
@@ -516,19 +505,19 @@ func (s *GenerateService) ConfirmVoiceSample(
 	if err := s.store.Update(projectName, func(pf *domain.ProjectFile) error {
 		update, ok := pf.BucketRef(domain.AssetCharacter)
 		if !ok || update == nil {
-			return errResourceMissingInScript
+			return service.ErrResourceMissingInScript
 		}
 		key, ok := update.ResolveKey(charName)
 		if !ok {
-			return errResourceMissingInScript
+			return service.ErrResourceMissingInScript
 		}
 		entry := (*update)[key]
 		entry.SetString("reference_audio", refAudioRel)
 		// 机械戳 voice_updated_at：与资产 PATCH 侧同口径，存量过渡横幅据此失效。
-		entry.SetString("voice_updated_at", nowISO())
+		entry.SetString("voice_updated_at", service.NowISO())
 		return nil
 	}); err != nil {
-		if errors.Is(err, errResourceMissingInScript) {
+		if errors.Is(err, service.ErrResourceMissingInScript) {
 			return nil, generateNotFound("character_not_found", map[string]any{"name": charName})
 		}
 		return nil, err
@@ -549,7 +538,7 @@ func resolveStaleReferenceAudio(projectDir, oldAudio, newPath string) string {
 	if strings.TrimSpace(oldAudio) == "" {
 		return ""
 	}
-	resolved := resolveAudioRefPath(projectDir, oldAudio)
+	resolved := reference.ResolveAudioRefPath(projectDir, oldAudio)
 	if resolved == "" {
 		return ""
 	}
@@ -580,7 +569,7 @@ func (s *GenerateService) GenerateAsset(
 ) (map[string]any, error) {
 	keys, ok := assetGenerateKeys[kind]
 	if !ok {
-		return nil, generateBadRequest("asset_invalid_type", map[string]any{"type": string(kind)})
+		return nil, service.GenerateBadRequest("asset_invalid_type", map[string]any{"type": string(kind)})
 	}
 	project, err := s.store.Get(projectName)
 	if err != nil {
@@ -596,7 +585,7 @@ func (s *GenerateService) GenerateAsset(
 	}
 	assetSpec, specOK := domain.Spec(kind)
 	if !specOK {
-		return nil, generateBadRequest("asset_invalid_type", map[string]any{"type": string(kind)})
+		return nil, service.GenerateBadRequest("asset_invalid_type", map[string]any{"type": string(kind)})
 	}
 	dir, err := s.store.Dir(projectName)
 	if err != nil {
@@ -637,13 +626,13 @@ func (s *GenerateService) EditImage(
 	scriptFile, referenceMediaAssetID *string, userID string,
 ) (map[string]any, error) {
 	if !IsEditableResourceType(resourceType) {
-		return nil, generateBadRequest("image_edit_resource_type_invalid", map[string]any{
+		return nil, service.GenerateBadRequest("image_edit_resource_type_invalid", map[string]any{
 			"resource_type": resourceType,
 		})
 	}
 	instruction = strings.TrimSpace(instruction)
 	if instruction == "" {
-		return nil, generateBadRequest("image_edit_instruction_required", nil)
+		return nil, service.GenerateBadRequest("image_edit_instruction_required", nil)
 	}
 	isStoryboard := resourceType == StoryboardResourceType
 	var scriptName *string
@@ -653,7 +642,7 @@ func (s *GenerateService) EditImage(
 		}
 	}
 	if isStoryboard && scriptName == nil {
-		return nil, generateBadRequest("image_edit_script_file_required", nil)
+		return nil, service.GenerateBadRequest("image_edit_script_file_required", nil)
 	}
 
 	project, err := s.store.Get(projectName)
@@ -679,7 +668,7 @@ func (s *GenerateService) EditImage(
 		return nil, generateNotFound(keys.NotFound, map[string]any{"name": resourceID})
 	}
 	if currentRel == "" || !fs.SafeExists(dir, filepath.FromSlash(currentRel)) {
-		return nil, generateBadRequest("image_edit_no_current_image", map[string]any{"id": resourceID})
+		return nil, service.GenerateBadRequest("image_edit_no_current_image", map[string]any{"id": resourceID})
 	}
 	extra := map[string]any{"resource_type": resourceType}
 	referenceID := ""
@@ -688,13 +677,13 @@ func (s *GenerateService) EditImage(
 			referenceID = trimmed
 			extra["reference_media_asset_id"] = referenceID
 			if !s.referenceMediaUsable(dir, referenceID) {
-				return nil, generateBadRequest("image_edit_reference_invalid", map[string]any{"id": referenceID})
+				return nil, service.GenerateBadRequest("image_edit_reference_invalid", map[string]any{"id": referenceID})
 			}
 		}
 	}
 	// 图片编辑必然 i2i 且入队即知，故解析前置到入队；执行层的 capability gating 保留兜底。
 	if _, err := s.resolver.ResolveImageBackend(ctx, project, nil, config.ImageCapI2I); err != nil {
-		return nil, generateBadRequest("image_edit_i2i_unavailable", nil)
+		return nil, service.GenerateBadRequest("image_edit_i2i_unavailable", nil)
 	}
 	var taskScriptFile *string
 	if isStoryboard {
@@ -725,7 +714,7 @@ func (s *GenerateService) imageI2IProviderID(ctx context.Context, project *domai
 
 // referenceMediaUsable 校验参考素材是项目内的图片且文件存在。
 func (s *GenerateService) referenceMediaUsable(projectDir, mediaAssetID string) bool {
-	asset, err := GetProjectMediaAsset(projectDir, mediaAssetID)
+	asset, err := service.GetProjectMediaAssetHook(projectDir, mediaAssetID)
 	if err != nil || asset == nil {
 		return false
 	}
@@ -780,7 +769,7 @@ func (s *GenerateService) enqueueTTSSegment(
 func (s *GenerateService) audioProviderID(ctx context.Context, project *domain.ProjectFile) (string, error) {
 	selected, err := s.resolver.ResolveAudioBackend(ctx, project, nil)
 	if err != nil {
-		return "", generateBadRequest("audio_provider_not_configured", nil)
+		return "", service.GenerateBadRequest("audio_provider_not_configured", nil)
 	}
 	return selected.ProviderID, nil
 }

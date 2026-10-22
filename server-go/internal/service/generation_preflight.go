@@ -38,11 +38,11 @@ type PreflightResult struct {
 	Issues []PreflightIssue
 }
 
-// itemReference 是从分镜条目里提取出的一条类型化引用。
-type itemReference struct {
-	kind  domain.AssetKind
-	field string
-	name  string
+// ItemReference 是从分镜条目里提取出的一条类型化引用。
+type ItemReference struct {
+	Kind  domain.AssetKind
+	Field string
+	Name  string
 }
 
 // ValidateItemAssetReferences 校验一个分镜条目引用的三类资产（对应 Python 同名函数）。
@@ -51,7 +51,7 @@ type itemReference struct {
 // 条目中非列表值、非字符串元素、空白名一律跳过，与 Python collect_item_references 同语义。
 func ValidateItemAssetReferences(project *domain.ProjectFile, projectDir string, item map[string]any,
 	fields domain.StoryboardItemFields) PreflightResult {
-	return validateAssetReferences(project, projectDir, collectItemReferences(item, fields))
+	return ValidateAssetReferences(project, projectDir, collectItemReferences(item, fields))
 }
 
 // MergePreflightResults 合并多次校验结果（对应 Python merge_preflight_results）。
@@ -119,7 +119,7 @@ func FormatPreflightError(result PreflightResult) string {
 }
 
 // collectItemReferences 从分镜条目里按资产类型收集引用名，按 (类型, 名) 去重。
-func collectItemReferences(item map[string]any, fields domain.StoryboardItemFields) []itemReference {
+func collectItemReferences(item map[string]any, fields domain.StoryboardItemFields) []ItemReference {
 	pairs := []struct {
 		kind  domain.AssetKind
 		field string
@@ -128,13 +128,13 @@ func collectItemReferences(item map[string]any, fields domain.StoryboardItemFiel
 		{domain.AssetScene, fields.SceneField},
 		{domain.AssetProp, fields.PropField},
 	}
-	var references []itemReference
+	var references []ItemReference
 	seen := map[string]bool{}
 	for _, pair := range pairs {
 		if pair.field == "" {
 			continue
 		}
-		names := stringList(item[pair.field])
+		names := StringList(item[pair.field])
 		for _, raw := range names {
 			if strings.TrimSpace(raw) == "" {
 				continue
@@ -145,34 +145,34 @@ func collectItemReferences(item map[string]any, fields domain.StoryboardItemFiel
 				continue
 			}
 			seen[key] = true
-			references = append(references, itemReference{kind: pair.kind, field: pair.field, name: name})
+			references = append(references, ItemReference{Kind: pair.kind, Field: pair.field, Name: name})
 		}
 	}
 	return references
 }
 
-// validateAssetReferences 逐条检查「是否登记」与「设计图是否可用」，两条问题各自去重。
-func validateAssetReferences(project *domain.ProjectFile, projectDir string, references []itemReference) PreflightResult {
+// ValidateAssetReferences 逐条检查「是否登记」与「设计图是否可用」，两条问题各自去重。
+func ValidateAssetReferences(project *domain.ProjectFile, projectDir string, references []ItemReference) PreflightResult {
 	var result PreflightResult
 	seen := map[string]bool{}
 	for _, ref := range references {
-		spec, ok := domain.Spec(ref.kind)
-		if !ok || strings.TrimSpace(ref.name) == "" {
+		spec, ok := domain.Spec(ref.Kind)
+		if !ok || strings.TrimSpace(ref.Name) == "" {
 			continue
 		}
-		dedup := string(ref.kind) + "\x00" + ref.name
+		dedup := string(ref.Kind) + "\x00" + ref.Name
 
-		bucket, bucketOK := bucketRef(project, ref.kind)
+		bucket, bucketOK := bucketRef(project, ref.Kind)
 		key, found := "", false
 		if bucketOK && bucket != nil {
-			key, found = bucket.ResolveKey(ref.name)
+			key, found = bucket.ResolveKey(ref.Name)
 		}
 		if !found {
 			if !seen[dedup] {
 				seen[dedup] = true
 				result.Issues = append(result.Issues, PreflightIssue{
-					Field: ref.field, AssetName: ref.name,
-					Kind: PreflightKindUnregistered, AssetType: ref.kind,
+					Field: ref.Field, AssetName: ref.Name,
+					Kind: PreflightKindUnregistered, AssetType: ref.Kind,
 				})
 			}
 			continue
@@ -184,8 +184,8 @@ func validateAssetReferences(project *domain.ProjectFile, projectDir string, ref
 			if !seen[dedup] {
 				seen[dedup] = true
 				result.Issues = append(result.Issues, PreflightIssue{
-					Field: ref.field, AssetName: ref.name,
-					Kind: PreflightKindMissingSheet, AssetType: ref.kind,
+					Field: ref.Field, AssetName: ref.Name,
+					Kind: PreflightKindMissingSheet, AssetType: ref.Kind,
 				})
 			}
 		}
@@ -201,9 +201,9 @@ func bucketRef(project *domain.ProjectFile, kind domain.AssetKind) (*domain.Asse
 	return project.BucketRef(kind)
 }
 
-// stringList 把条目字段读成字符串列表；非列表或含非字符串元素时按空处理，
+// StringList 把条目字段读成字符串列表；非列表或含非字符串元素时按空处理，
 // 与 Python 侧对畸形数据的跳过语义一致。
-func stringList(value any) []string {
+func StringList(value any) []string {
 	switch v := value.(type) {
 	case []any:
 		out := make([]string, 0, len(v))

@@ -2,6 +2,8 @@
 package app
 
 import (
+	servicereference "github.com/shotwise/shotwise/internal/service/reference"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"log/slog"
 	"net/http"
@@ -15,6 +17,12 @@ import (
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
+	"github.com/shotwise/shotwise/internal/service/generation"
+	"github.com/shotwise/shotwise/internal/service/media"
+	"github.com/shotwise/shotwise/internal/service/asset"
+	"github.com/shotwise/shotwise/internal/service/admin"
+	"github.com/shotwise/shotwise/internal/service/publishing"
 	"github.com/shotwise/shotwise/internal/textgen"
 	transport "github.com/shotwise/shotwise/internal/transport/http"
 	"gorm.io/gorm"
@@ -27,7 +35,7 @@ type Runtime struct {
 	DB      *gorm.DB
 	Dialect db.Dialect
 	Store   *service.ProjectStore
-	Assets  *service.AssetService
+	Assets  *asset.AssetService
 	Hub     *service.EventHub
 	Auth    *auth.Service
 	Agent   *agent.Runtime
@@ -130,7 +138,7 @@ func registerCreativeContext(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	gated := authed.Group("", transport.RequireFeature("context_agent"))
 	transport.RegisterCreativeContext(gated, transport.CreativeContextDeps{
-		Context: service.NewCreativeContextService(rt.DB, rt.Store),
+		Context: creative.NewCreativeContextService(rt.DB, rt.Store),
 		Store:   rt.Store,
 	})
 }
@@ -139,8 +147,8 @@ func registerCreativeContext(v1 *gin.RouterGroup, rt *Runtime) {
 func registerPublishing(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterPublishing(authed, transport.PublishingDeps{
-		Publishing: service.NewPublishingService(rt.DB),
-		Events:     service.NewPublishJobEvents(rt.Hub, rt.Store),
+		Publishing: publishing.NewPublishingService(rt.DB),
+		Events:     publishing.NewPublishJobEvents(rt.Hub, rt.Store),
 	})
 }
 
@@ -149,7 +157,7 @@ func registerCreativeBoards(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	gated := authed.Group("", transport.RequireFeature("creative_board"))
 	transport.RegisterCreativeBoards(gated, transport.CreativeBoardDeps{
-		Boards: service.NewCreativeBoardService(rt.DB),
+		Boards: creative.NewCreativeBoardService(rt.DB),
 	})
 }
 
@@ -157,7 +165,7 @@ func registerCreativeBoards(v1 *gin.RouterGroup, rt *Runtime) {
 func registerMediaAssembly(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterMediaAssembly(authed, transport.MediaAssemblyDeps{
-		Plans: service.NewMediaAssemblyService(rt.DB),
+		Plans: media.NewMediaAssemblyService(rt.DB),
 	})
 }
 
@@ -165,7 +173,7 @@ func registerMediaAssembly(v1 *gin.RouterGroup, rt *Runtime) {
 func registerMediaRendering(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterMediaRendering(authed, transport.MediaRenderingDeps{
-		Renders: service.NewMediaRenderingService(rt.DB, rt.Store),
+		Renders: media.NewMediaRenderingService(rt.DB, rt.Store),
 	})
 }
 
@@ -173,7 +181,7 @@ func registerMediaRendering(v1 *gin.RouterGroup, rt *Runtime) {
 func registerJianyingAssembly(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterJianyingAssembly(authed, transport.JianyingAssemblyDeps{
-		Exports: service.NewJianyingExportService(rt.DB, rt.Store),
+		Exports: media.NewJianyingExportService(rt.DB, rt.Store),
 	})
 }
 
@@ -191,7 +199,7 @@ func registerScriptReview(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterScriptReview(authed, transport.ScriptReviewDeps{
 		Store:   rt.Store,
-		Reviews: service.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
+		Reviews: servicescript.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
 	})
 }
 
@@ -199,7 +207,7 @@ func registerScriptReview(v1 *gin.RouterGroup, rt *Runtime) {
 func registerWorkflows(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterWorkflows(authed, transport.WorkflowDeps{
-		Workflows: service.NewWorkflowService(rt.DB),
+		Workflows: creative.NewWorkflowService(rt.DB),
 	})
 }
 
@@ -207,7 +215,7 @@ func registerWorkflows(v1 *gin.RouterGroup, rt *Runtime) {
 //
 // 与 Python 侧 router 级 dependencies 等价：任一开关关闭，整组端点 404 feature_disabled。
 func registerCreationPlans(v1 *gin.RouterGroup, rt *Runtime) {
-	workflows := service.NewWorkflowService(rt.DB)
+	workflows := creative.NewWorkflowService(rt.DB)
 	authed := v1.Group("", rt.Auth.Middleware())
 	gated := authed.Group("",
 		transport.RequireFeature("creation_plan"),
@@ -215,7 +223,7 @@ func registerCreationPlans(v1 *gin.RouterGroup, rt *Runtime) {
 	)
 	transport.RegisterCreationPlans(gated, transport.CreationPlanDeps{
 		Store: rt.Store,
-		Plans: service.NewCreationPlanService(rt.DB, rt.Dialect, workflows, config.NewResolver(rt.DB)),
+		Plans: creative.NewCreationPlanService(rt.DB, rt.Dialect, workflows, config.NewResolver(rt.DB)),
 	})
 }
 
@@ -225,8 +233,8 @@ func registerDraftPromotions(v1 *gin.RouterGroup, rt *Runtime) {
 	transport.RegisterDraftPromotions(authed, transport.DraftPromotionDeps{
 		Store: rt.Store,
 		Drafts: domain.NewDraftPromotionService(
-			service.NewFileDraftPromotionRepository(rt.Store),
-			service.ScriptStructureDraftValidator(),
+			servicereference.NewFileDraftPromotionRepository(rt.Store),
+			servicereference.ScriptStructureDraftValidator(),
 		),
 	})
 }
@@ -243,12 +251,12 @@ func registerTasks(v1 *gin.RouterGroup, rt *Runtime) {
 	if rt.Queue != nil {
 		transport.RegisterTasks(authed, transport.TaskDeps{Queue: rt.Queue})
 	}
-	var snapshotter service.WorkerSnapshotter
+	var snapshotter generation.WorkerSnapshotter
 	if rt.Worker != nil {
 		snapshotter = rt.Worker
 	}
 	transport.RegisterQueueObservability(authed, transport.QueueObservabilityDeps{
-		Obs: service.NewQueueObservability(rt.DB, snapshotter),
+		Obs: generation.NewQueueObservability(rt.DB, snapshotter),
 	})
 	transport.RegisterVersions(authed, transport.VersionDeps{
 		Versions: service.NewVersionService(rt.Store),
@@ -261,8 +269,8 @@ func registerGenerate(v1 *gin.RouterGroup, rt *Runtime) {
 	resolver := config.NewResolver(rt.DB)
 	transport.RegisterGenerate(authed, transport.GenerateDeps{
 		Store: rt.Store,
-		Generate: service.NewGenerateService(
-			rt.Store, rt.Queue, resolver, service.NewAudioGenerator(rt.DB, nil)),
+		Generate: generation.NewGenerateService(
+			rt.Store, rt.Queue, resolver, generation.NewAudioGenerator(rt.DB, nil)),
 	})
 }
 
@@ -274,7 +282,7 @@ func registerEpisodeDuration(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterEpisodeDuration(authed, transport.EpisodeDurationDeps{
 		Store:    rt.Store,
-		Duration: service.NewEpisodeDurationService(rt.Store, config.NewResolver(rt.DB)),
+		Duration: servicescript.NewEpisodeDurationService(rt.Store, config.NewResolver(rt.DB)),
 	})
 }
 
@@ -286,11 +294,11 @@ func registerBatches(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterBatches(authed, transport.BatchDeps{
 		Store: rt.Store,
-		NewOrchestrator: func(projectName, userID string) *service.BatchOrchestrator {
+		NewOrchestrator: func(projectName, userID string) *generation.BatchOrchestrator {
 			repo := repository.NewTaskRepo(rt.DB)
-			adapter := service.NewBatchTaskAdapter(repo, rt.Queue, projectName)
-			return service.NewBatchOrchestrator(
-				service.NewGormBatchRepository(rt.DB, userID, projectName), adapter)
+			adapter := generation.NewBatchTaskAdapter(repo, rt.Queue, projectName)
+			return generation.NewBatchOrchestrator(
+				generation.NewGormBatchRepository(rt.DB, userID, projectName), adapter)
 		},
 	})
 }
@@ -303,7 +311,7 @@ func registerGrids(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterGrids(authed, transport.GridDeps{
 		Store: rt.Store,
-		Grids: service.NewGridTaskService(
+		Grids: generation.NewGridTaskService(
 			rt.Store, rt.Queue, config.NewResolver(rt.DB), service.NewGridService(rt.Store)),
 	})
 }
@@ -313,7 +321,7 @@ func registerEndFrames(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterEndFrames(authed, transport.EndFrameDeps{
 		Store:    rt.Store,
-		EndFrame: service.NewEndFrameService(rt.Store),
+		EndFrame: asset.NewEndFrameService(rt.Store),
 	})
 }
 
@@ -325,7 +333,7 @@ func registerShotUploads(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterShotUploads(authed, transport.ShotUploadDeps{
 		Store:   rt.Store,
-		Uploads: service.NewShotUploadService(rt.Store),
+		Uploads: media.NewShotUploadService(rt.Store),
 	})
 }
 
@@ -347,8 +355,8 @@ func registerOnboardingAndKeys(v1 *gin.RouterGroup, rt *Runtime) {
 func registerFeatures(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterFeatures(authed, transport.FeaturesDeps{
-		Plans: service.NewCreationPlanService(
-			rt.DB, rt.Dialect, service.NewWorkflowService(rt.DB), config.NewResolver(rt.DB)),
+		Plans: creative.NewCreationPlanService(
+			rt.DB, rt.Dialect, creative.NewWorkflowService(rt.DB), config.NewResolver(rt.DB)),
 	})
 }
 
@@ -360,7 +368,7 @@ func registerFeatures(v1 *gin.RouterGroup, rt *Runtime) {
 func registerProviders(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterProviders(authed, transport.ProviderDeps{
-		Providers: service.NewProviderAdminService(rt.DB),
+		Providers: admin.NewProviderAdminService(rt.DB),
 	})
 }
 
@@ -372,12 +380,12 @@ func registerCustomProviders(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	// 显式判空再装箱：rt.Worker 是 *queue.Worker，直接塞进接口会得到非 nil 的
 	// typed-nil，服务的 nil 判断挡不住，调用时才在解引用处炸。
-	var limits service.CustomCapacityRefresher
+	var limits admin.CustomCapacityRefresher
 	if rt.Worker != nil {
 		limits = rt.Worker
 	}
 	transport.RegisterCustomProviders(authed, transport.CustomProviderDeps{
-		Providers: service.NewCustomProviderService(rt.DB, rt.Store, limits),
+		Providers: admin.NewCustomProviderService(rt.DB, rt.Store, limits),
 	})
 }
 
@@ -388,7 +396,7 @@ func registerCustomProviders(v1 *gin.RouterGroup, rt *Runtime) {
 func registerAgentConfig(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterAgentConfig(authed, transport.AgentConfigDeps{
-		Credentials: service.NewAgentCredentialService(rt.DB),
+		Credentials: admin.NewAgentCredentialService(rt.DB),
 	})
 }
 
@@ -421,8 +429,8 @@ func registerAssistant(v1 *gin.RouterGroup, rt *Runtime) {
 func registerFileRoutes(v1 *gin.RouterGroup, rt *Runtime) {
 	deps := transport.FilesDeps{
 		Store:  rt.Store,
-		Files:  service.NewFileService(rt.Store),
-		Review: service.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
+		Files:  servicescript.NewFileService(rt.Store),
+		Review: servicescript.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
 	}
 	transport.RegisterPublicFiles(v1, deps)
 	authed := v1.Group("", rt.Auth.Middleware())
@@ -435,7 +443,7 @@ func registerProjectExtras(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterProjectExtras(authed, transport.ProjectExtraDeps{
 		Store: rt.Store,
-		Extra: service.NewProjectExtraService(rt.Store, rt.Queue, config.NewResolver(rt.DB)),
+		Extra: servicescript.NewProjectExtraService(rt.Store, rt.Queue, config.NewResolver(rt.DB)),
 	})
 }
 
@@ -443,7 +451,7 @@ func registerProjectExtras(v1 *gin.RouterGroup, rt *Runtime) {
 func registerGlobalAssets(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterAssetsGlobal(authed, transport.AssetsDeps{
-		Assets: service.NewGlobalAssetService(
+		Assets: asset.NewGlobalAssetService(
 			repository.NewGlobalAssetRepository(rt.DB), rt.Store),
 	})
 }
@@ -466,14 +474,14 @@ func registerCharacterRelations(v1 *gin.RouterGroup, rt *Runtime) {
 func registerCharacterExtras(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	transport.RegisterCharacterExtras(authed, transport.CharacterDeps{
-		Variants: service.NewCharacterVariants(rt.Store),
+		Variants: asset.NewCharacterVariants(rt.Store),
 	})
 }
 
 // registerSystemConfig 系统配置路由（GET 公开、PATCH 管理员），与诊断日志分开挂。
 func registerSystemConfig(v1 *gin.RouterGroup, rt *Runtime) {
 	transport.RegisterSystemConfig(v1, transport.SystemConfigDeps{
-		Config: service.NewSystemConfigService(rt.DB, config.NewConfigService(rt.DB)),
+		Config: admin.NewSystemConfigService(rt.DB, config.NewConfigService(rt.DB)),
 	})
 }
 

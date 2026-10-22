@@ -10,13 +10,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/publishing"
 )
 
 // PublishingDeps 是发布 handler 的依赖。
 type PublishingDeps struct {
-	Publishing *service.PublishingService
-	Events     *service.PublishJobEvents
+	Publishing *publishing.PublishingService
+	Events     *publishing.PublishJobEvents
 }
 
 // RegisterPublishing 注册发布路由。
@@ -88,7 +88,7 @@ func createPublishingAccount(d PublishingDeps) gin.HandlerFunc {
 			}
 			expiresAt = &parsed
 		}
-		account, err := d.Publishing.CreatePublishingAccount(c.Request.Context(), service.CreatePublishingAccountParams{
+		account, err := d.Publishing.CreatePublishingAccount(c.Request.Context(), publishing.CreatePublishingAccountParams{
 			UserID:            currentUserID(c),
 			Platform:          platform,
 			PlatformAccountID: platformAccountID,
@@ -143,7 +143,7 @@ func createPublishJob(d PublishingDeps) gin.HandlerFunc {
 			maxAttempts = int(*v)
 		}
 		result, err := d.Publishing.CreatePublishJob(c.Request.Context(), c.Param("artifact_id"),
-			service.CreatePublishJobParams{
+			publishing.CreatePublishJobParams{
 				UserID:           currentUserID(c),
 				ReviewSnapshotID: reviewSnapshotID,
 				Platform:         platform,
@@ -287,10 +287,10 @@ func parseISOTimestamp(text string) (time.Time, error) {
 // abortPublishingErr 把发布领域错误映射成统一 {"detail": ...} 信封。
 func abortPublishingErr(c *gin.Context, err error) {
 	var (
-		notFound    *service.PublishJobNotFoundError
-		conflict    *service.PublishConflictError
-		validation  *service.PublishValidationError
-		unavailable *service.PublishAdapterUnavailableError
+		notFound    *publishing.PublishJobNotFoundError
+		conflict    *publishing.PublishConflictError
+		validation  *publishing.PublishValidationError
+		unavailable *publishing.PublishAdapterUnavailableError
 	)
 	switch {
 	case errors.As(err, &notFound):

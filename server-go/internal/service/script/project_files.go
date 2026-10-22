@@ -8,9 +8,10 @@
 //
 // 安全不变式：所有落盘路径先过 SafeJoin；静态服务跳过 symlink 且带 nosniff
 // （字节来自用户上传，缺 nosniff 会构成存储型 XSS 向量）。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -33,10 +34,10 @@ var ProjectFileBuckets = []string{
 var GlobalLibraryAssetTypes = []string{"character", "scene", "prop"}
 
 // FileService 承载项目文件的读取与轻量写入。
-type FileService struct{ store *ProjectStore }
+type FileService struct{ store *service.ProjectStore }
 
 // NewFileService 构造。
-func NewFileService(store *ProjectStore) *FileService {
+func NewFileService(store *service.ProjectStore) *FileService {
 	return &FileService{store: store}
 }
 
@@ -208,7 +209,7 @@ func (s *FileService) sourcePath(projectName, filename string) (string, error) {
 	}
 	resolved, err := fs.SafeJoin(projectDir, false, filepath.Join("source", filename))
 	if err != nil {
-		return "", &ValueError{Msg: "forbidden path"}
+		return "", &service.ValueError{Msg: "forbidden path"}
 	}
 	return resolved, nil
 }
@@ -286,9 +287,9 @@ func (s *FileService) ReadDraft(projectName string, episode, stepNum int) (strin
 	}
 	primary, ok := DraftStepFile(pf.ContentMode, pf.GenerationMode, stepNum)
 	if !ok {
-		return "", &ValueError{Msg: fmt.Sprintf("invalid step_num: %d", stepNum)}
+		return "", &service.ValueError{Msg: fmt.Sprintf("invalid step_num: %d", stepNum)}
 	}
-	draftPath := resolveDraftPath(EpisodeDraftsDir(projectDir, episode), stepNum, primary)
+	draftPath := resolveDraftPath(service.EpisodeDraftsDir(projectDir, episode), stepNum, primary)
 	content, err := os.ReadFile(draftPath)
 	if err != nil {
 		return "", os.ErrNotExist
@@ -306,7 +307,7 @@ func (s *FileService) ReadDraft(projectName string, episode, stepNum int) (strin
 //
 // 返回 (项目内相对路径, 是否新建)。
 func (s *FileService) WriteDraft(
-	ctx context.Context, projectName string, episode, stepNum int, content string, review *ScriptReviewService,
+	ctx context.Context, projectName string, episode, stepNum int, content string, review Step1DraftSaver,
 ) (string, bool, error) {
 	projectDir, err := s.store.Dir(projectName)
 	if err != nil {
@@ -318,18 +319,18 @@ func (s *FileService) WriteDraft(
 	}
 	primary, ok := DraftStepFile(pf.ContentMode, pf.GenerationMode, stepNum)
 	if !ok {
-		return "", false, &ValueError{Msg: fmt.Sprintf("invalid step_num: %d", stepNum)}
+		return "", false, &service.ValueError{Msg: fmt.Sprintf("invalid step_num: %d", stepNum)}
 	}
 	// 写入恒落当前模式的目标文件：fallback 只用于读取/删除，否则切模式后生成侧读不到 step1。
-	draftPath := filepath.Join(EpisodeDraftsDir(projectDir, episode), primary)
+	draftPath := filepath.Join(service.EpisodeDraftsDir(projectDir, episode), primary)
 
 	if primary == "step1_reference_units.json" {
 		if review == nil {
-			return "", false, &ValueError{Msg: "script review service is not configured"}
+			return "", false, &service.ValueError{Msg: "script review service is not configured"}
 		}
 		var parsed map[string]any
 		if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-			return "", false, &ValueError{Msg: "invalid json: " + err.Error()}
+			return "", false, &service.ValueError{Msg: "invalid json: " + err.Error()}
 		}
 		_, isNew := readDraftMeta(draftPath)
 		if _, err := review.SaveContent(ctx, projectName, episode, parsed, nil); err != nil {
@@ -369,9 +370,9 @@ func (s *FileService) DeleteDraft(projectName string, episode, stepNum int) erro
 	}
 	primary, ok := DraftStepFile(pf.ContentMode, pf.GenerationMode, stepNum)
 	if !ok {
-		return &ValueError{Msg: fmt.Sprintf("invalid step_num: %d", stepNum)}
+		return &service.ValueError{Msg: fmt.Sprintf("invalid step_num: %d", stepNum)}
 	}
-	draftPath := resolveDraftPath(EpisodeDraftsDir(projectDir, episode), stepNum, primary)
+	draftPath := resolveDraftPath(service.EpisodeDraftsDir(projectDir, episode), stepNum, primary)
 	if _, statErr := os.Stat(draftPath); statErr != nil {
 		return os.ErrNotExist
 	}
@@ -382,24 +383,24 @@ func (s *FileService) DeleteDraft(projectName string, episode, stepNum int) erro
 func validateDramaDraft(content string) error {
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return &ValueError{Msg: "draft_invalid_json"}
+		return &service.ValueError{Msg: "draft_invalid_json"}
 	}
 	rawScenes, present := parsed["scenes"]
 	if !present {
-		return &ValueError{Msg: "draft_invalid_json"}
+		return &service.ValueError{Msg: "draft_invalid_json"}
 	}
 	scenes, ok := rawScenes.([]any)
 	if !ok || len(scenes) == 0 {
-		return &ValueError{Msg: "draft_invalid_json"}
+		return &service.ValueError{Msg: "draft_invalid_json"}
 	}
 	for _, raw := range scenes {
 		scene, ok := raw.(map[string]any)
 		if !ok {
-			return &ValueError{Msg: "draft_invalid_json"}
+			return &service.ValueError{Msg: "draft_invalid_json"}
 		}
 		id, _ := scene["scene_id"].(string)
 		if strings.TrimSpace(id) == "" {
-			return &ValueError{Msg: "draft_invalid_json"}
+			return &service.ValueError{Msg: "draft_invalid_json"}
 		}
 	}
 	return nil
@@ -423,11 +424,11 @@ func (s *FileService) DeleteCharacterReferenceAudio(projectName, charName string
 	}
 	bucket, ok := pf.BucketRef(domain.AssetCharacter)
 	if !ok || bucket == nil {
-		return &MediaAssetNotFoundError{MediaAssetID: charName}
+		return &service.MediaAssetNotFoundError{MediaAssetID: charName}
 	}
 	key, ok := bucket.ResolveKey(charName)
 	if !ok || (*bucket)[key] == nil {
-		return &MediaAssetNotFoundError{MediaAssetID: charName}
+		return &service.MediaAssetNotFoundError{MediaAssetID: charName}
 	}
 	oldAudio := (*bucket)[key].MustString("reference_audio")
 	refsAudioDir := filepath.Join(projectDir, "characters", "refs_audio")
@@ -439,11 +440,11 @@ func (s *FileService) DeleteCharacterReferenceAudio(projectName, charName string
 	return s.store.Update(projectName, func(update *domain.ProjectFile) error {
 		updateBucket, ok := update.BucketRef(domain.AssetCharacter)
 		if !ok || updateBucket == nil {
-			return errResourceMissingInScript
+			return service.ErrResourceMissingInScript
 		}
 		updateKey, ok := updateBucket.ResolveKey(charName)
 		if !ok || (*updateBucket)[updateKey] == nil {
-			return errResourceMissingInScript
+			return service.ErrResourceMissingInScript
 		}
 		(*updateBucket)[updateKey].SetString("reference_audio", "")
 		return nil
@@ -484,4 +485,10 @@ func draftRelPath(projectDir, draftPath string) string {
 		return filepath.ToSlash(draftPath)
 	}
 	return filepath.ToSlash(rel)
+}
+
+// Step1DraftSaver 是参考生视频 step1 草稿写盘的窄接口（*ScriptReviewService 满足），
+// 使 FileService 不依赖 script 域实现。
+type Step1DraftSaver interface {
+	SaveContent(ctx context.Context, projectName string, episode int, content any, base *string) (map[string]any, error)
 }

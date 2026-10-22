@@ -1,6 +1,7 @@
 package http
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -56,8 +57,8 @@ func newFilesFixture(t *testing.T) filesFixture {
 	r := gin.New()
 	deps := FilesDeps{
 		Store:  store,
-		Files:  service.NewFileService(store),
-		Review: service.NewScriptReviewService(store, config.NewResolver(gdb)),
+		Files:  servicescript.NewFileService(store),
+		Review: servicescript.NewScriptReviewService(store, config.NewResolver(gdb)),
 	}
 	RegisterPublicFiles(r.Group("/api/v1"), deps)
 	// 鉴权关闭时中间件注入 admin 身份。

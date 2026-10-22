@@ -16,6 +16,7 @@ import (
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/creative"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -87,7 +88,7 @@ func newCreationPlanTestEngineWithRole(t *testing.T, role string) (*gin.Engine, 
 	if _, err := store.Create("p1", "项目一", domain.ContentDrama, domain.GenerationStoryboard, ""); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	plans := service.NewCreationPlanService(gdb, dialect, service.NewWorkflowService(gdb), nil)
+	plans := creative.NewCreationPlanService(gdb, dialect, creative.NewWorkflowService(gdb), nil)
 	// 对应 Python 启动期的 sync_official_creation_skills：把代码拥有的清单物化到库里。
 	if _, err := plans.Catalog().SyncOfficialCreationSkills(context.Background()); err != nil {
 		t.Fatalf("sync official skills: %v", err)

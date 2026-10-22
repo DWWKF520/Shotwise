@@ -12,9 +12,10 @@
 //   - 删除供应商要级联清掉指向它的全局默认配置与项目级配置，避免留下永远解析不出模型的悬空引用；
 //   - 悬空引用在删除时不拦截，只作为读取时的提示回显（见 default_model_conflict 之外的
 //     global_bucket_refs），真正的拦截闸在解析期。
-package service
+package admin
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"errors"
@@ -60,14 +61,14 @@ type CustomCapacityRefresher interface {
 type CustomProviderService struct {
 	db     *gorm.DB
 	config *config.ConfigService
-	store  *ProjectStore
+	store  *service.ProjectStore
 	limits CustomCapacityRefresher
 }
 
 // NewCustomProviderService 构造。store 为 nil 时跳过项目级级联清理，limits 为 nil 时跳过
 // 并发上限刷新——两者都只影响清理动作，不影响写入本身。
 func NewCustomProviderService(
-	gdb *gorm.DB, store *ProjectStore, limits CustomCapacityRefresher,
+	gdb *gorm.DB, store *service.ProjectStore, limits CustomCapacityRefresher,
 ) *CustomProviderService {
 	return &CustomProviderService{
 		db:     gdb,

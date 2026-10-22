@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -60,7 +62,7 @@ func (d *TaskDispatcher) executeDesign(ctx context.Context, task *repository.Tas
 		return nil, fmt.Errorf("design task not supported for %s", kind)
 	}
 
-	outRel, err := resourceRelativePath(spec.BucketKey, key)
+	outRel, err := service.ResourceRelativePath(spec.BucketKey, key)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +73,7 @@ func (d *TaskDispatcher) executeDesign(ctx context.Context, task *repository.Tas
 
 	request := provider.NewImageGenerationRequest(prompt, outPath)
 	request.ReferenceImages = refs
-	request.AspectRatio = aspectRatioFor(pf, spec.BucketKey)
+	request.AspectRatio = service.AspectRatioFor(pf, spec.BucketKey)
 	if size := payloadString(task.Payload, "image_size"); size != "" {
 		request.ImageSize = size
 	}

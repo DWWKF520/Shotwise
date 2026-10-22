@@ -1,9 +1,10 @@
 // 参考生视频 step1 拆分的运行时能力、schema、扁平产出校验、晋升与 step2 保结构合并
 // （对应 server/agent_runtime/sdk_tools/text_generation.py 的参考工具链辅助与
 // lib/script_generator.py 的参考路径合并）。
-package service
+package reference
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -38,7 +39,7 @@ func (c ReferenceSplitCaps) TiersFor(hasReferences bool) []int {
 
 // FetchReferenceSplitCaps 解析参考视频拆分所需的视频能力；能力未知时停止，不伪造时长档位。
 func FetchReferenceSplitCaps(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile,
+	ctx context.Context, r service.VideoCapabilityResolver, project *domain.ProjectFile,
 ) (ReferenceSplitCaps, error) {
 	if r == nil || project == nil {
 		return ReferenceSplitCaps{}, fmt.Errorf("video_capabilities_unresolved: 视频能力不可解析")
@@ -51,28 +52,28 @@ func FetchReferenceSplitCaps(
 	if len(durations) == 0 {
 		return ReferenceSplitCaps{}, fmt.Errorf("video_capabilities_unresolved: 模型 %s/%s 未声明 supported_durations", view.ProviderID, view.ModelID)
 	}
-	withRefs, withoutRefs := ReferenceUnitDurationTiers(ctx, r, project, view, durations)
-	union := normalizeDurations(append(append([]int(nil), withRefs...), withoutRefs...))
+	withRefs, withoutRefs := service.ReferenceUnitDurationTiers(ctx, r, project, view, durations)
+	union := service.NormalizeDurations(append(append([]int(nil), withRefs...), withoutRefs...))
 	if len(union) == 0 {
 		return ReferenceSplitCaps{}, fmt.Errorf("video_capabilities_unresolved: 参考路线时长档位为空")
 	}
-	maxDuration, _ := maxDurationOf(union)
+	maxDuration, _ := service.MaxDurationOf(union)
 	var maxRefs *int
 	if view.Caps.MaxReferenceImages > 0 {
 		value := view.Caps.MaxReferenceImages
 		maxRefs = &value
 	}
 	defaultDuration := project.DefaultDuration
-	if defaultDuration != nil && !containsInt(union, *defaultDuration) {
+	if defaultDuration != nil && !service.ContainsInt(union, *defaultDuration) {
 		defaultDuration = nil
 	}
-	caps := ResolveProjectVideoCaps(ctx, r, project, provider.VideoBucketForGenerationMode(project.GenerationMode))
+	caps := service.ResolveProjectVideoCaps(ctx, r, project, provider.VideoBucketForGenerationMode(project.GenerationMode))
 	return ReferenceSplitCaps{
 		DefaultDuration:    defaultDuration,
 		Durations:          union,
-		RawDurations:       normalizeDurations(durations),
-		ReferenceDurations: normalizeDurations(withRefs),
-		TextDurations:      normalizeDurations(withoutRefs),
+		RawDurations:       service.NormalizeDurations(durations),
+		ReferenceDurations: service.NormalizeDurations(withRefs),
+		TextDurations:      service.NormalizeDurations(withoutRefs),
 		MaxDuration:        maxDuration,
 		MaxRefs:            maxRefs,
 		Voice:              VoiceRenderSettingsFromCaps(caps, project),
@@ -84,14 +85,14 @@ var referenceStep1FlatUnitAllowed = []string{"duration_seconds", "source_text", 
 
 // BuildReferenceUnitsStep1Schema 构造 unit 时长被 supported_durations 枚举硬约束的 step1 JSON Schema。
 func BuildReferenceUnitsStep1Schema(durations []int) (map[string]any, error) {
-	normalized := normalizeDurations(durations)
+	normalized := service.NormalizeDurations(durations)
 	if len(normalized) == 0 {
 		return nil, fmt.Errorf("supported_durations 为空，无法构造 duration 枚举约束")
 	}
 	unit := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"duration_seconds": durationConstraint(normalized),
+			"duration_seconds": service.DurationConstraint(normalized),
 			"source_text":      map[string]any{"type": "string", "minLength": 1},
 			"text":             map[string]any{"type": "string", "minLength": 1},
 		},
@@ -132,7 +133,7 @@ func ReferenceStep2FlatScriptSchema() map[string]any {
 // 与 response_schema 同口径：units 非空、每个 unit 字段恰好为 duration_seconds / source_text /
 // text，时长落在档位内。违约 fail-loud，不把未校验内容当成功产物落盘。
 func ParseReferenceStep1Flat(responseText string, durations []int) ([]map[string]any, error) {
-	root, err := parseJSONObject(responseText)
+	root, err := service.ParseJSONObject(responseText)
 	if err != nil {
 		return nil, fmt.Errorf("step1 拆分内容%s", strings.TrimPrefix(err.Error(), "JSON 解析失败: "))
 	}
@@ -141,7 +142,7 @@ func ParseReferenceStep1Flat(responseText string, durations []int) ([]map[string
 		return nil, fmt.Errorf("step1 拆分内容结构异常：units 必须是非空的 unit 对象数组")
 	}
 	allowed := map[int]bool{}
-	for _, d := range normalizeDurations(durations) {
+	for _, d := range service.NormalizeDurations(durations) {
 		allowed[d] = true
 	}
 	units := make([]map[string]any, 0, len(rawUnits))
@@ -150,16 +151,16 @@ func ParseReferenceStep1Flat(responseText string, durations []int) ([]map[string
 		if !ok {
 			return nil, fmt.Errorf("step1 拆分内容结构异常：units.%d 必须是对象", index)
 		}
-		if err := rejectUnknownKeys(unit, referenceStep1FlatUnitAllowed, fmt.Sprintf("units.%d", index)); err != nil {
+		if err := service.RejectUnknownKeys(unit, referenceStep1FlatUnitAllowed, fmt.Sprintf("units.%d", index)); err != nil {
 			return nil, fmt.Errorf("step1 拆分内容不符合产出结构：%w", err)
 		}
-		duration := coerceDigitInt(unit["duration_seconds"])
+		duration := service.CoerceDigitInt(unit["duration_seconds"])
 		if duration == 0 {
-			duration = intValueOrZero(unit["duration_seconds"])
+			duration = service.IntValueOrZero(unit["duration_seconds"])
 		}
 		if !allowed[duration] {
 			return nil, fmt.Errorf("step1 拆分内容不符合产出结构：units.%d.duration_seconds 须取自模型档位 %v",
-				index, normalizeDurations(durations))
+				index, service.NormalizeDurations(durations))
 		}
 		sourceText, ok := unit["source_text"].(string)
 		if !ok || sourceText == "" {
@@ -179,7 +180,7 @@ func ParseReferenceStep1Flat(responseText string, durations []int) ([]map[string
 // ValidateUnitDurationTier 按该 unit 的引用状态判时长是否落在生效档位内，出档抛 DraftViolation。
 func ValidateUnitDurationTier(label string, duration int, hasReferences bool, caps ReferenceSplitCaps) error {
 	tiers := caps.TiersFor(hasReferences)
-	if containsInt(tiers, duration) {
+	if service.ContainsInt(tiers, duration) {
 		return nil
 	}
 	state := "无 `@` 资产引用"
@@ -188,7 +189,7 @@ func ValidateUnitDurationTier(label string, duration int, hasReferences bool, ca
 		state = "带 `@` 资产引用"
 		remedy = "；请改取该档位内的时长，或把次要资产融入描述文字、不用 `@` 引用"
 	}
-	return violation(label, "duration_off_tier", nil,
+	return Violation(label, "duration_off_tier", nil,
 		"%s 时长 %ds 不在%s的 unit 的生效档位 %v 内%s", label, duration, state, tiers, remedy)
 }
 
@@ -197,15 +198,15 @@ func CollectReferenceFlatViolations(
 	flatUnits []map[string]any, project *domain.ProjectFile,
 	episode int, novelText string, caps ReferenceSplitCaps, sourceLanguage string,
 ) []DraftViolation {
-	speechRateOverride := ProjectSpeechRateOverride(project)
+	speechRateOverride := service.ProjectSpeechRateOverride(project)
 	var violations []DraftViolation
 	for index, flat := range flatUnits {
 		label := fmt.Sprintf("unit E%dU%02d", episode, index+1)
-		duration := intValueOrZero(flat["duration_seconds"])
+		duration := service.IntValueOrZero(flat["duration_seconds"])
 		sourceText, _ := flat["source_text"].(string)
 		text, _ := flat["text"].(string)
 		checkTextAndTier := func() error {
-			_, refs, err := validateUnitText(label, text, project, caps.MaxRefs)
+			_, refs, err := ValidateUnitText(label, text, project, caps.MaxRefs)
 			if err != nil {
 				return err
 			}
@@ -214,7 +215,7 @@ func CollectReferenceFlatViolations(
 		violations = append(violations, collectViolations(
 			func() error { return validateSourceTextAnchor(label, sourceText, novelText) },
 			checkTextAndTier,
-			func() error { return validateDialogueLoad(label, text, duration, sourceLanguage, speechRateOverride) },
+			func() error { return ValidateDialogueLoad(label, text, duration, sourceLanguage, speechRateOverride) },
 		)...)
 	}
 	return violations
@@ -231,7 +232,7 @@ func BuildReferenceUnitsFromFlat(
 	for index, flat := range flatUnits {
 		unitID := fmt.Sprintf("E%dU%02d", episode, index+1)
 		text, _ := flat["text"].(string)
-		shots, refs, err := validateUnitText("unit "+unitID, text, project, maxRefs)
+		shots, refs, err := ValidateUnitText("unit "+unitID, text, project, maxRefs)
 		if err != nil {
 			return nil, err
 		}
@@ -242,9 +243,9 @@ func BuildReferenceUnitsFromFlat(
 		units = append(units, map[string]any{
 			"unit_id":          unitID,
 			"shots":            shotsAny,
-			"duration_seconds": intValueOrZero(flat["duration_seconds"]),
-			"references":       renderUnitReferences(refs),
-			"source_text":      stringValue(flat["source_text"], ""),
+			"duration_seconds": service.IntValueOrZero(flat["duration_seconds"]),
+			"references":       RenderUnitReferences(refs),
+			"source_text":      service.StringValue(flat["source_text"], ""),
 		})
 	}
 	return units, nil
@@ -258,7 +259,7 @@ func ReferenceResultText(step1Path string, units []map[string]any, warningLines 
 	for _, unit := range units {
 		shots, _ := unit["shots"].([]any)
 		shotCount += len(shots)
-		totalSeconds += intValueOrZero(unit["duration_seconds"])
+		totalSeconds += service.IntValueOrZero(unit["duration_seconds"])
 		refs, _ := unit["references"].([]any)
 		if len(refs) > maxUnitRefs {
 			maxUnitRefs = len(refs)
@@ -273,8 +274,8 @@ func ReferenceResultText(step1Path string, units []map[string]any, warningLines 
 	return text
 }
 
-// renderShotsTextList 把磁盘形态的 shots（[]any）还原为书写层正文；非对象条目按空正文保留 header。
-func renderShotsTextList(shots []any) string {
+// RenderShotsTextList 把磁盘形态的 shots（[]any）还原为书写层正文；非对象条目按空正文保留 header。
+func RenderShotsTextList(shots []any) string {
 	blocks := make([]string, 0, len(shots))
 	for index, raw := range shots {
 		body := ""
@@ -313,7 +314,7 @@ func FlattenReferenceStep1Units(units []any) []map[string]any {
 			continue
 		}
 		shots, _ := unit["shots"].([]any)
-		text := renderShotsTextList(shots)
+		text := RenderShotsTextList(shots)
 		parsedShots, _ := parsePrompt(text)
 		if len(parsedShots) != len(shots) {
 			text = ""
@@ -324,7 +325,7 @@ func FlattenReferenceStep1Units(units []any) []map[string]any {
 		}
 		flat = append(flat, map[string]any{
 			"duration_seconds": duration,
-			"source_text":      stringValue(unit["source_text"], ""),
+			"source_text":      service.StringValue(unit["source_text"], ""),
 			"text":             text,
 		})
 	}
@@ -342,7 +343,7 @@ type ReferenceDraftRevalidation struct {
 // RevalidateReferenceStep1Draft 按产出时那套校验器全量重判 step1 隔离草稿，只读、不写盘、不清草稿。
 func RevalidateReferenceStep1Draft(
 	ctx context.Context, projectDir string, project *domain.ProjectFile, episode int,
-	draft *QuarantinedDraft, resolver VideoCapabilityResolver,
+	draft *QuarantinedDraft, resolver service.VideoCapabilityResolver,
 ) (ReferenceDraftRevalidation, error) {
 	if draft == nil {
 		return ReferenceDraftRevalidation{}, fmt.Errorf("隔离草稿缺失")
@@ -353,7 +354,7 @@ func RevalidateReferenceStep1Draft(
 				"请恢复该字段（指定源文时为其相对路径，按整个 source/ 产出时为 null）后重试", draft.Path)
 	}
 	source, _ := draft.Meta["source"].(string)
-	sourceText, err := ResolveEpisodeSource(projectDir, episode, source, project)
+	sourceText, err := service.ResolveEpisodeSource(projectDir, episode, source, project)
 	if err != nil {
 		return ReferenceDraftRevalidation{}, err
 	}
@@ -387,7 +388,7 @@ func RevalidateReferenceStep1Draft(
 // ParseReferenceStep1FlatFromUnits 校验已解析的 units 数组（供隔离草稿重判）。
 func ParseReferenceStep1FlatFromUnits(rawUnits []any, durations []int) ([]map[string]any, error) {
 	allowed := map[int]bool{}
-	for _, d := range normalizeDurations(durations) {
+	for _, d := range service.NormalizeDurations(durations) {
 		allowed[d] = true
 	}
 	units := make([]map[string]any, 0, len(rawUnits))
@@ -396,12 +397,12 @@ func ParseReferenceStep1FlatFromUnits(rawUnits []any, durations []int) ([]map[st
 		if !ok {
 			return nil, fmt.Errorf("units.%d 必须是对象", index)
 		}
-		if err := rejectUnknownKeys(unit, referenceStep1FlatUnitAllowed, fmt.Sprintf("units.%d", index)); err != nil {
+		if err := service.RejectUnknownKeys(unit, referenceStep1FlatUnitAllowed, fmt.Sprintf("units.%d", index)); err != nil {
 			return nil, err
 		}
-		duration := coerceDigitInt(unit["duration_seconds"])
+		duration := service.CoerceDigitInt(unit["duration_seconds"])
 		if !allowed[duration] {
-			return nil, fmt.Errorf("units.%d.duration_seconds 须取自模型档位 %v", index, normalizeDurations(durations))
+			return nil, fmt.Errorf("units.%d.duration_seconds 须取自模型档位 %v", index, service.NormalizeDurations(durations))
 		}
 		sourceText, ok := unit["source_text"].(string)
 		if !ok || sourceText == "" {
@@ -458,7 +459,7 @@ func conflictActual(conflict *Step1WriteConflict) *string {
 
 // ReferenceStep2FlatContent 把 step2 响应还原成隔离草稿要装的扁平形状 {title, units: [{text}]}。
 func ReferenceStep2FlatContent(responseText string, episode int) (map[string]any, error) {
-	root, err := parseJSONObject(responseText)
+	root, err := service.ParseJSONObject(responseText)
 	if err != nil {
 		return nil, err
 	}
@@ -492,7 +493,7 @@ func ReferenceStep2FlatContent(responseText string, episode int) (map[string]any
 func MergeReferenceVisual(
 	step1Units []map[string]any, responseText string, episode int, project *domain.ProjectFile, maxRefs *int,
 ) (map[string]any, error) {
-	root, err := parseJSONObject(responseText)
+	root, err := service.ParseJSONObject(responseText)
 	if err != nil {
 		return nil, fmt.Errorf("JSON 解析失败: %w", err)
 	}
@@ -528,16 +529,16 @@ func MergeReferenceVisual(
 		unitID, _ := step1Unit["unit_id"].(string)
 		label := "unit " + unitID
 		storedShots, _ := step1Unit["shots"].([]any)
-		step1Text := renderShotsTextList(storedShots)
+		step1Text := RenderShotsTextList(storedShots)
 		text, _ := flatUnits[i]["text"].(string)
 
-		shots, refs, err := validateUnitText(label, text, project, maxRefs)
+		shots, refs, err := ValidateUnitText(label, text, project, maxRefs)
 		if err != nil {
-			violations = append(violations, violationItems(err)...)
+			violations = append(violations, ViolationItems(err)...)
 			continue
 		}
 		if err := assertDialoguePreserved(label, step1Text, text); err != nil {
-			violations = append(violations, violationItems(err)...)
+			violations = append(violations, ViolationItems(err)...)
 			continue
 		}
 		if len(shots) != len(storedShots) {
@@ -557,7 +558,7 @@ func MergeReferenceVisual(
 		videoUnits = append(videoUnits, map[string]any{
 			"unit_id":          unitID,
 			"shots":            shotsAny,
-			"references":       renderUnitReferences(refs),
+			"references":       RenderUnitReferences(refs),
 			"duration_seconds": duration,
 		})
 	}

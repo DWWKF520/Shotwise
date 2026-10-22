@@ -3,7 +3,7 @@
 // 画布操作刻意不触碰项目资产与剧本宫格记录：每次操作都保留源图，产出独立的
 // MediaAsset。本文件只负责「校验 + 入队」，真正的执行在 worker 侧
 // （tasks_canvas.go），两者共用同一份操作白名单与源解析口径。
-package service
+package generation
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/repository"
 )
@@ -118,11 +119,11 @@ func (s *GenerateService) SplitCanvasImage(
 	ctx context.Context, projectName string, req CanvasImageRequest, userID string,
 ) (map[string]any, error) {
 	if req.Rows == nil || req.Cols == nil || !ValidateCanvasGrid(*req.Rows, *req.Cols) {
-		return nil, generateBadRequest("canvas_image_source_invalid", nil)
+		return nil, service.GenerateBadRequest("canvas_image_source_invalid", nil)
 	}
 	resourceID, ok := CanvasResourceID(req)
 	if !ok {
-		return nil, generateBadRequest("canvas_image_source_invalid", nil)
+		return nil, service.GenerateBadRequest("canvas_image_source_invalid", nil)
 	}
 	return s.enqueueCanvasImage(ctx, projectName, CanvasImageOperationSplit, req.Payload(), resourceID, userID)
 }
@@ -136,11 +137,11 @@ func (s *GenerateService) AdvancedCanvasImage(
 		operation = *req.Operation
 	}
 	if _, ok := CanvasImageOperations[operation]; !ok {
-		return nil, generateBadRequest("canvas_image_operation_invalid", map[string]any{"operation": operation})
+		return nil, service.GenerateBadRequest("canvas_image_operation_invalid", map[string]any{"operation": operation})
 	}
 	resourceID, ok := CanvasResourceID(req)
 	if !ok {
-		return nil, generateBadRequest("canvas_image_source_invalid", nil)
+		return nil, service.GenerateBadRequest("canvas_image_source_invalid", nil)
 	}
 	return s.enqueueCanvasImage(ctx, projectName, operation, req.Payload(), resourceID, userID)
 }
@@ -152,7 +153,7 @@ func (s *GenerateService) enqueueCanvasImage(
 	ctx context.Context, projectName, operation string, payload map[string]any, resourceID, userID string,
 ) (map[string]any, error) {
 	if err := s.validateCanvasImageSource(projectName, payload); err != nil {
-		return nil, generateBadRequest("canvas_image_source_invalid", nil)
+		return nil, service.GenerateBadRequest("canvas_image_source_invalid", nil)
 	}
 	taskPayload := map[string]any{"prompt": operation}
 	for key, value := range payload {
@@ -232,7 +233,7 @@ func (s *GenerateService) validateCanvasImageSource(projectName string, payload 
 // resolveCanvasMediaSource 校验媒体库来源的图片资产可用（对应
 // resolve_reference_media_asset_path：必须是图片且文件在项目内存在）。
 func resolveCanvasMediaSource(projectDir, mediaAssetID string) error {
-	asset, err := GetProjectMediaAsset(projectDir, mediaAssetID)
+	asset, err := service.GetProjectMediaAssetHook(projectDir, mediaAssetID)
 	if err != nil || asset == nil {
 		return errors.New("reference media asset not found")
 	}

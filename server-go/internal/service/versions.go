@@ -41,7 +41,7 @@ var resourcePatterns = map[string]resourcePattern{
 // resourceRelativePath 返回资源在项目内的相对路径（posix 正斜杠）。
 // storyboards 形如 storyboards/scene_{id}.png，audio 形如 audio/segment_{id}.wav，
 // 其余 {subdir}/{id}{ext}；未知类型报错。
-func resourceRelativePath(resourceType, resourceID string) (string, error) {
+func ResourceRelativePath(resourceType, resourceID string) (string, error) {
 	p, err := resourcePatternFor(resourceType)
 	if err != nil {
 		return "", err

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 // 本文件验证「37 个工具在依赖齐备时全部注册」——迁移完成的收口证据。
@@ -70,7 +73,7 @@ func (regImageCaps) ResolveResolution(context.Context, *domain.ProjectFile, stri
 	return "", nil
 }
 
-// regGenerator 同时满足 RelationTextGenerator 与 service.TextCompletion。
+// regGenerator 同时满足 RelationTextGenerator 与 servicescript.TextCompletion。
 type regGenerator struct{}
 
 func (regGenerator) Generate(context.Context, string, map[string]any, int) (string, error) {
@@ -101,8 +104,8 @@ func (regScripts) UpdateScript(_ string, _ string, mutate func(map[string]any) e
 
 type regRenamer struct{}
 
-func (regRenamer) Rename(string, domain.AssetKind, string, string, bool) (service.RenameReport, error) {
-	return service.RenameReport{}, nil
+func (regRenamer) Rename(string, domain.AssetKind, string, string, bool) (asset.RenameReport, error) {
+	return asset.RenameReport{}, nil
 }
 
 type regSplitter struct{}
@@ -125,13 +128,13 @@ func (regMemory) CreateMemoryCandidate(context.Context, service.CreateMemoryCand
 
 type regTimeline struct{}
 
-func (regTimeline) CreatePlan(context.Context, service.CreatePlanParams) (map[string]any, error) {
+func (regTimeline) CreatePlan(context.Context, media.CreatePlanParams) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 func (regTimeline) GetPlan(context.Context, string, string) (map[string]any, error) {
 	return map[string]any{}, nil
 }
-func (regTimeline) CreateRevision(context.Context, string, service.CreateRevisionParams) (map[string]any, error) {
+func (regTimeline) CreateRevision(context.Context, string, media.CreateRevisionParams) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
@@ -171,14 +174,14 @@ func TestAllExpectedToolsRegistered(t *testing.T) {
 		WithGenerationTools(&regQueue{}, projects),
 		WithImageEditTools(&regQueue{}, projects, regImageCaps{}),
 		WithGridTools(&regQueue{}, projects, regImageCaps{}, regSplitter{}),
-		WithEpisodePlanning(projects, func(context.Context, *domain.ProjectFile) (service.TextCompletion, error) {
+		WithEpisodePlanning(projects, func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
 			return regGenerator{}, nil
 		}),
-		WithTextGenerationTools(func(context.Context, *domain.ProjectFile) (service.TextCompletion, error) {
+		WithTextGenerationTools(func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
 			return regGenerator{}, nil
 		}, projects),
 		WithScriptReviewTools(projects),
-		WithReferenceTools(func(context.Context, *domain.ProjectFile) (service.TextCompletion, error) {
+		WithReferenceTools(func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
 			return regGenerator{}, nil
 		}, projects, regVideoCaps{}),
 		WithVideoGeneration(&regQueue{}, projects, regVideoCaps{}, regScripts{}),

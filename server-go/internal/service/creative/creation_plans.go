@@ -1,6 +1,6 @@
-package service
+package creative
 
-// Creation Plan 预览与生命周期（对应 server/services/creation_plans.py）。
+// Creation service.Plan 预览与生命周期（对应 server/services/creation_plans.py）。
 //
 // 三条不变式：
 //  1. 预览是纯函数式的编译 + 落库，没有任何生成副作用；

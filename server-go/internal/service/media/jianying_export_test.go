@@ -1,4 +1,6 @@
-package service
+package media
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"archive/zip"
@@ -22,7 +24,7 @@ func newJianyingExportEnv(t *testing.T) (*JianyingExportService, string, *MediaA
 	t.Helper()
 	gdb := newAssemblyPlanTestDB(t)
 	root := t.TempDir()
-	store := NewProjectStore(root)
+	store := service.NewProjectStore(root)
 	dir := filepath.Join(root, "p1")
 	if err := os.MkdirAll(filepath.Join(dir, "videos"), 0o755); err != nil {
 		t.Fatalf("mkdir videos: %v", err)
@@ -232,7 +234,7 @@ func TestJianyingExportSourceFileChanged(t *testing.T) {
 		t.Fatalf("tamper: %v", err)
 	}
 
-	exports := NewJianyingExportService(gdb, NewProjectStore(root))
+	exports := NewJianyingExportService(gdb, service.NewProjectStore(root))
 	plans, _ := assembly.ListPlans(context.Background(), repository.DefaultUserID, "p1")
 	_, err := exports.ExportCurrentRevision(context.Background(), plans[0]["id"].(string), repository.DefaultUserID)
 	var exportErr *JianyingExportError
@@ -261,7 +263,7 @@ func TestJianyingExportSourceFileMissing(t *testing.T) {
 		t.Fatalf("create plan: %v", err)
 	}
 
-	exports := NewJianyingExportService(gdb, NewProjectStore(root))
+	exports := NewJianyingExportService(gdb, service.NewProjectStore(root))
 	plans, _ := assembly.ListPlans(context.Background(), repository.DefaultUserID, "p1")
 	_, err := exports.ExportCurrentRevision(context.Background(), plans[0]["id"].(string), repository.DefaultUserID)
 	var exportErr *JianyingExportError
@@ -292,7 +294,7 @@ func TestJianyingExportRevisionConflicts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create plan: %v", err)
 	}
-	exports := NewJianyingExportService(gdb, NewProjectStore(root))
+	exports := NewJianyingExportService(gdb, service.NewProjectStore(root))
 	plans, _ := assembly.ListPlans(context.Background(), repository.DefaultUserID, "p1")
 	planID := plans[0]["id"].(string)
 
@@ -328,7 +330,7 @@ func TestJianyingExportSubtitleInvalid(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create plan: %v", err)
 	}
-	exports := NewJianyingExportService(gdb, NewProjectStore(root))
+	exports := NewJianyingExportService(gdb, service.NewProjectStore(root))
 	plans, _ := assembly.ListPlans(context.Background(), repository.DefaultUserID, "p1")
 	planID := plans[0]["id"].(string)
 

@@ -1,15 +1,17 @@
 // 参考生视频模式 Prompt 构建器（对应 lib/prompt_builders_reference.py）。
 //
-// 两级 prompt 注入的书写层语法规范取自同一份常量 WritingSyntaxSpec：LLM 产出与人在编辑器书写的
+// 两级 prompt 注入的书写层语法规范取自同一份常量 reference.WritingSyntaxSpec：LLM 产出与人在编辑器书写的
 // 是同一种格式，语法只能有一份措辞。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
 // formatReferenceAssetNames 渲染资产块：`- 名称: 描述`（对应参考 builder 的 _format_asset_names）。
@@ -103,21 +105,21 @@ type ReferenceUnitsSplitPromptOptions struct {
 
 // BuildReferenceUnitsSplitPrompt 构建 step-1 video_unit 拆分 prompt：源文 → 扁平 unit 表。
 func BuildReferenceUnitsSplitPrompt(opts ReferenceUnitsSplitPromptOptions) (string, error) {
-	normalized := normalizeDurations(opts.SupportedDurations)
+	normalized := service.NormalizeDurations(opts.SupportedDurations)
 	if len(normalized) == 0 {
 		return "", fmt.Errorf("supported_durations 不能为空：必须提供模型支持的秒数集合")
 	}
-	if opts.DefaultDuration != nil && !containsInt(normalized, *opts.DefaultDuration) {
+	if opts.DefaultDuration != nil && !service.ContainsInt(normalized, *opts.DefaultDuration) {
 		return "", fmt.Errorf("default_duration=%d 不在 supported_durations=%v 内", *opts.DefaultDuration, normalized)
 	}
-	refDurations := normalizeDurations(opts.ReferenceDurations)
-	textDurations := normalizeDurations(opts.TextDurations)
+	refDurations := service.NormalizeDurations(opts.ReferenceDurations)
+	textDurations := service.NormalizeDurations(opts.TextDurations)
 	for _, tier := range []struct {
 		name   string
 		values []int
 	}{{"reference_supported_durations", refDurations}, {"text_supported_durations", textDurations}} {
 		for _, d := range tier.values {
-			if !containsInt(normalized, d) {
+			if !service.ContainsInt(normalized, d) {
 				return "", fmt.Errorf("%s=%v 不是 supported_durations=%v 的子集", tier.name, tier.values, normalized)
 			}
 		}
@@ -136,8 +138,8 @@ func BuildReferenceUnitsSplitPrompt(opts ReferenceUnitsSplitPromptOptions) (stri
 	}
 	defaultScope := ""
 	if opts.DefaultDuration != nil && tiersDiffer {
-		inReference := containsInt(refDurations, *opts.DefaultDuration)
-		inText := containsInt(textDurations, *opts.DefaultDuration)
+		inReference := service.ContainsInt(refDurations, *opts.DefaultDuration)
+		inText := service.ContainsInt(textDurations, *opts.DefaultDuration)
 		if inReference != inText {
 			applies := "不带 `@` 引用的"
 			if inReference {
@@ -157,8 +159,8 @@ func BuildReferenceUnitsSplitPrompt(opts ReferenceUnitsSplitPromptOptions) (stri
 			"超出时把次要角色融入背景描述（不用 `@` 引用），不要压缩主体资产。", *opts.MaxReferenceImages)
 	}
 	sourceLanguage := opts.SourceLanguage
-	speechRate := SpeechRateUnitsPerSecond(sourceLanguage, opts.SpeechRateOverride)
-	unitLabel := ReadingUnitNoun(sourceLanguage)
+	speechRate := service.SpeechRateUnitsPerSecond(sourceLanguage, opts.SpeechRateOverride)
+	unitLabel := service.ReadingUnitNoun(sourceLanguage)
 	targetLanguage := opts.TargetLanguage
 	if targetLanguage == "" {
 		targetLanguage = "中文"
@@ -166,7 +168,7 @@ func BuildReferenceUnitsSplitPrompt(opts ReferenceUnitsSplitPromptOptions) (stri
 
 	return "# 角色与任务\n\n" +
 		"你是一位参考生视频单元架构师，本任务是把源文拆分为适配多模态参考视频模型的 video_unit 表（step1 内容拆分）。\n" +
-		"每个 video_unit 对应**一次视频生成调用**，含 1-" + strconv.Itoa(MaxShotsPerUnit) + " 个镜头；镜头表示画面切换，但共享同一次生成。\n" +
+		"每个 video_unit 对应**一次视频生成调用**，含 1-" + strconv.Itoa(reference.MaxShotsPerUnit) + " 个镜头；镜头表示画面切换，但共享同一次生成。\n" +
 		"本阶段定的是**结构与内容契约**：unit 边界、时长（时长即计费单位）、台词落位、核心资产指认——用户会逐 unit 审阅确认这份契约。\n" +
 		"视觉编排（景别 / 构图 / 运镜扩写）由后续 step2 以你的拆分为基底生成，本阶段不写。\n\n" +
 		"**输出语言**：所有字符串值必须使用 " + targetLanguage + "；JSON 键名保持英文。\n" +
@@ -198,7 +200,7 @@ func BuildReferenceUnitsSplitPrompt(opts ReferenceUnitsSplitPromptOptions) (stri
 		"  3. 默认偏好：" + defaultRule + "。\n" +
 		"  4. 打包效率：在 1-3 之内组织镜头，使 unit 时长贴近 " + strconv.Itoa(opts.MaxDuration) + " 秒；不要默认选最短 / 保守值。" + maxRefsRule + "\n\n" +
 		"# 正文书写语法\n\n" +
-		WritingSyntaxSpec + "\n\n" +
+		reference.WritingSyntaxSpec + "\n\n" +
 		"# 本阶段的正文写作指引\n\n" +
 		"- 镜头行的描述聚焦当下瞬间的**可见动作**：谁做了什么、物件互动、环境动态；动词描述物理可观察动作\n" +
 		"  （伸手 / 转身 / 推门 / 投向），避免「陷入 / 回忆 / 意识到 / 决定」等内心动词。\n" +
@@ -213,9 +215,9 @@ func BuildReferenceUnitsSplitPrompt(opts ReferenceUnitsSplitPromptOptions) (stri
 func RenderReferenceUnitsForStep2(units []map[string]any) string {
 	blocks := make([]string, 0, len(units))
 	for index, unit := range units {
-		duration := intValueOrZero(unit["duration_seconds"])
+		duration := service.IntValueOrZero(unit["duration_seconds"])
 		shots, _ := unit["shots"].([]any)
-		body := renderShotsTextList(shots)
+		body := reference.RenderShotsTextList(shots)
 		blocks = append(blocks, fmt.Sprintf("#### unit %d（时长 %ds）\n%s", index+1, duration, body))
 	}
 	return strings.Join(blocks, "\n\n")
@@ -275,7 +277,7 @@ func BuildReferenceVideoPrompt(opts ReferenceVideoPromptOptions) (string, error)
 		"<props>\n" + formatReferenceAssetNames(opts.Props) + "\n</props>\n\n" +
 		"<step1_units>\n" + RenderReferenceUnitsForStep2(opts.Step1Units) + "\n</step1_units>\n\n" +
 		"# 正文书写语法\n\n" +
-		WritingSyntaxSpec + "\n\n" +
+		reference.WritingSyntaxSpec + "\n\n" +
 		"# 视觉展开写作指引\n\n" +
 		"镜头行的描述将直接驱动该镜头的视频生成，按「景别 → 构图 → 运镜 → 画面内容」四要素依次组织，写足画面信息、宁详勿略：\n\n" +
 		"- 景别：大全景 / 全景 / 中景 / 近景 / 特写，及拍摄角度（俯拍 / 仰拍 / 平视）。\n" +

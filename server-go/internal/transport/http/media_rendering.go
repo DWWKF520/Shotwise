@@ -12,12 +12,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 )
 
 // MediaRenderingDeps 是渲染任务 handler 的依赖。
 type MediaRenderingDeps struct {
-	Renders *service.MediaRenderingService
+	Renders *media.MediaRenderingService
 }
 
 // RegisterMediaRendering 注册渲染任务路由；调用方负责鉴权。
@@ -287,15 +287,15 @@ func serveRenderArtifactFile(c *gin.Context, metadata map[string]any, path strin
 // （对应 _not_found / _conflict / _not_ready / _review_failure / _review_conflict / _subtitle_error）。
 func abortRenderErr(c *gin.Context, err error) {
 	var (
-		jobNotFound      *service.RenderJobNotFoundError
-		artifactNotFound *service.RenderArtifactNotFoundError
-		planNotFound     *service.AssemblyPlanNotFoundError
-		jobConflict      *service.RenderJobConflictError
-		revisionConflict *service.RenderRevisionConflictError
-		notReady         *service.FinalRenderNotReadyError
-		reviewConflict   *service.RenderReviewConflictError
-		reviewFailure    *service.FinalRenderReviewError
-		subtitleErr      *service.SubtitleExportError
+		jobNotFound      *media.RenderJobNotFoundError
+		artifactNotFound *media.RenderArtifactNotFoundError
+		planNotFound     *media.AssemblyPlanNotFoundError
+		jobConflict      *media.RenderJobConflictError
+		revisionConflict *media.RenderRevisionConflictError
+		notReady         *media.FinalRenderNotReadyError
+		reviewConflict   *media.RenderReviewConflictError
+		reviewFailure    *media.FinalRenderReviewError
+		subtitleErr      *media.SubtitleExportError
 	)
 	switch {
 	case errors.As(err, &jobNotFound), errors.As(err, &artifactNotFound), errors.As(err, &planNotFound):

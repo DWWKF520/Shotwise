@@ -1,7 +1,8 @@
 // 与平台无关的发布任务持久化与生命周期服务（对应 server/services/publishing.py）。
-package service
+package publishing
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -20,12 +21,12 @@ import (
 
 // PublishJobEvents 发出发布任务的项目变更刷新信号（对应 server/services/publishing_events.py）。
 type PublishJobEvents struct {
-	hub   *EventHub
-	store *ProjectStore
+	hub   *service.EventHub
+	store *service.ProjectStore
 }
 
 // NewPublishJobEvents 构造发布事件发射器。
-func NewPublishJobEvents(hub *EventHub, store *ProjectStore) *PublishJobEvents {
+func NewPublishJobEvents(hub *service.EventHub, store *service.ProjectStore) *PublishJobEvents {
 	return &PublishJobEvents{hub: hub, store: store}
 }
 
@@ -39,16 +40,16 @@ func (e *PublishJobEvents) Emit(projectName, jobID, source string) {
 	fingerprint := ""
 	if e.store != nil {
 		if dir, err := e.store.Dir(project); err == nil {
-			fingerprint = ProjectFingerprint(dir)
+			fingerprint = service.ProjectFingerprint(dir)
 		}
 	}
-	e.hub.Publish(ChangeBatch{
+	e.hub.Publish(service.ChangeBatch{
 		ProjectName: project,
 		BatchID:     uuid.NewString(),
 		Fingerprint: fingerprint,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Source:      source,
-		Changes: []Change{{
+		Changes: []service.Change{{
 			EntityType: "publish_job",
 			Action:     "publish_job_updated",
 			EntityID:   id,
@@ -112,7 +113,7 @@ func publishJobPayload(job *repository.PublishJob) map[string]any {
 		"source_fingerprint":   job.SourceFingerprint,
 		"artifact_fingerprint": job.ArtifactFingerprint,
 		"platform":             job.Platform,
-		"destination":          parseJSONValue(job.DestinationJSON),
+		"destination":          service.ParseJSONValue(job.DestinationJSON),
 		"idempotency_key":      job.IdempotencyKey,
 		"status":               job.Status,
 		"attempt":              job.Attempt,
@@ -121,12 +122,12 @@ func publishJobPayload(job *repository.PublishJob) map[string]any {
 		"error_message":        job.ErrorMessage,
 		"external_content_id":  job.ExternalContentID,
 		"external_status":      job.ExternalStatus,
-		"next_poll_at":         nullableISO(job.NextPollAt),
-		"last_polled_at":       nullableISO(job.LastPolledAt),
-		"created_at":           isoformatTime(job.CreatedAt.Time),
-		"started_at":           nullableISO(job.StartedAt),
-		"completed_at":         nullableISO(job.CompletedAt),
-		"updated_at":           isoformatTime(job.UpdatedAt.Time),
+		"next_poll_at":         service.NullableISO(job.NextPollAt),
+		"last_polled_at":       service.NullableISO(job.LastPolledAt),
+		"created_at":           service.IsoformatTime(job.CreatedAt.Time),
+		"started_at":           service.NullableISO(job.StartedAt),
+		"completed_at":         service.NullableISO(job.CompletedAt),
+		"updated_at":           service.IsoformatTime(job.UpdatedAt.Time),
 	}
 }
 
@@ -145,11 +146,11 @@ func publishingAccountPayload(account *repository.PublishingAccount) map[string]
 		"scopes":                 scopes,
 		"encryption_key_version": account.EncryptionKeyVersion,
 		"status":                 account.Status,
-		"token_expires_at":       nullableISO(account.TokenExpiresAt),
-		"last_refresh_at":        nullableISO(account.LastRefreshAt),
+		"token_expires_at":       service.NullableISO(account.TokenExpiresAt),
+		"last_refresh_at":        service.NullableISO(account.LastRefreshAt),
 		"last_error_code":        account.LastErrorCode,
-		"created_at":             isoformatTime(account.CreatedAt.Time),
-		"updated_at":             isoformatTime(account.UpdatedAt.Time),
+		"created_at":             service.IsoformatTime(account.CreatedAt.Time),
+		"updated_at":             service.IsoformatTime(account.UpdatedAt.Time),
 	}
 }
 
@@ -321,7 +322,7 @@ func (s *PublishingService) CreatePublishJob(
 	if destination == nil {
 		destination = map[string]any{}
 	}
-	destinationJSON, err := canonicalString(destination)
+	destinationJSON, err := service.CanonicalString(destination)
 	if err != nil {
 		return nil, err
 	}

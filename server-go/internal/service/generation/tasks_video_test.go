@@ -1,6 +1,9 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"os"
 	"path/filepath"
@@ -49,7 +52,7 @@ func stubVideoCaps() provider.VideoCapabilities {
 }
 
 // newVideoFixture 装配视频执行所需依赖：假 backend + 视频生成器 + 落盘项目。
-func newVideoFixture(t *testing.T, contentMode domain.ContentMode, genMode domain.GenerationMode) (*TaskDispatcher, *ProjectStore, *gorm.DB, string) {
+func newVideoFixture(t *testing.T, contentMode domain.ContentMode, genMode domain.GenerationMode) (*TaskDispatcher, *service.ProjectStore, *gorm.DB, string) {
 	t.Helper()
 	gdb, dialect, err := db.Open("sqlite://"+filepath.Join(t.TempDir(), "video.db"), logger.Silent)
 	if err != nil {
@@ -91,7 +94,7 @@ func newVideoFixture(t *testing.T, contentMode domain.ContentMode, genMode domai
 	})
 	t.Cleanup(func() { provider.RegisterVideoBackend("openai", provider.VideoBackendRegistration{}) })
 
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "测试项目", contentMode, genMode, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -115,7 +118,7 @@ func newVideoFixture(t *testing.T, contentMode domain.ContentMode, genMode domai
 			DefaultModel: map[string]string{"video": "sora-2"},
 		},
 	}
-	ledger := NewLedger(gdb, pricing.NewCalculator(catalog))
+	ledger := service.NewLedger(gdb, pricing.NewCalculator(catalog))
 	dispatcher := NewTaskDispatcher(store, nil)
 	dispatcher.SetVideoGenerator(NewVideoGenerator(gdb, ledger))
 	return dispatcher, store, gdb, "p1"
@@ -133,7 +136,7 @@ func videoTask(resourceID string, payload map[string]any) *repository.TaskData {
 	}
 }
 
-func writeSegmentScript(t *testing.T, store *ProjectStore, projectDir, storyboardRel string) {
+func writeSegmentScript(t *testing.T, store *service.ProjectStore, projectDir, storyboardRel string) {
 	t.Helper()
 	script := map[string]any{
 		"episode":      1,
@@ -198,7 +201,7 @@ func TestExecuteVideoTaskEndToEnd(t *testing.T) {
 	if err := gdb.Where("call_type = ?", "video").First(&row).Error; err != nil {
 		t.Fatalf("ledger row missing: %v", err)
 	}
-	if row.Status != StatusSuccess {
+	if row.Status != service.StatusSuccess {
 		t.Fatalf("expected success ledger row, got %s", row.Status)
 	}
 }
@@ -213,7 +216,7 @@ func TestRenderUnitPromptSegments(t *testing.T) {
 		Style:      "水墨",
 	}
 	text := "镜头1：@[李明] 缓步走向窗前。\n@[李明]：{这地方比我想的还热闹。}"
-	rendered := renderUnitPrompt(text, project, []map[string]any{{"type": "character", "name": "李明"}}, VoiceRenderSettings{
+	rendered := reference.RenderUnitPrompt(text, project, []map[string]any{{"type": "character", "name": "李明"}}, reference.VoiceRenderSettings{
 		VoiceConsistency:       "native",
 		RequestedGenerateAudio: true,
 		MaxReferenceAudio:      1,
@@ -227,7 +230,7 @@ func TestRenderUnitPromptSegments(t *testing.T) {
 		"镜头1：\n<李明> 缓步走向窗前。",
 		"<李明>说 {这地方比我想的还热闹。}",
 		"整体视觉风格：水墨。",
-		qualityPack + stabilityPack,
+		reference.QualityPack + reference.StabilityPack,
 	} {
 		if !strings.Contains(rendered.Prompt, want) {
 			t.Fatalf("rendered prompt missing %q:\n%s", want, rendered.Prompt)
@@ -256,7 +259,7 @@ func TestResolveAdUnitReferenceEntriesLabelsAndSkips(t *testing.T) {
 	scene.SetString("scene_sheet", "scenes/酒馆.png")
 	project := &domain.ProjectFile{Scenes: domain.AssetBucket{"酒馆": scene}}
 
-	entries, warnings := resolveAdUnitReferenceEntries(project, projectDir, []map[string]any{
+	entries, warnings := reference.ResolveAdUnitReferenceEntries(project, projectDir, []map[string]any{
 		{"type": "scene", "name": "酒馆"},
 		{"type": "scene", "name": "缺失场景"},
 	})
@@ -391,7 +394,7 @@ func TestApplyUnitVideoAssetsWritesAndClears(t *testing.T) {
 			},
 		}},
 	}
-	signature, err := applyUnitVideoAssets(script, "E1U01", "", "", "2026-01-01T00:00:00Z", signatureCompute, "")
+	signature, err := applyUnitVideoAssets(script, "E1U01", "", "", "2026-01-01T00:00:00Z", service.SignatureCompute, "")
 	if err != nil {
 		t.Fatalf("applyUnitVideoAssets: %v", err)
 	}
@@ -449,7 +452,7 @@ func TestApplyProviderConstraintsClampsAndWarns(t *testing.T) {
 	}
 }
 
-func writeUnitScript(t *testing.T, store *ProjectStore, projectDir string) {
+func writeUnitScript(t *testing.T, store *service.ProjectStore, projectDir string) {
 	t.Helper()
 	sheet := filepath.Join(projectDir, "characters", "李明.png")
 	if err := os.MkdirAll(filepath.Dir(sheet), 0o755); err != nil {

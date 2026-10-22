@@ -1,4 +1,6 @@
-package service
+package media
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -17,10 +19,10 @@ import (
 )
 
 // newRenderingTestEnv 构造渲染服务测试环境：迁移好的库 + 项目存储，并返回底层句柄供测试直接改行。
-func newRenderingTestEnv(t *testing.T) (*MediaRenderingService, *MediaAssemblyService, *ProjectStore, *gorm.DB) {
+func newRenderingTestEnv(t *testing.T) (*MediaRenderingService, *MediaAssemblyService, *service.ProjectStore, *gorm.DB) {
 	t.Helper()
 	gdb := newAssemblyPlanTestDB(t)
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	return NewMediaRenderingService(gdb, store), NewMediaAssemblyService(gdb), store, gdb
 }
 

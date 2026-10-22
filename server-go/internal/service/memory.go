@@ -183,7 +183,7 @@ func (s *MemoryService) CreateMemoryCandidate(ctx context.Context, p CreateMemor
 func (s *MemoryService) validateRecord(
 	scope string, projectName *string, category, content, source string,
 ) (string, *string, string, string, string, error) {
-	normScope, normProject, err := ValidateMemoryScope(scope, derefString(projectName))
+	normScope, normProject, err := ValidateMemoryScope(scope, DerefString(projectName))
 	if err != nil {
 		return "", nil, "", "", "", err
 	}
@@ -233,7 +233,7 @@ func newEntryRow(
 func (s *MemoryService) ListMemories(
 	ctx context.Context, userID, scope string, projectName *string,
 ) ([]map[string]any, error) {
-	normScope, normProject, err := ValidateMemoryScope(scope, derefString(projectName))
+	normScope, normProject, err := ValidateMemoryScope(scope, DerefString(projectName))
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +334,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID strin
 
 // ClearMemories 清空给定作用域的记忆条目，返回删除条数。
 func (s *MemoryService) ClearMemories(ctx context.Context, userID, scope string, projectName *string) (int64, error) {
-	normScope, normProject, err := ValidateMemoryScope(scope, derefString(projectName))
+	normScope, normProject, err := ValidateMemoryScope(scope, DerefString(projectName))
 	if err != nil {
 		return 0, err
 	}
@@ -381,7 +381,7 @@ func (s *MemoryService) ListCandidates(
 	ctx context.Context, userID string, scope, projectName *string,
 ) ([]map[string]any, error) {
 	if scope != nil {
-		normScope, normProject, err := ValidateMemoryScope(*scope, derefString(projectName))
+		normScope, normProject, err := ValidateMemoryScope(*scope, DerefString(projectName))
 		if err != nil {
 			return nil, err
 		}
@@ -672,8 +672,8 @@ func memoryEntryPayload(row *repository.MemoryEntry) map[string]any {
 		"source_session_id": row.SourceSessionID,
 		"source_message_id": row.SourceMessageID,
 		"metadata":          memoryMetadataPayload(row.MetadataJSON),
-		"created_at":        isoformatTime(row.CreatedAt.Time),
-		"updated_at":        isoformatTime(row.UpdatedAt.Time),
+		"created_at":        IsoformatTime(row.CreatedAt.Time),
+		"updated_at":        IsoformatTime(row.UpdatedAt.Time),
 	}
 }
 
@@ -722,9 +722,4 @@ func marshalMetadataJSON(m map[string]any) (*string, error) {
 	return &text, nil
 }
 
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
-}
+

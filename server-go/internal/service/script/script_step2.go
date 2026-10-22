@@ -3,10 +3,12 @@
 //
 // 两段式职责切分：step1 定内容层（novel_text / utterances / source_text 等），step2 只产视觉层
 // （image_prompt / video_prompt），按 id 对齐合并回 step1——内容字段永不经 step2 的 LLM 重出。
-package service
+package script
 
 import (
 	"fmt"
+
+	"github.com/shotwise/shotwise/internal/service"
 	"sort"
 
 	"github.com/shotwise/shotwise/internal/domain"
@@ -110,7 +112,7 @@ func DramaVisualScriptSchema() map[string]any {
 
 // ParseNarrationVisual 解析 step2 视觉层响应（严格校验 + 归一化）。
 func ParseNarrationVisual(responseText string) (map[string]any, error) {
-	root, err := parseJSONObject(responseText)
+	root, err := service.ParseJSONObject(responseText)
 	if err != nil {
 		return nil, fmt.Errorf("step2 视觉层 JSON 解析失败: %w", err)
 	}
@@ -208,7 +210,7 @@ func MergeNarrationVisual(step1Segments []map[string]any, visualData map[string]
 
 // ParseDramaVisual 解析 step2 视觉层响应为场景视觉 dict 列表（校验失败降级取原始 scenes）。
 func ParseDramaVisual(responseText string) ([]map[string]any, error) {
-	root, err := parseJSONObject(responseText)
+	root, err := service.ParseJSONObject(responseText)
 	if err != nil {
 		return nil, fmt.Errorf("step2 视觉层 JSON 解析失败: %w", err)
 	}

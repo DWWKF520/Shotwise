@@ -1,28 +1,27 @@
 // 项目级资产（角色/场景/道具/产品）的读写服务。四类资产共用一套实现，
 // 差异全部由 domain.AssetSpec 驱动 —— 与 Python 侧 build_asset_router 同源。
-package service
+package asset
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
 // AssetService 承载资产 CRUD 与级联改名。
-type AssetService struct{ store *ProjectStore }
+type AssetService struct{ store *service.ProjectStore }
 
 // NewAssetService 构造资产服务。
-func NewAssetService(store *ProjectStore) *AssetService { return &AssetService{store: store} }
+func NewAssetService(store *service.ProjectStore) *AssetService { return &AssetService{store: store} }
 
 var (
-	// ErrAssetNotFound 桶里没有这个资产（按 NFC 坐标系解析后仍未命中）。
-	ErrAssetNotFound = errors.New("asset not found")
+	// service.ErrAssetNotFound 桶里没有这个资产（按 NFC 坐标系解析后仍未命中）。
 	// ErrUnknownAssetKind 请求的资产类型没在 spec 注册表里。
 	ErrUnknownAssetKind = errors.New("unknown asset kind")
 )
@@ -132,7 +131,7 @@ func (a *AssetService) Create(project string, kind domain.AssetKind, rawName, de
 		// 创建即带 reference_audio 也要机械戳 voice_updated_at：与 PATCH 侧同一理由，
 		// 否则该角色的存量片段横幅感知不到这次「设置了声音」。
 		if entry.MustString("reference_audio") != "" {
-			entry.SetString("voice_updated_at", nowISO())
+			entry.SetString("voice_updated_at", service.NowISO())
 		}
 		for _, field := range spec.ExtraListFields {
 			entry.SetList(field, listValues[field])
@@ -209,7 +208,7 @@ func (a *AssetService) Patch(project string, kind domain.AssetKind, entryName st
 		bucket := bucketFor(pf, kind)
 		key, ok := bucket.ResolveKey(entryName)
 		if !ok {
-			return ErrAssetNotFound
+			return service.ErrAssetNotFound
 		}
 		entry := bucket[key]
 		if entry == nil {
@@ -225,7 +224,7 @@ func (a *AssetService) Patch(project string, kind domain.AssetKind, entryName st
 				return &AssetFieldError{Field: field, Kind: FieldVoiceNoticeStale}
 			}
 			if field == "reference_audio" && value != entry.MustString("reference_audio") {
-				entry.SetString("voice_updated_at", nowISO())
+				entry.SetString("voice_updated_at", service.NowISO())
 			}
 			entry.SetString(field, value)
 		}
@@ -249,7 +248,7 @@ func (a *AssetService) Delete(project string, kind domain.AssetKind, entryName s
 		bucket := bucketFor(pf, kind)
 		key, ok := bucket.ResolveKey(entryName)
 		if !ok {
-			return ErrAssetNotFound
+			return service.ErrAssetNotFound
 		}
 		if kind == domain.AssetCharacter {
 			pf.CharacterRelations = domain.RemoveRelationReferences(pf.CharacterRelations, key)
@@ -281,14 +280,14 @@ func (a *AssetService) Rename(project string, kind domain.AssetKind, oldName, ne
 	}
 
 	err = a.store.WithProjectLock(project, func() error {
-		pf, err := a.store.load(dir)
+		pf, err := a.store.Load(dir)
 		if err != nil {
 			return err
 		}
 		bucket := bucketFor(pf, kind)
 		oldKey, ok := bucket.ResolveKey(oldName)
 		if !ok {
-			return ErrAssetNotFound
+			return service.ErrAssetNotFound
 		}
 		if conflict, ok := bucket.ResolveKey(name); ok && conflict != oldKey {
 			return &AssetExistsError{Name: conflict}
@@ -337,7 +336,7 @@ func (a *AssetService) Rename(project string, kind domain.AssetKind, oldName, ne
 			return err
 		}
 		for _, p := range draftPaths {
-			payload, err := a.store.readJSONObject(p)
+			payload, err := a.store.ReadProjectJSON(p)
 			if err != nil {
 				continue // 草稿可能是半成品/隔离的 .invalid.json，跳过而非中止
 			}
@@ -372,7 +371,7 @@ func (a *AssetService) Rename(project string, kind domain.AssetKind, oldName, ne
 			working.CharacterRelations = domain.RenameRelationReferences(working.CharacterRelations, oldKey, name)
 		}
 		if fresh := domain.NewErrors(working.ValidateErrors(), allow); len(fresh) > 0 {
-			return &ProjectInvalidError{Errors: fresh}
+			return &service.ProjectInvalidError{Errors: fresh}
 		}
 
 		// files：迁移的文件数。版本历史快照（versions.json + versions/ 目录）待
@@ -401,7 +400,7 @@ func (a *AssetService) Rename(project string, kind domain.AssetKind, oldName, ne
 				return fmt.Errorf("move %s: %w", m.src, err)
 			}
 		}
-		return a.store.persistUnlocked(dir, working, allow)
+		return a.store.PersistUnlocked(dir, working, allow)
 	})
 	if err != nil {
 		return RenameReport{}, err
@@ -504,6 +503,4 @@ func toStringList(value any) ([]string, bool) {
 	return out, true
 }
 
-func nowISO() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
-}
+// NowISO 当前时间 RFC3339 纳秒串（生成产物时间戳口径），定义上收根包 helpers.go。

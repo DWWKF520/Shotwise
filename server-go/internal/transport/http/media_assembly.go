@@ -11,12 +11,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/media"
 )
 
 // MediaAssemblyDeps 是装配计划 handler 的依赖。
 type MediaAssemblyDeps struct {
-	Plans *service.MediaAssemblyService
+	Plans *media.MediaAssemblyService
 }
 
 // RegisterMediaAssembly 注册装配计划路由。
@@ -115,7 +115,7 @@ func createAssemblyPlan(d MediaAssemblyDeps) gin.HandlerFunc {
 			return
 		}
 
-		plan, err := d.Plans.CreatePlan(c.Request.Context(), service.CreatePlanParams{
+		plan, err := d.Plans.CreatePlan(c.Request.Context(), media.CreatePlanParams{
 			UserID:         currentUserID(c),
 			ProjectName:    c.Param("name"),
 			Name:           *req.Name,
@@ -164,7 +164,7 @@ func createAssemblyPlanRevision(d MediaAssemblyDeps) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		plan, err := d.Plans.CreateRevision(c.Request.Context(), c.Param("plan_id"), service.CreateRevisionParams{
+		plan, err := d.Plans.CreateRevision(c.Request.Context(), c.Param("plan_id"), media.CreateRevisionParams{
 			UserID:         currentUserID(c),
 			SourceManifest: sourceSnapshot,
 			Timeline:       timeline,
@@ -279,8 +279,8 @@ func abortFieldConstraint(c *gin.Context, field, typ string) {
 // abortAssemblyErr 把装配计划领域错误映射成统一 {"detail": ...} 信封。
 func abortAssemblyErr(c *gin.Context, err error) {
 	var (
-		notFound   *service.AssemblyPlanNotFoundError
-		conflict   *service.AssemblyPlanConflictError
+		notFound   *media.AssemblyPlanNotFoundError
+		conflict   *media.AssemblyPlanConflictError
 		validation *domain.AssemblyPlanValidationError
 	)
 	switch {

@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -18,16 +20,16 @@ import (
 // 是图片生成路径的最小闭环（对应 Python lib/media_generator.py 的图片分支）。
 //
 // 记账括号的不变式在此落地：能力闸门与 backend 构造都在开括号之前，失败不落 pending 行；
-// 括号一旦开启，正常返回必须显式声明成功（FinishFailure 兜底会把「未声明终局」写回调用方）。
+// 括号一旦开启，正常返回必须显式声明成功（service.FinishFailure 兜底会把「未声明终局」写回调用方）。
 type ImageGenerator struct {
 	db       *gorm.DB
 	resolver *config.Resolver
 	cfg      *config.ConfigService
-	ledger   *Ledger
+	ledger   *service.Ledger
 }
 
 // NewImageGenerator 构造；ledger 为 nil 时只生成不记账（供冒烟 / 诊断路径）。
-func NewImageGenerator(db *gorm.DB, ledger *Ledger) *ImageGenerator {
+func NewImageGenerator(db *gorm.DB, ledger *service.Ledger) *ImageGenerator {
 	return &ImageGenerator{
 		db:       db,
 		resolver: config.NewResolver(db),
@@ -69,7 +71,7 @@ func (g *ImageGenerator) Generate(ctx context.Context, p ImageGenerateParams) (p
 	if g.ledger == nil {
 		return backend.Generate(ctx, p.Request)
 	}
-	call, err := g.ledger.Start(ctx, StartParams{
+	call, err := g.ledger.Start(ctx, service.StartParams{
 		ProjectName: p.ProjectName,
 		CallType:    "image",
 		Model:       selected.ModelID,
@@ -91,7 +93,7 @@ func (g *ImageGenerator) Generate(ctx context.Context, p ImageGenerateParams) (p
 		return provider.ImageGenerationResult{}, err
 	}
 	path := out.ImagePath
-	err = g.ledger.FinishSuccess(ctx, call, FinishParams{
+	err = g.ledger.FinishSuccess(ctx, call, service.FinishParams{
 		Settlement: pricing.Settlement{
 			Quality:           out.Quality,
 			ImageInputTokens:  int64ToInt(out.ImageInputTokens),

@@ -1,4 +1,6 @@
-package service
+package generation
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -16,10 +18,10 @@ import (
 )
 
 // newDispatcherFixture 复用图片生成记账夹具，外加一个真实落盘的项目目录。
-func newDispatcherFixture(t *testing.T, status int) (*TaskDispatcher, *ProjectStore, string) {
+func newDispatcherFixture(t *testing.T, status int) (*TaskDispatcher, *service.ProjectStore, string) {
 	t.Helper()
 	generator, _, _ := newImageGeneratorFixture(t, status)
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -86,7 +88,7 @@ func TestTaskDispatcherStoryboardEndToEnd(t *testing.T) {
 
 func TestTaskDispatcherStructuredPromptRendersYAML(t *testing.T) {
 	generator, gdb, _ := newImageGeneratorFixture(t, http.StatusOK)
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -117,7 +119,7 @@ func TestTaskDispatcherStructuredPromptRendersYAML(t *testing.T) {
 func TestTaskDispatcherLedgerRow(t *testing.T) {
 	// 独立夹具拿得到 DB：验证记账行身份与 segment_id。
 	generator, gdb, _ := newImageGeneratorFixture(t, http.StatusOK)
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -132,7 +134,7 @@ func TestTaskDispatcherLedgerRow(t *testing.T) {
 	if err := gdb.Where("project_name = ?", "p1").First(&row).Error; err != nil {
 		t.Fatalf("api_call row missing: %v", err)
 	}
-	if row.Status != StatusSuccess || row.CallType != "image" {
+	if row.Status != service.StatusSuccess || row.CallType != "image" {
 		t.Fatalf("unexpected ledger row: %s/%s", row.Status, row.CallType)
 	}
 	if row.SegmentID == nil || *row.SegmentID != "E1S03" {
@@ -252,7 +254,7 @@ func TestImageGeneratorCustomProviderWired(t *testing.T) {
 	if err := gdb.Where("project_name = ?", "demo").First(&row).Error; err != nil {
 		t.Fatalf("api_call row missing: %v", err)
 	}
-	if row.Provider != "custom-1" || row.Status != StatusSuccess {
+	if row.Provider != "custom-1" || row.Status != service.StatusSuccess {
 		t.Fatalf("unexpected ledger identity: %s/%s", row.Provider, row.Status)
 	}
 }
@@ -266,12 +268,12 @@ func TestResourceRelativePathShapes(t *testing.T) {
 	}
 	for key, want := range cases {
 		parts := strings.SplitN(key, "|", 2)
-		got, err := resourceRelativePath(parts[0], parts[1])
+		got, err := service.ResourceRelativePath(parts[0], parts[1])
 		if err != nil || got != want {
 			t.Fatalf("%s => %s, %v (want %s)", key, got, err, want)
 		}
 	}
-	if _, err := resourceRelativePath("unknown", "x"); err == nil {
+	if _, err := service.ResourceRelativePath("unknown", "x"); err == nil {
 		t.Fatal("unknown resource type should fail loud")
 	}
 }
@@ -303,13 +305,13 @@ func TestAppendImageNegativeTailIdempotent(t *testing.T) {
 }
 
 func TestNormalizeStylePrefix(t *testing.T) {
-	if got := normalizeStylePrefix("画风：水墨"); got != "水墨" {
+	if got := service.NormalizeStylePrefix("画风：水墨"); got != "水墨" {
 		t.Fatalf("fullwidth prefix not stripped: %q", got)
 	}
-	if got := normalizeStylePrefix("画风:水墨"); got != "水墨" {
+	if got := service.NormalizeStylePrefix("画风:水墨"); got != "水墨" {
 		t.Fatalf("halfwidth prefix not stripped: %q", got)
 	}
-	if got := normalizeStylePrefix("水墨"); got != "水墨" {
+	if got := service.NormalizeStylePrefix("水墨"); got != "水墨" {
 		t.Fatalf("plain style changed: %q", got)
 	}
 }

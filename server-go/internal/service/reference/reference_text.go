@@ -6,7 +6,7 @@
 // （正文语法误用、引用未登记、台词量念不完等），违约走隔离草稿的修复闭环。
 //
 // 所有偏移与切片按 rune（Python 是码点坐标系；Go 的 len(string) 是字节）。
-package service
+package reference
 
 import (
 	"errors"
@@ -18,6 +18,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // MaxShotsPerUnit 是单 unit 允许的镜头行（`镜头N：`）上限（对应 MAX_SHOTS_PER_UNIT）。
@@ -528,12 +529,12 @@ func resolveReferences(names []string, project *domain.ProjectFile) ([]map[strin
 }
 
 // deriveReferencesFromText 是书写层正文 → (references, missing) 的唯一派生入口。
-func deriveReferencesFromText(text string, project *domain.ProjectFile) ([]map[string]any, []string) {
+func DeriveReferencesFromText(text string, project *domain.ProjectFile) ([]map[string]any, []string) {
 	return resolveReferences(extractMentions(text), project)
 }
 
 // renderUnitReferences 把 references 渲染成落盘形态（去 variant_* 空值）。
-func renderUnitReferences(refs []map[string]any) []any {
+func RenderUnitReferences(refs []map[string]any) []any {
 	out := make([]any, 0, len(refs))
 	for _, ref := range refs {
 		entry := map[string]any{"type": ref["type"], "name": ref["name"]}
@@ -548,11 +549,11 @@ func renderUnitReferences(refs []map[string]any) []any {
 	return out
 }
 
-// assembleShotsTextForRender 把 unit.shots[*].text 拼接为供二次解析的书写层文本。
+// AssembleShotsTextForRender 把 unit.shots[*].text 拼接为供二次解析的书写层文本。
 //
 // 按数组位置重新注入规范 `镜头N：` header（先剥掉每个 shot 首行可能残留的旧 header）。
 // 与 AssembleShotsText 的区别：后者裸拼接、不注入 header（用于空提示词结构校验）。
-func assembleShotsTextForRender(shots []any) string {
+func AssembleShotsTextForRender(shots []any) string {
 	parts := make([]string, 0, len(shots))
 	index := 0
 	for _, raw := range shots {
@@ -649,12 +650,12 @@ func assertLineSyntax(label, text string, characters domain.AssetBucket) error {
 	for idx, line := range contentLines(text) {
 		lineIdx := idx
 		if strings.ContainsAny(line, fullwidthBraceChars) {
-			return violation(label, "fullwidth_braces", &lineIdx,
+			return Violation(label, "fullwidth_braces", &lineIdx,
 				"%s 使用了全角花括号：%q；台词与画外音的花括号必须是半角 `{}`，全角形不会被识别为台词行",
 				label, truncateRunes(strings.TrimSpace(line), 40))
 		}
 		if malformed, ok := findMalformedMention(line); ok {
-			return violation(label, "malformed_mention", &lineIdx,
+			return Violation(label, "malformed_mention", &lineIdx,
 				"%s 有写坏的资产引用：%q；引用须写成 `@[资产名]`，方括号要成对闭合、名称非空，"+
 					"否则既不进 references，又会原样进入视频请求", label, malformed)
 		}
@@ -662,7 +663,7 @@ func assertLineSyntax(label, text string, characters domain.AssetBucket) error {
 		if !isDialogue {
 			if name, ok := leadingMentionBeforeColon(line); ok {
 				if _, registered := characters.ResolveKey(name); registered {
-					return violation(label, "dialogue_line_syntax", &lineIdx,
+					return Violation(label, "dialogue_line_syntax", &lineIdx,
 						"%s 的台词行写法不合法：%q；台词须写成 `@[角色]：{台词}`——说话人非空、"+
 							"台词由半角花括号整体包裹，否则这行会被当成画面描述、台词整句丢失",
 						label, truncateRunes(strings.TrimSpace(line), 40))
@@ -680,9 +681,9 @@ func assertLineSyntax(label, text string, characters domain.AssetBucket) error {
 		}
 		excerpt := truncateRunes(strings.TrimSpace(line), 40)
 		if strings.Count(line, "{") != strings.Count(line, "}") {
-			return violation(label, "unclosed_brace", &lineIdx, "%s 有未闭合的花括号：%q", label, excerpt)
+			return Violation(label, "unclosed_brace", &lineIdx, "%s 有未闭合的花括号：%q", label, excerpt)
 		}
-		return violation(label, "braces_in_description", &lineIdx,
+		return Violation(label, "braces_in_description", &lineIdx,
 			"%s 在画面描述行里使用了花括号：%q；花括号是台词保留语法，台词须独立成行写作 "+
 				"`@[角色]：{台词}` 或 `{画外音}`", label, excerpt)
 	}
@@ -697,17 +698,17 @@ func truncateRunes(text string, limit int) string {
 	return string([]rune(text)[:limit])
 }
 
-// violation 构造一条带定位与行号的违约错误。
-func violation(label, code string, line *int, format string, args ...any) *DraftViolation {
+// Violation 构造一条带定位与行号的违约错误。
+func Violation(label, code string, line *int, format string, args ...any) *DraftViolation {
 	return &DraftViolation{Code: code, Label: label, Message: fmt.Sprintf(format, args...), Line: line}
 }
 
-// validateUnitText 校验一个 unit 的正文并机械派生 (shots, references)。
+// ValidateUnitText 校验一个 unit 的正文并机械派生 (shots, references)。
 //
 // 覆盖正文为空 / 镜头无画面描述 / 镜头行数超上限 / 语法误用 / 引用未登记 / references 超上限。
-func validateUnitText(label, text string, project *domain.ProjectFile, maxRefs *int) ([]map[string]any, []map[string]any, error) {
+func ValidateUnitText(label, text string, project *domain.ProjectFile, maxRefs *int) ([]map[string]any, []map[string]any, error) {
 	if strings.TrimSpace(text) == "" {
-		return nil, nil, violation(label, "empty_text", nil, "%s 的正文为空", label)
+		return nil, nil, Violation(label, "empty_text", nil, "%s 的正文为空", label)
 	}
 	var characters domain.AssetBucket
 	if project != nil {
@@ -724,18 +725,18 @@ func validateUnitText(label, text string, project *domain.ProjectFile, maxRefs *
 		}
 	}
 	if len(blankShots) > 0 {
-		return nil, nil, violation(label, "blank_shot", nil,
+		return nil, nil, Violation(label, "blank_shot", nil,
 			"%s 的镜头 %v 没有画面描述；每个 `镜头N：` 都要写该镜头拍什么，只有台词行 / 画外音行的镜头没有可生成的画面",
 			label, blankShots)
 	}
 	if len(shots) > MaxShotsPerUnit {
-		return nil, nil, violation(label, "too_many_shots", nil,
+		return nil, nil, Violation(label, "too_many_shots", nil,
 			"%s 有 %d 个镜头行，超过单 unit 上限 %d；请把多出的镜头按叙事顺序拆到新的 unit",
 			label, len(shots), MaxShotsPerUnit)
 	}
-	refs, missing := deriveReferencesFromText(text, project)
+	refs, missing := DeriveReferencesFromText(text, project)
 	if len(missing) > 0 {
-		return nil, nil, violation(label, "unregistered_asset", nil,
+		return nil, nil, Violation(label, "unregistered_asset", nil,
 			"%s 引用了未登记的资产名: %v；资产名必须逐字取自 project.json 三张表", label, missing)
 	}
 	var badSpeakers []string
@@ -746,12 +747,12 @@ func validateUnitText(label, text string, project *domain.ProjectFile, maxRefs *
 	}
 	if len(badSpeakers) > 0 {
 		sort.Strings(badSpeakers)
-		return nil, nil, violation(label, "unregistered_speaker", nil,
+		return nil, nil, Violation(label, "unregistered_speaker", nil,
 			"%s 的台词行说话人未登记为角色资产: %v；说话人决定该句台词绑哪段参考音频，必须是登记角色",
 			label, badSpeakers)
 	}
 	if maxRefs != nil && len(refs) > *maxRefs {
-		return nil, nil, violation(label, "refs_over_limit", nil,
+		return nil, nil, Violation(label, "refs_over_limit", nil,
 			"%s 的 references 数 %d 超过模型上限 %d；请把次要角色融入背景描述（不用 `@` 引用）",
 			label, len(refs), *maxRefs)
 	}
@@ -768,26 +769,26 @@ func normalizeForAnchor(text string) string {
 func validateSourceTextAnchor(label, sourceText, novelText string) error {
 	anchor := normalizeForAnchor(sourceText)
 	if anchor == "" {
-		return violation(label, "source_text_empty", nil,
+		return Violation(label, "source_text_empty", nil,
 			"%s 的 source_text 为空：每个 unit 必须摘录其所依据的原文片段作为追溯锚", label)
 	}
 	if !strings.Contains(normalizeForAnchor(novelText), anchor) {
-		return violation(label, "source_text_not_verbatim", nil,
+		return Violation(label, "source_text_not_verbatim", nil,
 			"%s 的 source_text 不是小说原文的逐字片段（存在改写、翻译或杜撰）：%q；请原样复制原文，不要转述",
 			label, truncateRunes(strings.TrimSpace(sourceText), 40))
 	}
 	return nil
 }
 
-// validateDialogueLoad 校验该 unit 的台词量念得完：口播估算超出 unit 时长（含宽容系数）即违约。
-func validateDialogueLoad(label, text string, durationSeconds int, language string, speechRateOverride *float64) error {
+// ValidateDialogueLoad 校验该 unit 的台词量念得完：口播估算超出 unit 时长（含宽容系数）即违约。
+func ValidateDialogueLoad(label, text string, durationSeconds int, language string, speechRateOverride *float64) error {
 	spoken := 0.0
 	for _, line := range normativeLines(text) {
-		spoken += EstimateSpokenSeconds(line.text, language, speechRateOverride)
+		spoken += service.EstimateSpokenSeconds(line.text, language, speechRateOverride)
 	}
 	budget := float64(durationSeconds) * (1 + SpeechOverflowTolerance)
 	if spoken > budget {
-		return violation(label, "dialogue_overload", nil,
+		return Violation(label, "dialogue_overload", nil,
 			"%s 的台词念完约需 %.1f 秒，超过该 unit 的 %d 秒（宽容 %.0f%% 后上限 %.1f 秒）；"+
 				"请改取更长的时长档、把该 unit 拆开，或精简台词",
 			label, spoken, durationSeconds, SpeechOverflowTolerance*100, budget)
@@ -803,13 +804,13 @@ func assertDialoguePreserved(label, step1Text, step2Text string) error {
 		return nil
 	}
 	if len(before) != len(after) {
-		return violation(label, "dialogue_line_count_changed", nil,
+		return Violation(label, "dialogue_line_count_changed", nil,
 			"%s 的台词行数被改动（step1 有 %d 行，step2 产出 %d 行）；step2 只做视觉展开，台词行须逐字保留",
 			label, len(before), len(after))
 	}
 	for index := range before {
 		if before[index] != after[index] {
-			return violation(label, "dialogue_rewritten", nil,
+			return Violation(label, "dialogue_rewritten", nil,
 				"%s 第 %d 条台词被改写（原：%s「%s」，现：%s「%s」）；step2 只做视觉展开，台词行须逐字保留",
 				label, index+1, speakerOrVoiceover(before[index]), before[index].text,
 				speakerOrVoiceover(after[index]), after[index].text)
@@ -844,8 +845,8 @@ type DraftViolations struct {
 
 func (e *DraftViolations) Error() string { return RenderViolationReport(e.Items) }
 
-// violationItems 把单条或聚合的违约一律摊平成条目列表。
-func violationItems(err error) []DraftViolation {
+// ViolationItems 把单条或聚合的违约一律摊平成条目列表。
+func ViolationItems(err error) []DraftViolation {
 	if err == nil {
 		return nil
 	}
@@ -869,7 +870,7 @@ func collectViolations(checks ...func() error) []DraftViolation {
 	var found []DraftViolation
 	for _, check := range checks {
 		if err := check(); err != nil {
-			found = append(found, violationItems(err)...)
+			found = append(found, ViolationItems(err)...)
 		}
 	}
 	return found

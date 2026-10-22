@@ -18,6 +18,7 @@ import (
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/generation"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -79,10 +80,10 @@ func newBatchFixture(t *testing.T) batchFixture {
 	taskRepo := repository.NewTaskRepo(gdb)
 	RegisterBatches(v1, BatchDeps{
 		Store: store,
-		NewOrchestrator: func(projectName, userID string) *service.BatchOrchestrator {
-			return service.NewBatchOrchestrator(
-				service.NewGormBatchRepository(gdb, userID, projectName),
-				service.NewBatchTaskAdapter(taskRepo, q, projectName))
+		NewOrchestrator: func(projectName, userID string) *generation.BatchOrchestrator {
+			return generation.NewBatchOrchestrator(
+				generation.NewGormBatchRepository(gdb, userID, projectName),
+				generation.NewBatchTaskAdapter(taskRepo, q, projectName))
 		},
 	})
 	_ = config.NewResolver(gdb)
@@ -311,5 +312,5 @@ func TestBatchStatusDerivation(t *testing.T) {
 
 // deriveForTest 通过公开服务导出批状态派生，避免测试另写一份规则。
 func deriveForTest(statuses []string, cancelRequested bool) string {
-	return service.DeriveBatchStatusForTest(statuses, cancelRequested)
+	return generation.DeriveBatchStatusForTest(statuses, cancelRequested)
 }

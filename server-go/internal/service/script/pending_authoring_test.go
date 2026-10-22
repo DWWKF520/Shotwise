@@ -3,9 +3,10 @@
 //
 // step1 与官方剧本两侧都经磁盘 JSON 走一轮（PendingAuthoringReportFor 读的是落盘内容），
 // 数字统一经 JSON 反序列化成 float64，与线上读取路径同构。
-package service
+package script
 
 import (
+	"github.com/shotwise/shotwise/internal/service"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -16,9 +17,9 @@ import (
 )
 
 // makePendingProject 建测试项目并登记第 1 集（剧本路径 scripts/episode_1.json）。
-func makePendingProject(t *testing.T, mode domain.ContentMode, generationMode domain.GenerationMode) (*ProjectStore, string) {
+func makePendingProject(t *testing.T, mode domain.ContentMode, generationMode domain.GenerationMode) (*service.ProjectStore, string) {
 	t.Helper()
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("demo", "Demo", mode, generationMode, "Anime"); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +62,7 @@ func writePendingScript(t *testing.T, dir string, payload map[string]any) {
 	writePendingJSON(t, filepath.Join(dir, "scripts", "episode_1.json"), payload)
 }
 
-func pendingReport(t *testing.T, store *ProjectStore, dir string) PendingAuthoringReport {
+func pendingReport(t *testing.T, store *service.ProjectStore, dir string) PendingAuthoringReport {
 	t.Helper()
 	pf, err := store.Get("demo")
 	if err != nil {
@@ -380,7 +381,7 @@ func TestPendingAuthoringNarrationNovelTextChangeMarksStale(t *testing.T) {
 func TestPendingAuthoringRVShotsTextExpansionIsNotStale(t *testing.T) {
 	// shots 正文由 step2 视觉展开改写，两侧必然不同，不构成待编写。
 	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationReferenceVideo)
-	writePendingStep1(t, dir, ReferenceVideoStep1Filename, map[string]any{
+	writePendingStep1(t, dir, service.ReferenceVideoStep1Filename, map[string]any{
 		"units": []any{pendingRVStep1Unit("E1U01", 4)},
 	})
 	writePendingScript(t, dir, map[string]any{
@@ -397,7 +398,7 @@ func TestPendingAuthoringRVShotsTextExpansionIsNotStale(t *testing.T) {
 
 func TestPendingAuthoringRVDurationChangeMarksStale(t *testing.T) {
 	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationReferenceVideo)
-	writePendingStep1(t, dir, ReferenceVideoStep1Filename, map[string]any{
+	writePendingStep1(t, dir, service.ReferenceVideoStep1Filename, map[string]any{
 		"units": []any{pendingRVStep1Unit("E1U01", 8)},
 	})
 	writePendingScript(t, dir, map[string]any{
@@ -416,7 +417,7 @@ func TestPendingAuthoringRVReferenceChangeMarksStale(t *testing.T) {
 		map[string]any{"type": "character", "name": "阿离"},
 		map[string]any{"type": "scene", "name": "屋檐"},
 	}
-	writePendingStep1(t, dir, ReferenceVideoStep1Filename, map[string]any{"units": []any{unit}})
+	writePendingStep1(t, dir, service.ReferenceVideoStep1Filename, map[string]any{"units": []any{unit}})
 	writePendingScript(t, dir, map[string]any{
 		"title": "第一集", "video_units": []any{pendingRVUnit("E1U01", 4)},
 	})
@@ -431,7 +432,7 @@ func TestPendingAuthoringRVSourceTextIgnored(t *testing.T) {
 	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationReferenceVideo)
 	unit := pendingRVStep1Unit("E1U01", 4)
 	unit["source_text"] = "完全不同的原文摘录"
-	writePendingStep1(t, dir, ReferenceVideoStep1Filename, map[string]any{"units": []any{unit}})
+	writePendingStep1(t, dir, service.ReferenceVideoStep1Filename, map[string]any{"units": []any{unit}})
 	writePendingScript(t, dir, map[string]any{
 		"title": "第一集", "video_units": []any{pendingRVUnit("E1U01", 4)},
 	})

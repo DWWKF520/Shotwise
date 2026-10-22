@@ -1,4 +1,6 @@
-package service
+package admin
+
+import "github.com/shotwise/shotwise/internal/service"
 
 import (
 	"context"
@@ -20,7 +22,7 @@ import (
 
 type customProviderFixture struct {
 	svc   *CustomProviderService
-	store *ProjectStore
+	store *service.ProjectStore
 	db    *gorm.DB
 }
 
@@ -38,7 +40,7 @@ func newCustomProviderFixture(t *testing.T) customProviderFixture {
 			_ = pool.Close()
 		}
 	})
-	store := NewProjectStore(t.TempDir())
+	store := service.NewProjectStore(t.TempDir())
 	return customProviderFixture{
 		svc:   NewCustomProviderService(gdb, store, nil),
 		store: store,
