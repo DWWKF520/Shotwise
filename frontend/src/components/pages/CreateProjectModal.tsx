@@ -342,7 +342,7 @@ export function CreateProjectModal() {
       navigate(`/app/projects/${resp.name}/source?tab=${tab}`);
     } catch (err) {
       useAppStore.getState().pushToast(
-        `${t("dashboard:create_project_failed")}${errMsg(err)}`,
+        t("dashboard:create_project_failed", { message: errMsg(err) }),
         "error"
       );
     } finally {

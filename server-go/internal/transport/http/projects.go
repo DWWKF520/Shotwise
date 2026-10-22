@@ -127,7 +127,7 @@ func emptyMediaSummary() service.MediaIndexSummary {
 
 // CreateProjectRequest 创建项目的请求体。
 type CreateProjectRequest struct {
-	Name           string `json:"name" binding:"required"`
+	Name           string `json:"name"`
 	Title          string `json:"title"`
 	ContentMode    string `json:"content_mode" binding:"required"`
 	GenerationMode string `json:"generation_mode" binding:"required"`
@@ -154,18 +154,25 @@ func CreateProject(d ProjectDeps) gin.HandlerFunc {
 			apperr.Abort(c, apperr.BadRequest("invalid_generation_mode", map[string]any{"mode": req.GenerationMode}))
 			return
 		}
-		title := req.Title
-		if title == "" {
-			title = req.Name
+		// 与 Python create_project 同语义：name 缺省时按标题 slug 自动生成；
+		// title 与 name 均缺省时报 title_required（Python 400）。
+		title := strings.TrimSpace(req.Title)
+		name := strings.TrimSpace(req.Name)
+		if title == "" && name == "" {
+			apperr.Abort(c, apperr.BadRequest("title_required", nil))
+			return
 		}
-		pf, err := d.Store.Create(req.Name, title, domain.ContentMode(req.ContentMode),
+		if name == "" {
+			name = d.Store.GenerateProjectName(title)
+		}
+		pf, err := d.Store.Create(name, title, domain.ContentMode(req.ContentMode),
 			domain.GenerationMode(req.GenerationMode), req.Style)
 		if err != nil {
 			switch {
 			case errors.Is(err, domain.ErrInvalidProjectName):
 				apperr.Abort(c, apperr.BadRequest("invalid_project_name", nil))
 			case errors.Is(err, service.ErrProjectExists):
-				apperr.Abort(c, apperr.Conflict("project_already_exists", map[string]any{"name": req.Name}))
+				apperr.Abort(c, apperr.Conflict("project_already_exists", map[string]any{"name": name}))
 			default:
 				apperr.Abort(c, apperr.Internal(err))
 			}
@@ -175,11 +182,11 @@ func CreateProject(d ProjectDeps) gin.HandlerFunc {
 			pf.AspectRatio = req.AspectRatio
 		}
 		pf.GridStoryboard = req.GridStoryboard
-		if err := d.Store.Save(req.Name, pf); err != nil {
+		if err := d.Store.Save(name, pf); err != nil {
 			apperr.Abort(c, apperr.Internal(err))
 			return
 		}
-		c.JSON(http.StatusCreated, pf)
+		c.JSON(http.StatusCreated, gin.H{"success": true, "name": name, "project": pf})
 	}
 }
 

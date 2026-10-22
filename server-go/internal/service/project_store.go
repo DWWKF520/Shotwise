@@ -30,6 +30,19 @@ func NewProjectStore(root string) *ProjectStore {
 // Root 返回项目根目录。
 func (s *ProjectStore) Root() string { return s.root }
 
+// GenerateProjectName 生成唯一项目标识（标题 slug + 8 位十六进制）。
+// 与 Python ProjectManager.generate_project_name 同语义：创建请求缺省 name 时调用。
+func (s *ProjectStore) GenerateProjectName(title string) string {
+	prefix := slugifyProjectTitle(title)
+	for attempt := 0; attempt < 64; attempt++ {
+		candidate := fmt.Sprintf("%s-%s", prefix, randomHex(4))
+		if !dirExists(filepath.Join(s.root, candidate)) {
+			return candidate
+		}
+	}
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
 // Dir 返回项目目录的绝对路径。
 func (s *ProjectStore) Dir(name string) (string, error) {
 	return fs.SafeJoin(s.root, true, name)
