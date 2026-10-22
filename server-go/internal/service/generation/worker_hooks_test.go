@@ -1,7 +1,5 @@
 package generation
 
-import "github.com/shotwise/shotwise/internal/service"
-
 import (
 	"context"
 	"errors"
@@ -18,6 +16,7 @@ import (
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -154,12 +153,12 @@ func TestLedgerSettlerSettlesAndResumes(t *testing.T) {
 	if settled != 2 {
 		t.Fatalf("settled = %d, want 2", settled)
 	}
-	assertCallStatus(t, gdb, call1.ID, StatusFailed)
+	assertCallStatus(t, gdb, call1.ID, service.StatusFailed)
 
 	if err := settler.ResumeFailed(ctx, call2.ID); err != nil {
 		t.Fatalf("resume failed: %v", err)
 	}
-	assertCallStatus(t, gdb, call2.ID, StatusFailed)
+	assertCallStatus(t, gdb, call2.ID, service.StatusFailed)
 
 	// 幂等：已终态的行不再被重复收口。
 	settled, err = settler.SettleInterruptedCalls(ctx, time.Time{})

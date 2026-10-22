@@ -314,7 +314,7 @@ func renderSegmentTwo(shots []map[string]any, subjects []string, characters doma
 			if _, isVoiceover := matchVoiceoverLine(line); isVoiceover {
 				continue
 			}
-			kept = append(kept, renderMentionsAsSubjects(line, subjects))
+			kept = append(kept, RenderMentionsAsSubjects(line, subjects))
 		}
 		nonBlank := make([]string, 0, len(kept))
 		for _, line := range kept {
@@ -380,12 +380,12 @@ func deriveAdUtterances(shots []map[string]any) []shotUtterance {
 	return utterances
 }
 
-// renderMentionsAsSubjects 把文本里的 `@[X]` / `@X` 替换为三段论的主体记号 `<X>`
+// RenderMentionsAsSubjects 把文本里的 `@[X]` / `@X` 替换为三段论的主体记号 `<X>`
 // （对应 render_mentions_as_subjects）。
 //
 // names 是资产表里已登记的名字：不在其中的 mention 原样保留、从不删字。正文与 names 都归一到
 // 比对坐标系后再判成员。
-func renderMentionsAsSubjects(text string, names []string) string {
+func RenderMentionsAsSubjects(text string, names []string) string {
 	normalized := make(map[string]bool, len(names))
 	for _, name := range names {
 		normalized[domain.NormalizeAssetName(name)] = true

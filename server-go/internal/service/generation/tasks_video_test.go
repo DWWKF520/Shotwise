@@ -1,9 +1,6 @@
 package generation
 
-import "github.com/shotwise/shotwise/internal/service"
-
 import (
-	"github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"os"
 	"path/filepath"
@@ -18,6 +15,8 @@ import (
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"github.com/shotwise/shotwise/migrations"
 )
 
@@ -275,14 +274,14 @@ func TestResolveAdUnitReferenceEntriesLabelsAndSkips(t *testing.T) {
 }
 
 func TestAppendProductFidelityTailIdempotent(t *testing.T) {
-	once := appendProductFidelityTail("画面内容", []string{"可乐"})
+	once := reference.AppendProductFidelityTail("画面内容", []string{"可乐"})
 	if !strings.Contains(once, "产品「可乐」") {
 		t.Fatalf("fidelity tail missing: %q", once)
 	}
-	if again := appendProductFidelityTail(once, []string{"可乐"}); again != once {
+	if again := reference.AppendProductFidelityTail(once, []string{"可乐"}); again != once {
 		t.Fatalf("fidelity tail not idempotent: %q", again)
 	}
-	if got := appendProductFidelityTail("画面内容", nil); got != "画面内容" {
+	if got := reference.AppendProductFidelityTail("画面内容", nil); got != "画面内容" {
 		t.Fatalf("empty product names should return prompt unchanged: %q", got)
 	}
 }
@@ -367,7 +366,7 @@ func TestResolveEndFrameImage(t *testing.T) {
 }
 
 func TestRenderMentionsAsSubjects(t *testing.T) {
-	got := renderMentionsAsSubjects("镜头1：@[李明] 推开 @[酒馆] 的门，未登记 @[幽灵] 原样保留。", []string{"李明", "酒馆"})
+	got := reference.RenderMentionsAsSubjects("镜头1：@[李明] 推开 @[酒馆] 的门，未登记 @[幽灵] 原样保留。", []string{"李明", "酒馆"})
 	want := "镜头1：<李明> 推开 <酒馆> 的门，未登记 @[幽灵] 原样保留。"
 	if got != want {
 		t.Fatalf("renderMentionsAsSubjects = %q, want %q", got, want)
@@ -377,7 +376,7 @@ func TestRenderMentionsAsSubjects(t *testing.T) {
 func TestResolveUnitReferencesMissingFails(t *testing.T) {
 	projectDir := t.TempDir()
 	project := &domain.ProjectFile{Characters: domain.AssetBucket{}}
-	_, err := resolveUnitReferences(project, projectDir, []map[string]any{{"type": "character", "name": "李明"}})
+	_, err := reference.ResolveUnitReferences(project, projectDir, []map[string]any{{"type": "character", "name": "李明"}})
 	if err == nil || !strings.Contains(err.Error(), "Missing references: character:李明") {
 		t.Fatalf("missing reference should fail loud: %v", err)
 	}
@@ -421,7 +420,7 @@ func TestApplyUnitVideoAssetsWritesAndClears(t *testing.T) {
 func TestApplyProviderConstraintsClampsAndWarns(t *testing.T) {
 	refs := []string{"a.png", "b.png", "c.png"}
 	maxRefs := 2
-	constrained, duration, warnings := applyProviderConstraints(
+	constrained, duration, warnings := reference.ApplyProviderConstraints(
 		"openai", "sora-2", &maxRefs, []int{4, 8, 12}, refs, 8, "openai", "720p",
 	)
 	if len(constrained) != 2 || constrained[0] != "a.png" {
@@ -434,14 +433,14 @@ func TestApplyProviderConstraintsClampsAndWarns(t *testing.T) {
 		t.Fatal("too-many-images clamp should warn")
 	}
 	// sora 单图专用 warning key。
-	_, _, soraWarnings := applyProviderConstraints(
+	_, _, soraWarnings := reference.ApplyProviderConstraints(
 		"openai", "sora-2", intPtr(1), []int{4, 8, 12}, []string{"a", "b"}, 8, "openai", "720p",
 	)
 	if len(soraWarnings) == 0 || soraWarnings[0]["key"] != "ref_sora_single_ref" {
 		t.Fatalf("sora single-ref warning missing: %v", soraWarnings)
 	}
 	// 时长向上取档记 warning。
-	_, upDuration, upWarnings := applyProviderConstraints(
+	_, upDuration, upWarnings := reference.ApplyProviderConstraints(
 		"openai", "sora-2", nil, []int{4, 8, 12}, []string{"a"}, 5, "openai", "720p",
 	)
 	if upDuration != 8 {

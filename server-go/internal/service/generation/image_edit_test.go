@@ -1,9 +1,6 @@
 package generation
 
-import "github.com/shotwise/shotwise/internal/service"
-
 import (
-	"github.com/shotwise/shotwise/internal/service/asset"
 	"context"
 	"os"
 	"path/filepath"
@@ -12,6 +9,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/domain"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
 func TestEditableResourceTypesOrder(t *testing.T) {
