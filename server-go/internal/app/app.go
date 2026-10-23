@@ -2,9 +2,9 @@
 package app
 
 import (
+	"context"
 	servicereference "github.com/shotwise/shotwise/internal/service/reference"
 	servicescript "github.com/shotwise/shotwise/internal/service/script"
-	"context"
 	"log/slog"
 	"net/http"
 
@@ -17,14 +17,26 @@ import (
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
+	"github.com/shotwise/shotwise/internal/service/asset"
 	"github.com/shotwise/shotwise/internal/service/creative"
 	"github.com/shotwise/shotwise/internal/service/generation"
 	"github.com/shotwise/shotwise/internal/service/media"
-	"github.com/shotwise/shotwise/internal/service/asset"
-	"github.com/shotwise/shotwise/internal/service/admin"
 	"github.com/shotwise/shotwise/internal/service/publishing"
 	"github.com/shotwise/shotwise/internal/textgen"
-	transport "github.com/shotwise/shotwise/internal/transport/http"
+	"github.com/shotwise/shotwise/internal/transport/http/agentconfig"
+	"github.com/shotwise/shotwise/internal/transport/http/agentrt"
+	httpasset "github.com/shotwise/shotwise/internal/transport/http/asset"
+	"github.com/shotwise/shotwise/internal/transport/http/assistant"
+	httpcreative "github.com/shotwise/shotwise/internal/transport/http/creative"
+	"github.com/shotwise/shotwise/internal/transport/http/files"
+	httpgeneration "github.com/shotwise/shotwise/internal/transport/http/generation"
+	"github.com/shotwise/shotwise/internal/transport/http/httpkit"
+	httpmedia "github.com/shotwise/shotwise/internal/transport/http/media"
+	"github.com/shotwise/shotwise/internal/transport/http/project"
+	"github.com/shotwise/shotwise/internal/transport/http/providers"
+	"github.com/shotwise/shotwise/internal/transport/http/script"
+	"github.com/shotwise/shotwise/internal/transport/http/system"
 	"gorm.io/gorm"
 )
 
@@ -68,7 +80,7 @@ func New(rt *Runtime) *gin.Engine {
 	}
 	r.NoMethod(methodNotAllowed)
 
-	r.GET("/health", transport.Health)
+	r.GET("/health", system.Health)
 
 	v1 := r.Group("/api/v1")
 	registerAuth(v1, rt)
@@ -118,7 +130,7 @@ func New(rt *Runtime) *gin.Engine {
 // registerReferenceVideos 参考生视频 unit 路由（对应 Python 侧无 feature gate 的挂载）。
 func registerReferenceVideos(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterReferenceVideos(authed, transport.ReferenceVideoDeps{
+	httpgeneration.RegisterReferenceVideos(authed, httpgeneration.ReferenceVideoDeps{
 		Store:    rt.Store,
 		Resolver: config.NewResolver(rt.DB),
 		Queue:    rt.Queue,
@@ -129,15 +141,15 @@ func registerReferenceVideos(v1 *gin.RouterGroup, rt *Runtime) {
 // registerMediaAssets 项目媒体库路由（受 media_library 开关约束）。
 func registerMediaAssets(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	gated := authed.Group("", transport.RequireFeature("media_library"))
-	transport.RegisterMediaAssets(gated, transport.MediaAssetsDeps{Store: rt.Store})
+	gated := authed.Group("", httpkit.RequireFeature("media_library"))
+	httpmedia.RegisterMediaAssets(gated, httpmedia.MediaAssetsDeps{Store: rt.Store})
 }
 
 // registerCreativeContext 创建上下文解析路由（受 context_agent 开关约束）。
 func registerCreativeContext(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	gated := authed.Group("", transport.RequireFeature("context_agent"))
-	transport.RegisterCreativeContext(gated, transport.CreativeContextDeps{
+	gated := authed.Group("", httpkit.RequireFeature("context_agent"))
+	httpcreative.RegisterCreativeContext(gated, httpcreative.CreativeContextDeps{
 		Context: creative.NewCreativeContextService(rt.DB, rt.Store),
 		Store:   rt.Store,
 	})
@@ -146,7 +158,7 @@ func registerCreativeContext(v1 *gin.RouterGroup, rt *Runtime) {
 // registerPublishing 发布账号与发布任务路由。
 func registerPublishing(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterPublishing(authed, transport.PublishingDeps{
+	httpmedia.RegisterPublishing(authed, httpmedia.PublishingDeps{
 		Publishing: publishing.NewPublishingService(rt.DB),
 		Events:     publishing.NewPublishJobEvents(rt.Hub, rt.Store),
 	})
@@ -155,8 +167,8 @@ func registerPublishing(v1 *gin.RouterGroup, rt *Runtime) {
 // registerCreativeBoards 创意板路由（受 creative_board 开关约束）。
 func registerCreativeBoards(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	gated := authed.Group("", transport.RequireFeature("creative_board"))
-	transport.RegisterCreativeBoards(gated, transport.CreativeBoardDeps{
+	gated := authed.Group("", httpkit.RequireFeature("creative_board"))
+	httpcreative.RegisterCreativeBoards(gated, httpcreative.CreativeBoardDeps{
 		Boards: creative.NewCreativeBoardService(rt.DB),
 	})
 }
@@ -164,7 +176,7 @@ func registerCreativeBoards(v1 *gin.RouterGroup, rt *Runtime) {
 // registerMediaAssembly 媒体装配计划路由。
 func registerMediaAssembly(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterMediaAssembly(authed, transport.MediaAssemblyDeps{
+	httpmedia.RegisterMediaAssembly(authed, httpmedia.MediaAssemblyDeps{
 		Plans: media.NewMediaAssemblyService(rt.DB),
 	})
 }
@@ -172,7 +184,7 @@ func registerMediaAssembly(v1 *gin.RouterGroup, rt *Runtime) {
 // registerMediaRendering 渲染任务路由（对应 Python 侧无 feature gate 的挂载）。
 func registerMediaRendering(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterMediaRendering(authed, transport.MediaRenderingDeps{
+	httpmedia.RegisterMediaRendering(authed, httpmedia.MediaRenderingDeps{
 		Renders: media.NewMediaRenderingService(rt.DB, rt.Store),
 	})
 }
@@ -180,7 +192,7 @@ func registerMediaRendering(v1 *gin.RouterGroup, rt *Runtime) {
 // registerJianyingAssembly 剪映草稿导出路由（对应 Python 侧无 feature gate 的挂载）。
 func registerJianyingAssembly(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterJianyingAssembly(authed, transport.JianyingAssemblyDeps{
+	httpmedia.RegisterJianyingAssembly(authed, httpmedia.JianyingAssemblyDeps{
 		Exports: media.NewJianyingExportService(rt.DB, rt.Store),
 	})
 }
@@ -188,7 +200,7 @@ func registerJianyingAssembly(v1 *gin.RouterGroup, rt *Runtime) {
 // registerMemories 长期记忆路由。
 func registerMemories(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterMemories(authed, transport.MemoryDeps{
+	httpasset.RegisterMemories(authed, httpasset.MemoryDeps{
 		Store:    rt.Store,
 		Memories: service.NewMemoryService(rt.DB),
 	})
@@ -197,7 +209,7 @@ func registerMemories(v1 *gin.RouterGroup, rt *Runtime) {
 // registerScriptReview step1→step2 web 审核 gate 路由（对应 Python 侧无 feature gate 的挂载）。
 func registerScriptReview(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterScriptReview(authed, transport.ScriptReviewDeps{
+	script.RegisterScriptReview(authed, script.ScriptReviewDeps{
 		Store:   rt.Store,
 		Reviews: servicescript.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
 	})
@@ -206,7 +218,7 @@ func registerScriptReview(v1 *gin.RouterGroup, rt *Runtime) {
 // registerWorkflows Shotwise Flow 路由（对应 Python 侧无 feature gate 的挂载）。
 func registerWorkflows(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterWorkflows(authed, transport.WorkflowDeps{
+	httpcreative.RegisterWorkflows(authed, httpcreative.WorkflowDeps{
 		Workflows: creative.NewWorkflowService(rt.DB),
 	})
 }
@@ -218,10 +230,10 @@ func registerCreationPlans(v1 *gin.RouterGroup, rt *Runtime) {
 	workflows := creative.NewWorkflowService(rt.DB)
 	authed := v1.Group("", rt.Auth.Middleware())
 	gated := authed.Group("",
-		transport.RequireFeature("creation_plan"),
-		transport.RequireFeature("official_creation_skills"),
+		httpkit.RequireFeature("creation_plan"),
+		httpkit.RequireFeature("official_creation_skills"),
 	)
-	transport.RegisterCreationPlans(gated, transport.CreationPlanDeps{
+	httpcreative.RegisterCreationPlans(gated, httpcreative.CreationPlanDeps{
 		Store: rt.Store,
 		Plans: creative.NewCreationPlanService(rt.DB, rt.Dialect, workflows, config.NewResolver(rt.DB)),
 	})
@@ -230,7 +242,7 @@ func registerCreationPlans(v1 *gin.RouterGroup, rt *Runtime) {
 // registerDraftPromotions 草稿晋升路由（对应 Python 侧无 feature gate 的挂载）。
 func registerDraftPromotions(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterDraftPromotions(authed, transport.DraftPromotionDeps{
+	script.RegisterDraftPromotions(authed, script.DraftPromotionDeps{
 		Store: rt.Store,
 		Drafts: domain.NewDraftPromotionService(
 			servicereference.NewFileDraftPromotionRepository(rt.Store),
@@ -242,23 +254,23 @@ func registerDraftPromotions(v1 *gin.RouterGroup, rt *Runtime) {
 // registerPromptRegistry 提示词模板只读路由（对应 Python 侧无 feature gate 的挂载）。
 func registerPromptRegistry(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterPromptRegistry(authed, transport.PromptRegistryDeps{})
+	httpcreative.RegisterPromptRegistry(authed, httpcreative.PromptRegistryDeps{})
 }
 
 // registerTasks 任务队列 / 队列可观测性 / 版本路由。
 func registerTasks(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	if rt.Queue != nil {
-		transport.RegisterTasks(authed, transport.TaskDeps{Queue: rt.Queue})
+		httpgeneration.RegisterTasks(authed, httpgeneration.TaskDeps{Queue: rt.Queue})
 	}
 	var snapshotter generation.WorkerSnapshotter
 	if rt.Worker != nil {
 		snapshotter = rt.Worker
 	}
-	transport.RegisterQueueObservability(authed, transport.QueueObservabilityDeps{
+	httpgeneration.RegisterQueueObservability(authed, httpgeneration.QueueObservabilityDeps{
 		Obs: generation.NewQueueObservability(rt.DB, snapshotter),
 	})
-	transport.RegisterVersions(authed, transport.VersionDeps{
+	httpgeneration.RegisterVersions(authed, httpgeneration.VersionDeps{
 		Versions: service.NewVersionService(rt.Store),
 	})
 }
@@ -267,7 +279,7 @@ func registerTasks(v1 *gin.RouterGroup, rt *Runtime) {
 func registerGenerate(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	resolver := config.NewResolver(rt.DB)
-	transport.RegisterGenerate(authed, transport.GenerateDeps{
+	httpgeneration.RegisterGenerate(authed, httpgeneration.GenerateDeps{
 		Store: rt.Store,
 		Generate: generation.NewGenerateService(
 			rt.Store, rt.Queue, resolver, generation.NewAudioGenerator(rt.DB, nil)),
@@ -280,7 +292,7 @@ func registerGenerate(v1 *gin.RouterGroup, rt *Runtime) {
 // 后端按另一套档位静默夹取。
 func registerEpisodeDuration(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterEpisodeDuration(authed, transport.EpisodeDurationDeps{
+	httpgeneration.RegisterEpisodeDuration(authed, httpgeneration.EpisodeDurationDeps{
 		Store:    rt.Store,
 		Duration: servicescript.NewEpisodeDurationService(rt.Store, config.NewResolver(rt.DB)),
 	})
@@ -292,7 +304,7 @@ func registerEpisodeDuration(v1 *gin.RouterGroup, rt *Runtime) {
 // 否则同一批次号可以被跨项目/跨用户读到。
 func registerBatches(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterBatches(authed, transport.BatchDeps{
+	httpgeneration.RegisterBatches(authed, httpgeneration.BatchDeps{
 		Store: rt.Store,
 		NewOrchestrator: func(projectName, userID string) *generation.BatchOrchestrator {
 			repo := repository.NewTaskRepo(rt.DB)
@@ -309,7 +321,7 @@ func registerBatches(v1 *gin.RouterGroup, rt *Runtime) {
 // 同一个 config.Resolver，否则预览按 4K 放行、执行按 2K 落地会让格数对不上。
 func registerGrids(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterGrids(authed, transport.GridDeps{
+	httpgeneration.RegisterGrids(authed, httpgeneration.GridDeps{
 		Store: rt.Store,
 		Grids: generation.NewGridTaskService(
 			rt.Store, rt.Queue, config.NewResolver(rt.DB), service.NewGridService(rt.Store)),
@@ -319,7 +331,7 @@ func registerGrids(v1 *gin.RouterGroup, rt *Runtime) {
 // registerEndFrames 镜头尾帧路由。
 func registerEndFrames(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterEndFrames(authed, transport.EndFrameDeps{
+	httpmedia.RegisterEndFrames(authed, httpmedia.EndFrameDeps{
 		Store:    rt.Store,
 		EndFrame: asset.NewEndFrameService(rt.Store),
 	})
@@ -331,7 +343,7 @@ func registerEndFrames(v1 *gin.RouterGroup, rt *Runtime) {
 // 「版本 + 剧本回写 + 指纹」三件套。
 func registerShotUploads(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterShotUploads(authed, transport.ShotUploadDeps{
+	httpmedia.RegisterShotUploads(authed, httpmedia.ShotUploadDeps{
 		Store:   rt.Store,
 		Uploads: media.NewShotUploadService(rt.Store),
 	})
@@ -343,10 +355,10 @@ func registerShotUploads(v1 *gin.RouterGroup, rt *Runtime) {
 // 一把泄漏的 key 若能自我续期 / 自我吊销他人，等于把凭证管理面变成了提权面。
 func registerOnboardingAndKeys(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterOnboarding(authed, transport.OnboardingDeps{
+	system.RegisterOnboarding(authed, system.OnboardingDeps{
 		Config: config.NewConfigService(rt.DB),
 	})
-	transport.RegisterAPIKeys(authed, transport.APIKeyDeps{DB: rt.DB})
+	system.RegisterAPIKeys(authed, system.APIKeyDeps{DB: rt.DB})
 }
 
 // registerFeatures 放量诊断路由。
@@ -354,7 +366,7 @@ func registerOnboardingAndKeys(v1 *gin.RouterGroup, rt *Runtime) {
 // 走 authed：诊断面不含密钥，但会暴露「哪些开关开着」，仍然不该对匿名请求开放。
 func registerFeatures(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterFeatures(authed, transport.FeaturesDeps{
+	httpcreative.RegisterFeatures(authed, httpcreative.FeaturesDeps{
 		Plans: creative.NewCreationPlanService(
 			rt.DB, rt.Dialect, creative.NewWorkflowService(rt.DB), config.NewResolver(rt.DB)),
 	})
@@ -367,7 +379,7 @@ func registerFeatures(v1 *gin.RouterGroup, rt *Runtime) {
 // 所以后续加厂商不需要改这层。
 func registerProviders(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterProviders(authed, transport.ProviderDeps{
+	providers.RegisterProviders(authed, providers.ProviderDeps{
 		Providers: admin.NewProviderAdminService(rt.DB),
 	})
 }
@@ -384,7 +396,7 @@ func registerCustomProviders(v1 *gin.RouterGroup, rt *Runtime) {
 	if rt.Worker != nil {
 		limits = rt.Worker
 	}
-	transport.RegisterCustomProviders(authed, transport.CustomProviderDeps{
+	providers.RegisterCustomProviders(authed, providers.CustomProviderDeps{
 		Providers: admin.NewCustomProviderService(rt.DB, rt.Store, limits),
 	})
 }
@@ -395,7 +407,7 @@ func registerCustomProviders(v1 *gin.RouterGroup, rt *Runtime) {
 // (user, sdk_type) 维度互斥激活，所以 claude 与 openai 可以各激活一条。
 func registerAgentConfig(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterAgentConfig(authed, transport.AgentConfigDeps{
+	agentconfig.RegisterAgentConfig(authed, agentconfig.AgentConfigDeps{
 		Credentials: admin.NewAgentCredentialService(rt.DB),
 	})
 }
@@ -403,7 +415,7 @@ func registerAgentConfig(v1 *gin.RouterGroup, rt *Runtime) {
 // registerSystem 系统级路由（诊断日志打包，管理员限定）。
 func registerSystem(v1 *gin.RouterGroup, rt *Runtime) {
 	admin := v1.Group("", rt.Auth.Middleware(), auth.RequireAdmin())
-	transport.RegisterSystem(admin, transport.SystemDeps{Config: rt.Config})
+	system.RegisterSystem(admin, system.SystemDeps{Config: rt.Config})
 }
 
 // registerAssistant 助手会话路由（持久会话契约：meta + 事件日志 + client_key 幂等）。
@@ -416,7 +428,7 @@ func registerAssistant(v1 *gin.RouterGroup, rt *Runtime) {
 	}
 	authed := v1.Group("", rt.Auth.Middleware())
 	sse := v1.Group("", rt.Auth.FlexibleMiddleware())
-	transport.RegisterAssistant(authed, sse, transport.AssistantDeps{
+	assistant.RegisterAssistant(authed, sse, assistant.AssistantDeps{
 		Assistant: rt.Assistant,
 		Store:     rt.Store,
 	})
@@ -427,21 +439,21 @@ func registerAssistant(v1 *gin.RouterGroup, rt *Runtime) {
 // 公开端点（项目静态文件 / 全局资产）不带鉴权：前端 <img>/<video> 直发请求带不了
 // Authorization header；两者都有 SafeJoin 防护与 nosniff。
 func registerFileRoutes(v1 *gin.RouterGroup, rt *Runtime) {
-	deps := transport.FilesDeps{
+	deps := files.FilesDeps{
 		Store:  rt.Store,
 		Files:  servicescript.NewFileService(rt.Store),
 		Review: servicescript.NewScriptReviewService(rt.Store, config.NewResolver(rt.DB)),
 	}
-	transport.RegisterPublicFiles(v1, deps)
+	files.RegisterPublicFiles(v1, deps)
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterFiles(authed, deps)
-	transport.RegisterFileUploads(authed, transport.FileUploadDeps{Store: rt.Store, DB: rt.DB})
+	files.RegisterFiles(authed, deps)
+	files.RegisterFileUploads(authed, files.FileUploadDeps{Store: rt.Store, DB: rt.DB})
 }
 
 // registerProjectExtras 项目扩展端点（剧本编辑 / 分集元数据 / 概述 / 视频能力）。
 func registerProjectExtras(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterProjectExtras(authed, transport.ProjectExtraDeps{
+	project.RegisterProjectExtras(authed, project.ProjectExtraDeps{
 		Store: rt.Store,
 		Extra: servicescript.NewProjectExtraService(rt.Store, rt.Queue, config.NewResolver(rt.DB)),
 	})
@@ -450,7 +462,7 @@ func registerProjectExtras(v1 *gin.RouterGroup, rt *Runtime) {
 // registerGlobalAssets 全局资产库路由（跨项目复用的 character / scene / prop）。
 func registerGlobalAssets(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterAssetsGlobal(authed, transport.AssetsDeps{
+	httpasset.RegisterAssetsGlobal(authed, httpasset.AssetsDeps{
 		Assets: asset.NewGlobalAssetService(
 			repository.NewGlobalAssetRepository(rt.DB), rt.Store),
 	})
@@ -462,7 +474,7 @@ func registerGlobalAssets(v1 *gin.RouterGroup, rt *Runtime) {
 // 保证用当轮的文本后端配置。
 func registerCharacterRelations(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterCharacterRelations(authed, transport.CharacterRelationsDeps{
+	httpasset.RegisterCharacterRelations(authed, httpasset.CharacterRelationsDeps{
 		Store: rt.Store,
 		RelationFactory: func(ctx context.Context, pf *domain.ProjectFile) (agent.RelationTextGenerator, error) {
 			return textgen.NewGenerator(ctx, rt.DB, pf, textgen.TaskScript)
@@ -473,14 +485,14 @@ func registerCharacterRelations(v1 *gin.RouterGroup, rt *Runtime) {
 // registerCharacterExtras 角色头像与变体路由。
 func registerCharacterExtras(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterCharacterExtras(authed, transport.CharacterDeps{
+	httpasset.RegisterCharacterExtras(authed, httpasset.CharacterDeps{
 		Variants: asset.NewCharacterVariants(rt.Store),
 	})
 }
 
 // registerSystemConfig 系统配置路由（GET 公开、PATCH 管理员），与诊断日志分开挂。
 func registerSystemConfig(v1 *gin.RouterGroup, rt *Runtime) {
-	transport.RegisterSystemConfig(v1, transport.SystemConfigDeps{
+	system.RegisterSystemConfig(v1, system.SystemConfigDeps{
 		Config: admin.NewSystemConfigService(rt.DB, config.NewConfigService(rt.DB)),
 	})
 }
@@ -488,7 +500,7 @@ func registerSystemConfig(v1 *gin.RouterGroup, rt *Runtime) {
 // registerCreative 创作稿文本生成端点。
 func registerCreative(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterCreative(authed, transport.CreativeDeps{Store: rt.Store, DB: rt.DB})
+	httpcreative.RegisterCreative(authed, httpcreative.CreativeDeps{Store: rt.Store, DB: rt.DB})
 }
 
 // registerProjectSourceExport 源文上传、概述生成与导出。
@@ -496,27 +508,27 @@ func registerCreative(v1 *gin.RouterGroup, rt *Runtime) {
 // export/token 走 authed；GET /export 走 download_token（浏览器原生下载带不了
 // Authorization header），token 的 purpose/project 双校验绑定单个项目。
 func registerProjectSourceExport(v1 *gin.RouterGroup, rt *Runtime) {
-	deps := transport.NewSourceExportDeps(rt.Store, rt.Auth, rt.DB)
+	deps := project.NewSourceExportDeps(rt.Store, rt.Auth, rt.DB)
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterProjectSourceExport(v1, authed, deps)
+	project.RegisterProjectSourceExport(v1, authed, deps)
 }
 
 // registerProjectArchive 项目 ZIP 导入端点。
 func registerProjectArchive(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterProjectArchive(authed, transport.ArchiveDeps{
+	project.RegisterProjectArchive(authed, project.ArchiveDeps{
 		Archive: service.NewProjectArchiveService(rt.Store),
 	})
 }
 
 // registerAuth 认证路由。status/token 必须公开（拿 token 之前就要可达）。
 func registerAuth(v1 *gin.RouterGroup, rt *Runtime) {
-	v1.GET("/auth/status", transport.AuthStatus(rt.Auth))
-	v1.POST("/auth/token", transport.AuthToken(rt.Auth))
+	v1.GET("/auth/status", system.AuthStatus(rt.Auth))
+	v1.POST("/auth/token", system.AuthToken(rt.Auth))
 
 	authed := v1.Group("", rt.Auth.Middleware())
-	authed.POST("/auth/logout", transport.AuthLogout())
-	authed.GET("/auth/verify", transport.AuthVerify())
+	authed.POST("/auth/logout", system.AuthLogout())
+	authed.GET("/auth/verify", system.AuthVerify())
 }
 
 // registerProjects 项目路由。
@@ -526,20 +538,20 @@ func registerAuth(v1 *gin.RouterGroup, rt *Runtime) {
 // 与 /projects/:name/scenes/:entry 的匹配优先级（Python 侧 projects.py:1050
 // 明确注释过这个陷阱）。
 func registerProjects(v1 *gin.RouterGroup, rt *Runtime) {
-	deps := transport.ProjectDeps{Store: rt.Store, Hub: rt.Hub}
+	deps := project.ProjectDeps{Store: rt.Store, Hub: rt.Hub}
 
 	authed := v1.Group("", rt.Auth.Middleware())
-	authed.GET("/projects", transport.ListProjects(deps))
-	authed.POST("/projects", transport.CreateProject(deps))
-	authed.GET("/projects/:name", transport.GetProject(deps))
-	authed.PATCH("/projects/:name", transport.UpdateProject(deps))
-	authed.DELETE("/projects/:name", transport.DeleteProject(deps))
+	authed.GET("/projects", project.ListProjects(deps))
+	authed.POST("/projects", project.CreateProject(deps))
+	authed.GET("/projects/:name", project.GetProject(deps))
+	authed.PATCH("/projects/:name", project.UpdateProject(deps))
+	authed.DELETE("/projects/:name", project.DeleteProject(deps))
 
-	transport.RegisterAssets(authed, transport.AssetDeps{Assets: rt.Assets, Store: rt.Store})
+	httpasset.RegisterAssets(authed, httpasset.AssetDeps{Assets: rt.Assets, Store: rt.Store})
 
 	// SSE 走 flexible 鉴权：EventSource 无法自定义 header，仅支持 ?token=。
 	sse := v1.Group("", rt.Auth.FlexibleMiddleware())
-	sse.GET("/projects/:name/events/stream", transport.ProjectEventStream(deps))
+	sse.GET("/projects/:name/events/stream", project.ProjectEventStream(deps))
 }
 
 // registerAgent 智能体运行时路由（含 SSE 流式问答）。
@@ -548,11 +560,11 @@ func registerAgent(v1 *gin.RouterGroup, rt *Runtime) {
 		return
 	}
 	authed := v1.Group("", rt.Auth.Middleware())
-	transport.RegisterAgentRoutes(authed, rt.Agent)
+	agentrt.RegisterAgentRoutes(authed, rt.Agent)
 
 	// entry SSE 走 flexible 鉴权：EventSource 无法自定义 header，仅支持 ?token=。
 	sse := v1.Group("", rt.Auth.FlexibleMiddleware())
-	transport.RegisterAgentStreamRoutes(sse, rt.Agent)
+	agentrt.RegisterAgentStreamRoutes(sse, rt.Agent)
 }
 
 func notFound(c *gin.Context) {
