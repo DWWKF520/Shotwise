@@ -11,7 +11,9 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
 )
@@ -25,7 +27,7 @@ import (
 
 // GridSplitter 执行宫格切分落格（*service.GridService 满足）。
 type GridSplitter interface {
-	ApplySplit(ctx context.Context, projectName string, grid *domain.GridGeneration) (service.GridSplitResult, error)
+	ApplySplit(ctx context.Context, projectName string, grid *grid.GridGeneration) (service.GridSplitResult, error)
 }
 
 type generateGridIn struct {
@@ -80,7 +82,7 @@ func runGenerateGrid(
 	}
 	// 失配剧本在此被拒：按分镜路线该读的数组不在剧本里，继续走下去只会报「没有匹配的场景组」，
 	// 把成因埋掉。
-	if _, err := domain.EnsureRouteSkeleton(script, scriptContentMode(script, pf), pf.GenerationMode); err != nil {
+	if _, err := domainscript.EnsureRouteSkeleton(script, scriptContentMode(script, pf), pf.GenerationMode); err != nil {
 		return "", false, err
 	}
 	// list_only 是预览模式，与生成分支一样必须先过宫格开关校验——否则未开宫格的项目靠
@@ -92,8 +94,8 @@ func runGenerateGrid(
 	// 4×4 / 5×5 只在图像分辨率档为 4K 时放行；预览与生成共用同一次判定。
 	allowLargeGrid := service.ResolveLargeGridAllowed(ctx, caps, pf)
 
-	items, idField, fields := domain.StoryboardItems(script)
-	groups := domain.GroupScenesBySegmentBreak(items, idField)
+	items, idField, fields := media.StoryboardItems(script)
+	groups := media.GroupScenesBySegmentBreak(items, idField)
 	// scene_ids 为 nil 表示「不过滤」，空切片表示「显式过滤到 0 个」；用 nil 判定保持区分。
 	explicitFilter := in.SceneIDs != nil
 	if explicitFilter {
@@ -113,7 +115,7 @@ func runGenerateGrid(
 		groups = filtered
 	}
 
-	aspectRatio := domain.VideoAspectRatio(pf)
+	aspectRatio := grid.VideoAspectRatio(pf)
 	if in.ListOnly {
 		return strings.Join(listGridGroups(groups, idField, aspectRatio, allowLargeGrid), "\n"), false, nil
 	}
@@ -133,7 +135,7 @@ func runGenerateGrid(
 	// 第一阶段：只构造生成数据并完成全部资产预检；此阶段绝不保存记录或入队。
 	type stagedGroup struct {
 		groupIDs []string
-		layout   domain.GridLayout
+		layout   grid.GridLayout
 		prompt   string
 	}
 	var (
@@ -146,13 +148,13 @@ func runGenerateGrid(
 		for _, item := range group {
 			groupIDs = append(groupIDs, fmt.Sprint(item[idField]))
 		}
-		layout, ok := domain.CalculateGridLayout(len(groupIDs), aspectRatio, allowLargeGrid)
+		layout, ok := grid.CalculateGridLayout(len(groupIDs), aspectRatio, allowLargeGrid)
 		if !ok {
 			skipped = append(skipped, fmt.Sprintf("⏭️  跳过 %s..%s（%d 场景，不足 4 个）",
 				groupIDs[0], groupIDs[len(groupIDs)-1], len(groupIDs)))
 			continue
 		}
-		prompt := domain.BuildGridPrompt(group, idField, layout.Rows, layout.Cols, style,
+		prompt := grid.BuildGridPrompt(group, idField, layout.Rows, layout.Cols, style,
 			aspectRatio, layout.GridAspectRatio, nil)
 		for _, item := range group {
 			preflightResults = append(preflightResults, service.ValidateItemAssetReferences(pf, projectDir, item, fields))
@@ -169,7 +171,7 @@ func runGenerateGrid(
 		return "", false, err
 	}
 	type pendingGrid struct {
-		grid   *domain.GridGeneration
+		grid   *grid.GridGeneration
 		taskID string
 	}
 	var (
@@ -179,7 +181,7 @@ func runGenerateGrid(
 	)
 	for _, entry := range staged {
 		prompt := entry.prompt
-		grid := domain.NewGridGeneration(episode, in.Script, entry.groupIDs,
+		grid := grid.NewGridGeneration(episode, in.Script, entry.groupIDs,
 			entry.layout.Rows, entry.layout.Cols, entry.layout.GridSize, "", "", aspectRatio, &prompt)
 		if err := manager.Save(grid); err != nil {
 			return "", false, err
@@ -310,7 +312,7 @@ func listGridGroups(groups [][]map[string]any, idField, aspectRatio string, allo
 			continue
 		}
 		status := "single (< 4 场景)"
-		if layout, ok := domain.CalculateGridLayout(len(ids), aspectRatio, allowLargeGrid); ok {
+		if layout, ok := grid.CalculateGridLayout(len(ids), aspectRatio, allowLargeGrid); ok {
 			status = fmt.Sprintf("%s (%d×%d)", layout.GridSize, layout.Rows, layout.Cols)
 		}
 		lines = append(lines, fmt.Sprintf("  组 %d: %s..%s (%d 场景) → %s", i+1, ids[0], ids[len(ids)-1], len(ids), status))

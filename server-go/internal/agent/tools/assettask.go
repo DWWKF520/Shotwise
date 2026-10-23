@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/repository"
 )
 
 // PatchTableKinds 是资产表名到资产类型的映射（与 Python _TABLES 同源）。
-var PatchTableKinds = map[string]domain.AssetKind{
-	"characters": domain.AssetCharacter,
-	"scenes":     domain.AssetScene,
-	"props":      domain.AssetProp,
-	"products":   domain.AssetProduct,
+var PatchTableKinds = map[string]project.AssetKind{
+	"characters": project.AssetCharacter,
+	"scenes":     project.AssetScene,
+	"props":      project.AssetProp,
+	"products":   project.AssetProduct,
 }
 
 const (

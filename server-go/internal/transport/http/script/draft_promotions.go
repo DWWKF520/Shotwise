@@ -21,14 +21,14 @@ import (
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit"
 
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/draft"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
 // DraftPromotionDeps 是草稿晋升 handler 的依赖。
 type DraftPromotionDeps struct {
 	Store  *service.ProjectStore
-	Drafts *domain.DraftPromotionService
+	Drafts *draft.DraftPromotionService
 }
 
 // RegisterDraftPromotions 注册草稿晋升路由。
@@ -37,9 +37,9 @@ type DraftPromotionDeps struct {
 // 与 /draft-promotions/:draft_id 同层，gin 按静态优先匹配（与 Python 侧
 // 「先注册具体路径」的实际效果一致）。
 func RegisterDraftPromotions(group *gin.RouterGroup, d DraftPromotionDeps) {
-	group.POST("/projects/:name/draft-promotions", createDraftPromotion(d, domain.DraftOriginAgent))
-	group.POST("/projects/:name/draft-promotions/upload", createDraftPromotion(d, domain.DraftOriginUpload))
-	group.POST("/projects/:name/draft-promotions/online-ai", createDraftPromotion(d, domain.DraftOriginOnlineAI))
+	group.POST("/projects/:name/draft-promotions", createDraftPromotion(d, draft.DraftOriginAgent))
+	group.POST("/projects/:name/draft-promotions/upload", createDraftPromotion(d, draft.DraftOriginUpload))
+	group.POST("/projects/:name/draft-promotions/online-ai", createDraftPromotion(d, draft.DraftOriginOnlineAI))
 	group.GET("/projects/:name/draft-promotions", listDraftPromotions(d))
 	group.GET("/projects/:name/draft-promotions/:draft_id", getDraftPromotion(d))
 	group.PATCH("/projects/:name/draft-promotions/:draft_id", updateDraftPromotion(d))
@@ -65,7 +65,7 @@ type draftConfirmRequest struct {
 
 // ---  handlers ---
 
-func createDraftPromotion(d DraftPromotionDeps, origin domain.DraftOrigin) gin.HandlerFunc {
+func createDraftPromotion(d DraftPromotionDeps, origin draft.DraftOrigin) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req draftCreateRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -84,7 +84,7 @@ func createDraftPromotion(d DraftPromotionDeps, origin domain.DraftOrigin) gin.H
 			httpkit.AbortMissingField(c, "content")
 			return
 		}
-		target := domain.DraftTarget{ProjectName: c.Param("name"), ScriptFile: *req.ScriptFile}
+		target := draft.DraftTarget{ProjectName: c.Param("name"), ScriptFile: *req.ScriptFile}
 		draft, err := d.Drafts.Create(target, req.Content, origin, httpkit.CurrentUserID(c))
 		if err != nil {
 			abortDraftErr(c, err, *req.ScriptFile)
@@ -98,10 +98,10 @@ func listDraftPromotions(d DraftPromotionDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		projectName := c.Param("name")
 		actorID := httpkit.CurrentUserID(c)
-		var drafts []*domain.Draft
+		var drafts []*draft.Draft
 		var err error
 		if scriptFile := c.Query("script_file"); scriptFile != "" {
-			drafts, err = d.Drafts.ListDrafts(domain.DraftTarget{ProjectName: projectName, ScriptFile: scriptFile}, actorID)
+			drafts, err = d.Drafts.ListDrafts(draft.DraftTarget{ProjectName: projectName, ScriptFile: scriptFile}, actorID)
 		} else {
 			drafts, err = d.Drafts.Repo().ListAll(projectName, actorID)
 		}
@@ -229,7 +229,7 @@ func confirmDraftPromotion(d DraftPromotionDeps) gin.HandlerFunc {
 
 // loadScopedDraft 读取草稿并校验项目 / 属主scope；越权与不存在同报 404 draft_not_found
 // （对应 Python _ensure_project_scope / _ensure_actor_scope）。
-func loadScopedDraft(c *gin.Context, d DraftPromotionDeps) (*domain.Draft, bool) {
+func loadScopedDraft(c *gin.Context, d DraftPromotionDeps) (*draft.Draft, bool) {
 	draft, err := d.Drafts.GetDraft(c.Param("draft_id"), httpkit.CurrentUserID(c))
 	if err != nil {
 		abortDraftErr(c, err, "")
@@ -243,7 +243,7 @@ func loadScopedDraft(c *gin.Context, d DraftPromotionDeps) (*domain.Draft, bool)
 }
 
 // draftResponse 对应 Python _draft_response。
-func draftResponse(draft *domain.Draft) gin.H {
+func draftResponse(draft *draft.Draft) gin.H {
 	return gin.H{
 		"draft_id":         draft.ID,
 		"project_name":     draft.Target.ProjectName,
@@ -262,11 +262,11 @@ func draftResponse(draft *domain.Draft) gin.H {
 // prepare/confirm 用草稿 id——与 Python 两处的入参保持一致）。
 func abortDraftErr(c *gin.Context, err error, scriptFile string) {
 	switch {
-	case errors.Is(err, domain.ErrDraftNotFound):
+	case errors.Is(err, draft.ErrDraftNotFound):
 		// Python 侧 NotFoundError("draft_not_found", id=...) 经全局 handler 渲染成
 		// {"detail": "<文案>"}；该 key 不在三语目录里，回落成 key 本身（与 Python 一致）。
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "draft_not_found", map[string]any{"id": c.Param("draft_id")}))
-	case errors.Is(err, domain.ErrDraftAbandoned):
+	case errors.Is(err, draft.ErrDraftAbandoned):
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "request_invalid", nil))
 	case errors.Is(err, servicereference.ErrDraftProjectNotFound):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "script_not_found", map[string]any{"name": scriptFile}))

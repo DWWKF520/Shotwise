@@ -11,7 +11,7 @@ import (
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service/generation"
 )
@@ -30,10 +30,9 @@ import (
 // 传给入队，故直接读解析结果、不落 provider 字段。
 type ImageEditCapabilityReader interface {
 	ResolveImageBackend(
-		ctx context.Context, project *domain.ProjectFile, payload map[string]any, capability config.ImageCapability,
+		ctx context.Context, project *project.ProjectFile, payload map[string]any, capability config.ImageCapability,
 	) (config.ProviderModel, error)
 }
-
 
 // editImageTargets 是编辑目标的展示用中文标签（仅工具输出；不参与 i18n）。
 var editImageTargets = map[string]string{

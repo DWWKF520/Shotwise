@@ -15,7 +15,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domaintask "github.com/shotwise/shotwise/internal/domain/task"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -56,7 +57,7 @@ func newQueueFixture(t *testing.T) queueFixture {
 	})
 
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 
@@ -113,7 +114,7 @@ func TestTaskListLocalizesFailureAndWarnings(t *testing.T) {
 	task := f.enqueue(t, "p1", "storyboard", "image", "E1S1")
 
 	// 直接落库模拟 worker 收尾：结构化失败码 + 参考路线 warning。
-	encoded, err := domain.EncodeFailure(domain.CascadeFailureCode, map[string]any{
+	encoded, err := domaintask.EncodeFailure(domaintask.CascadeFailureCode, map[string]any{
 		"dependency_task_id": "upstream",
 		"reason":             "boom",
 	})
@@ -148,7 +149,7 @@ func TestTaskListLocalizesFailureAndWarnings(t *testing.T) {
 		t.Fatalf("error_message 未本地化: %q", message)
 	}
 	// 级联信封的上游 reason 必须被展开成本地文案，而不是原样嵌套 [code]。
-	if bytes.Contains([]byte(message), []byte(domain.CascadeFailureCode)) {
+	if bytes.Contains([]byte(message), []byte(domaintask.CascadeFailureCode)) {
 		t.Fatalf("级联原因未展开: %q", message)
 	}
 	taskResult, _ := entry["result"].(map[string]any)
@@ -342,11 +343,11 @@ func TestVersionsListAndRestore(t *testing.T) {
     }
   }
 }`)
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
 		if pf.Characters == nil {
-			pf.Characters = domain.AssetBucket{}
+			pf.Characters = project.AssetBucket{}
 		}
-		pf.Characters["甲"] = domain.WrapAssetEntry(map[string]any{
+		pf.Characters["甲"] = project.WrapAssetEntry(map[string]any{
 			"character_sheet": "characters/甲.png",
 			"description":     "测试角色",
 		})

@@ -11,7 +11,6 @@ import (
 	"github.com/shotwise/shotwise/internal/service"
 )
 
-
 // RegisterMediaAssetParams 是 RegisterMediaAsset 的入参。
 type RegisterMediaAssetParams struct {
 	ProjectID       string
@@ -49,7 +48,6 @@ func RegisterMediaAsset(p RegisterMediaAssetParams) (*MediaAsset, error) {
 		OriginalName:    p.OriginalName,
 	})
 }
-
 
 // ListProjectMediaAssetsParams 是 ListProjectMediaAssets 的过滤条件。
 type ListProjectMediaAssetsParams struct {

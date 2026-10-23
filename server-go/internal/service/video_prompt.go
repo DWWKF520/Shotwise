@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // videoAvoidItems 是视频统一反向提示词清单（与分镜图侧同源）。
@@ -40,7 +40,7 @@ func StripVoiceProfiles(videoPrompt map[string]any) map[string]any {
 // BuildDramaVideoPrompt 是 drama video_prompt 的 dialogue 与 Voice_Profiles 唯一注入出口。
 //
 // characters 为 nil 表示不注入 Voice_Profiles（真无声模型 / 本集关闭音频）。
-func BuildDramaVideoPrompt(videoPrompt map[string]any, utterances any, characters *domain.AssetBucket) map[string]any {
+func BuildDramaVideoPrompt(videoPrompt map[string]any, utterances any, characters *project.AssetBucket) map[string]any {
 	prompt := StripVoiceProfiles(videoPrompt)
 	dialogue := utterancesToDialogue(utterances)
 	return attachVoiceProfiles(prompt, dialogue, characters)
@@ -48,7 +48,7 @@ func BuildDramaVideoPrompt(videoPrompt map[string]any, utterances any, character
 
 // BuildDramaVideoPromptFromLegacyDialogue 是 legacy drama 场景（台词仍留在 video_prompt.dialogue、
 // 无场景级 utterances 字段）的 Voice_Profiles 注入出口。
-func BuildDramaVideoPromptFromLegacyDialogue(videoPrompt map[string]any, characters *domain.AssetBucket) map[string]any {
+func BuildDramaVideoPromptFromLegacyDialogue(videoPrompt map[string]any, characters *project.AssetBucket) map[string]any {
 	prompt := StripVoiceProfiles(videoPrompt)
 	dialogue, ok := prompt["dialogue"].([]any)
 	if !ok {
@@ -58,7 +58,7 @@ func BuildDramaVideoPromptFromLegacyDialogue(videoPrompt map[string]any, charact
 }
 
 // attachVoiceProfiles 写回 dialogue 并按角色资产派生 Voice_Profiles（characters 为 nil 时不注入）。
-func attachVoiceProfiles(prompt map[string]any, dialogue []any, characters *domain.AssetBucket) map[string]any {
+func attachVoiceProfiles(prompt map[string]any, dialogue []any, characters *project.AssetBucket) map[string]any {
 	prompt["dialogue"] = dialogue
 	if characters != nil {
 		if profiles := buildVoiceProfiles(dialogue, characters); len(profiles) > 0 {
@@ -72,7 +72,7 @@ func attachVoiceProfiles(prompt map[string]any, dialogue []any, characters *doma
 //
 // 仅收录角色资产存在且 voice_style 非空者，一个 speaker 一条（按首现顺序去重）；speaker 与角色
 // 表 key 可能是 NFC/NFD 中的任一形态，按归一名索引与去重，Speaker 展示值保留 dialogue 原文。
-func buildVoiceProfiles(dialogue []any, characters *domain.AssetBucket) []any {
+func buildVoiceProfiles(dialogue []any, characters *project.AssetBucket) []any {
 	seen := map[string]bool{}
 	var profiles []any
 	for _, raw := range dialogue {
@@ -84,7 +84,7 @@ func buildVoiceProfiles(dialogue []any, characters *domain.AssetBucket) []any {
 		if speaker == "" {
 			continue
 		}
-		speakerKey := domain.NormalizeAssetName(speaker)
+		speakerKey := project.NormalizeAssetName(speaker)
 		if seen[speakerKey] {
 			continue
 		}

@@ -12,13 +12,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service/reference"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
 // executeVideoTask 执行一个分镜镜头的视频生成并把产物路径/缩略图写回剧本。
@@ -47,11 +49,11 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 	if err != nil {
 		return nil, err
 	}
-	items, idField, _, err := domain.ResolveScriptItems(script)
+	items, idField, _, err := domainscript.ResolveScriptItems(script)
 	if err != nil {
 		return nil, err
 	}
-	item, _, _ := domain.FindStoryboardItem(items, idField, task.ResourceID)
+	item, _, _ := media.FindStoryboardItem(items, idField, task.ResourceID)
 	contentMode := scriptContentMode(script, project)
 
 	// lane 归桶按项目路线求值，与提交入口 generate_video 同源：入口挡掉参考路线后到达这里的
@@ -64,7 +66,7 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 
 	// 优先读取 generated_assets.storyboard_image，回退默认路径。校验口径与路由入队预检、
 	// SDK 工具入队预检共用同一份 resolveStoryboardImageRef。
-	storyboardRel := domain.GeneratedAssets(item)["storyboard_image"]
+	storyboardRel := media.GeneratedAssets(item)["storyboard_image"]
 	storyboardFile, err := service.ResolveStoryboardImageRef(projectDir, storyboardRel)
 	if err != nil {
 		return nil, err
@@ -89,7 +91,7 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 	// 的 dialogue 出口。narration / ad 的 item 无 utterances 字段，payload.dialogue 原样透传；
 	// SDK 路径 prompt 已是渲染好的字符串、跳过。条目不在剧本中时按空条目处理（与 Python 的
 	// 「找不到分镜回退空 dict」同口径），戏剧路径照常走台词派生。
-	if m, ok := prompt.(map[string]any); ok && contentMode == string(domain.ContentDrama) {
+	if m, ok := prompt.(map[string]any); ok && contentMode == string(domainproject.ContentDrama) {
 		voiceCharacters := d.dramaVoiceCharacters(ctx, project, target)
 		utterances, hasUtterances := any(nil), false
 		if item != nil {
@@ -164,8 +166,8 @@ func (d *TaskDispatcher) executeVideoTask(ctx context.Context, task *repository.
 
 // dramaVoiceCharacters 取戏剧 Voice_Profiles 注入的角色表：无声（模型不产音或本集关音频）返回 nil。
 func (d *TaskDispatcher) dramaVoiceCharacters(
-	ctx context.Context, project *domain.ProjectFile, target *VideoTarget,
-) *domain.AssetBucket {
+	ctx context.Context, project *domainproject.ProjectFile, target *VideoTarget,
+) *domainproject.AssetBucket {
 	requested, err := d.videos.RequestedGenerateAudio(ctx, project)
 	if err != nil {
 		// 开关解析失败按 Python 侧独立解析失败的降级口径处理：有信号才判定为真无声。
@@ -183,7 +185,7 @@ func (d *TaskDispatcher) dramaVoiceCharacters(
 // 守卫统一把关。payload 显式为假值（0 / "" 等）时按未设置处理，回退到项目默认；项目默认同样
 // 为假值时取收窄后档位首项。
 func (d *TaskDispatcher) resolveVideoDuration(
-	task *repository.TaskData, project *domain.ProjectFile,
+	task *repository.TaskData, project *domainproject.ProjectFile,
 	registryProviderID, modelName string, supportedDurations []int, resolution string,
 ) (int, error) {
 	if raw, present := task.Payload["duration_seconds"]; present && raw != nil && service.RefPresenceTruthy(raw) {
@@ -381,7 +383,7 @@ func canonicalPathTampered(projectDir, rel string) bool {
 
 // scriptContentMode 取剧本内容模式，缺失时回退项目配置，最终默认 narration
 // （对应 resolve_content_mode：键存在即取该值，即便为空串）。
-func scriptContentMode(script map[string]any, project *domain.ProjectFile) string {
+func scriptContentMode(script map[string]any, project *domainproject.ProjectFile) string {
 	if mode, present := script["content_mode"]; present {
 		if s, ok := mode.(string); ok {
 			return s
@@ -390,7 +392,7 @@ func scriptContentMode(script map[string]any, project *domain.ProjectFile) strin
 	if project != nil && project.ContentMode != "" {
 		return project.ContentMode
 	}
-	return string(domain.ContentNarration)
+	return string(domainproject.ContentNarration)
 }
 
 // payloadInt64 读 payload 里的整数（JSON 解出为 float64），非整数/非数值返回 nil。

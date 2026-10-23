@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
@@ -24,7 +24,7 @@ func newProjectFixture(t *testing.T) projectFixture {
 	t.Helper()
 	root := t.TempDir()
 	store := service.NewProjectStore(root)
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -90,8 +90,8 @@ func writeProjectScript(t *testing.T, f projectFixture, episode int, script map[
 		t.Fatalf("write script: %v", err)
 	}
 	relpath := "scripts/" + filename
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{Episode: episode, ScriptFile: relpath})
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{Episode: episode, ScriptFile: relpath})
 		return nil
 	}); err != nil {
 		t.Fatalf("register episode: %v", err)
@@ -331,8 +331,8 @@ func TestGetProjectDetailStaleLedgerFallback(t *testing.T) {
 		"segments":     []any{map[string]any{"segment_id": "E1S1", "duration_seconds": 4}},
 	})
 	// 账本标 stale：读时回退为待预处理，禁用剧本计分。
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
-		pf.Episodes[0].LedgerStatus = domain.LedgerStatusStale
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
+		pf.Episodes[0].LedgerStatus = project.LedgerStatusStale
 		return nil
 	}); err != nil {
 		t.Fatalf("mark stale: %v", err)

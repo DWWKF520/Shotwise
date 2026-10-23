@@ -18,7 +18,7 @@ import (
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
 	"github.com/shotwise/shotwise/internal/service/creative"
 )
 
@@ -355,7 +355,7 @@ func abortWorkflowErr(c *gin.Context, err error) {
 	var (
 		notFound   *creative.WorkflowNotFoundError
 		conflict   *creative.WorkflowConflictError
-		validation *domain.WorkflowValidationError
+		validation *creation.WorkflowValidationError
 	)
 	switch {
 	case errors.As(err, &notFound):
@@ -467,7 +467,7 @@ func createRevision(d WorkflowDeps) gin.HandlerFunc {
 		}
 		contentMode := "drama"
 		if req.ContentMode != nil {
-			if !domain.WorkflowContentModes[*req.ContentMode] {
+			if !creation.WorkflowContentModes[*req.ContentMode] {
 				abortWorkflowField(c, "content_mode", "string_pattern_mismatch")
 				return
 			}
@@ -475,7 +475,7 @@ func createRevision(d WorkflowDeps) gin.HandlerFunc {
 		}
 		generationMode := "storyboard"
 		if req.GenerationMode != nil {
-			if !domain.WorkflowGenerationModes[*req.GenerationMode] {
+			if !creation.WorkflowGenerationModes[*req.GenerationMode] {
 				abortWorkflowField(c, "generation_mode", "string_pattern_mismatch")
 				return
 			}
@@ -801,7 +801,7 @@ func bindWorkflowTemplateDraft(c *gin.Context) (creative.WorkflowTemplateParams,
 	}
 	contentMode := "drama"
 	if req.ContentMode != nil {
-		if !domain.WorkflowContentModes[*req.ContentMode] {
+		if !creation.WorkflowContentModes[*req.ContentMode] {
 			abortWorkflowField(c, "content_mode", "string_pattern_mismatch")
 			return creative.WorkflowTemplateParams{}, false
 		}
@@ -809,7 +809,7 @@ func bindWorkflowTemplateDraft(c *gin.Context) (creative.WorkflowTemplateParams,
 	}
 	generationMode := "storyboard"
 	if req.GenerationMode != nil {
-		if !domain.WorkflowGenerationModes[*req.GenerationMode] {
+		if !creation.WorkflowGenerationModes[*req.GenerationMode] {
 			abortWorkflowField(c, "generation_mode", "string_pattern_mismatch")
 			return creative.WorkflowTemplateParams{}, false
 		}
@@ -1185,8 +1185,8 @@ func bindWorkflowPatchRequest(c *gin.Context) (workflowPatchRequest, bool) {
 //
 // Python 侧用 Pydantic 校验（违例会冒泡成 500），这里按请求体约束写成 422，
 // 客户端拿到的是可修正的错误而不是服务端异常。
-func decodeWorkflowPatch(c *gin.Context, raw map[string]any) (domain.WorkflowPatch, bool) {
-	patch := domain.WorkflowPatch{Scope: "episode"}
+func decodeWorkflowPatch(c *gin.Context, raw map[string]any) (creation.WorkflowPatch, bool) {
+	patch := creation.WorkflowPatch{Scope: "episode"}
 	if value, ok := raw["base_revision_id"].(string); ok {
 		patch.BaseRevisionID = value
 	}
@@ -1202,15 +1202,15 @@ func decodeWorkflowPatch(c *gin.Context, raw map[string]any) (domain.WorkflowPat
 	operations, ok := raw["operations"].([]any)
 	if !ok {
 		abortWorkflowField(c, "patch.operations", "list_type")
-		return domain.WorkflowPatch{}, false
+		return creation.WorkflowPatch{}, false
 	}
 	for _, item := range operations {
 		entry, isMap := item.(map[string]any)
 		if !isMap {
 			abortWorkflowField(c, "patch.operations", "model_attributes_type")
-			return domain.WorkflowPatch{}, false
+			return creation.WorkflowPatch{}, false
 		}
-		operation := domain.WorkflowPatchOperation{}
+		operation := creation.WorkflowPatchOperation{}
 		if value, isString := entry["operation"].(string); isString {
 			operation.Operation = value
 		}
@@ -1232,7 +1232,7 @@ func decodeWorkflowPatch(c *gin.Context, raw map[string]any) (domain.WorkflowPat
 	}
 	if err := patch.Validate(); err != nil {
 		abortWorkflowErr(c, err)
-		return domain.WorkflowPatch{}, false
+		return creation.WorkflowPatch{}, false
 	}
 	return patch, true
 }
@@ -1309,7 +1309,7 @@ func importWorkflow(d WorkflowDeps) gin.HandlerFunc {
 		}
 		contentMode := "drama"
 		if req.ContentMode != nil {
-			if !domain.WorkflowContentModes[*req.ContentMode] {
+			if !creation.WorkflowContentModes[*req.ContentMode] {
 				abortWorkflowField(c, "content_mode", "string_pattern_mismatch")
 				return
 			}
@@ -1317,7 +1317,7 @@ func importWorkflow(d WorkflowDeps) gin.HandlerFunc {
 		}
 		generationMode := "storyboard"
 		if req.GenerationMode != nil {
-			if !domain.WorkflowGenerationModes[*req.GenerationMode] {
+			if !creation.WorkflowGenerationModes[*req.GenerationMode] {
 				abortWorkflowField(c, "generation_mode", "string_pattern_mismatch")
 				return
 			}

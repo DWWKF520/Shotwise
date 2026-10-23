@@ -9,16 +9,18 @@
 package generation
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domaingrid "github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/repository"
 )
 
@@ -50,11 +52,11 @@ func NewGridTaskService(
 // gridWriteBlockedError 是宫格写入口的项目级闸门错误（对应 ensure_grid_writable）。
 //
 // 两个码都是 400，但语义不同：广告项目根本不该有宫格，开关关闭则是「本项目此刻不产宫格」。
-func ensureGridWritable(project *domain.ProjectFile) error {
-	if project.ContentMode == string(domain.ContentAd) {
+func ensureGridWritable(project *domainproject.ProjectFile) error {
+	if project.ContentMode == string(domainproject.ContentAd) {
 		return service.GenerateBadRequest("ad_grid_not_supported", nil)
 	}
-	if !domain.GridStoryboardEnabled(project) {
+	if !domaingrid.GridStoryboardEnabled(project) {
 		return service.GenerateBadRequest("grid_storyboard_not_enabled", nil)
 	}
 	return nil
@@ -82,12 +84,12 @@ func (s *GridTaskService) Generate(
 	if err != nil {
 		return nil, service.GenerateBadRequest("invalid_script_file", map[string]any{"name": scriptFile})
 	}
-	items, idField, fields := domain.StoryboardItems(script)
-	aspectRatio := domain.VideoAspectRatioOf(project)
+	items, idField, fields := media.StoryboardItems(script)
+	aspectRatio := domaingrid.VideoAspectRatioOf(project)
 	style := project.Style
 	allowLargeGrid := service.ResolveLargeGridAllowed(ctx, s.images, project)
 
-	groups := domain.GroupScenesBySegmentBreak(items, idField)
+	groups := media.GroupScenesBySegmentBreak(items, idField)
 	if len(sceneIDs) > 0 {
 		wanted := map[string]bool{}
 		for _, id := range sceneIDs {
@@ -109,7 +111,7 @@ func (s *GridTaskService) Generate(
 	// 让它们的缺失资产挡住整批请求是无意义的拒绝。
 	toValidate := make([]map[string]any, 0, len(items))
 	for _, group := range groups {
-		if _, ok := domain.CalculateGridLayout(len(group), aspectRatio, allowLargeGrid); !ok {
+		if _, ok := domaingrid.CalculateGridLayout(len(group), aspectRatio, allowLargeGrid); !ok {
 			continue
 		}
 		toValidate = append(toValidate, group...)
@@ -135,7 +137,7 @@ func (s *GridTaskService) Generate(
 		for _, item := range group {
 			groupIDs = append(groupIDs, storyboardIDOf(item, idField))
 		}
-		layout, ok := domain.CalculateGridLayout(len(groupIDs), aspectRatio, allowLargeGrid)
+		layout, ok := domaingrid.CalculateGridLayout(len(groupIDs), aspectRatio, allowLargeGrid)
 		if !ok {
 			continue
 		}
@@ -148,13 +150,13 @@ func (s *GridTaskService) Generate(
 			for _, item := range chunk {
 				chunkIDs = append(chunkIDs, storyboardIDOf(item, idField))
 			}
-			chunkLayout, ok := domain.CalculateGridLayout(len(chunkIDs), aspectRatio, allowLargeGrid)
+			chunkLayout, ok := domaingrid.CalculateGridLayout(len(chunkIDs), aspectRatio, allowLargeGrid)
 			if !ok {
 				continue
 			}
-			prompt := domain.BuildGridPrompt(chunk, idField, chunkLayout.Rows, chunkLayout.Cols,
+			prompt := domaingrid.BuildGridPrompt(chunk, idField, chunkLayout.Rows, chunkLayout.Cols,
 				style, aspectRatio, chunkLayout.GridAspectRatio, nil)
-			grid := domain.NewGridGeneration(
+			grid := domaingrid.NewGridGeneration(
 				episode, scriptFile, chunkIDs, chunkLayout.Rows, chunkLayout.Cols,
 				chunkLayout.GridSize, "", "", aspectRatio, &prompt)
 			if err := manager.Save(grid); err != nil {
@@ -202,7 +204,7 @@ func (s *GridTaskService) Capability(ctx context.Context, projectName string) (m
 	allowed := service.ResolveLargeGridAllowed(ctx, s.images, project)
 	return map[string]any{
 		"large_grid_allowed": allowed,
-		"max_cell_count":     domain.MaxCellCount(allowed),
+		"max_cell_count":     domaingrid.MaxCellCount(allowed),
 	}, nil
 }
 
@@ -228,7 +230,7 @@ func (s *GridTaskService) List(projectName string) ([]any, error) {
 }
 
 // GridData 返回宫格记录本体（供传输层直接序列化，不带包装）。
-func (s *GridTaskService) GridData(projectName, gridID string) (*domain.GridGeneration, error) {
+func (s *GridTaskService) GridData(projectName, gridID string) (*domaingrid.GridGeneration, error) {
 	projectDir, err := s.store.Dir(projectName)
 	if err != nil {
 		return nil, service.GenerateBadRequest("invalid_project_name", map[string]any{"name": projectName})
@@ -264,7 +266,7 @@ func (s *GridTaskService) Regenerate(
 	if err != nil {
 		return nil, service.GenerateBadRequest("invalid_script_file", map[string]any{"name": grid.ScriptFile})
 	}
-	items, idField, fields := domain.StoryboardItems(script)
+	items, idField, fields := media.StoryboardItems(script)
 	wanted := map[string]bool{}
 	for _, id := range grid.SceneIDs {
 		wanted[id] = true
@@ -285,13 +287,13 @@ func (s *GridTaskService) Regenerate(
 
 	// prompt 里写死了画布比例：换用项目当前比例会让画布描述与下发参数自相矛盾。
 	// 存量记录没有冻结值，回落到项目当前比例并就地补齐。
-	aspectRatio := domain.VideoAspectRatioOf(project)
+	aspectRatio := domaingrid.VideoAspectRatioOf(project)
 	if grid.VideoAspectRatio != nil && *grid.VideoAspectRatio != "" {
 		aspectRatio = *grid.VideoAspectRatio
 	}
-	gridAspectRatio := domain.GridAspectRatioFor(grid.Rows, grid.Cols, aspectRatio)
+	gridAspectRatio := domaingrid.GridAspectRatioFor(grid.Rows, grid.Cols, aspectRatio)
 
-	grid.Status = domain.GridStatusPending
+	grid.Status = domaingrid.GridStatusPending
 	grid.ErrorMessage = nil
 	// provider/model 留给执行侧按 needs_i2i 回填。
 	grid.Provider = ""
@@ -305,7 +307,7 @@ func (s *GridTaskService) Regenerate(
 	if grid.Prompt != nil {
 		prompt = *grid.Prompt
 	}
-	layout := domain.GridLayout{
+	layout := domaingrid.GridLayout{
 		GridSize:        grid.GridSize,
 		Rows:            grid.Rows,
 		Cols:            grid.Cols,
@@ -432,7 +434,7 @@ func (s *GridTaskService) UploadGridImage(
 	// 手动补图等价于一次成功的联合图产出：failed 记录回到就绪态，split_at 清空表示待切分；
 	// 补的图按项目当前比例排布，冻结值随之改写（沿用旧值会在项目改过比例后把新图按旧比例裁切）。
 	grid.MarkCompositeReplaced()
-	aspectRatio := domain.VideoAspectRatioOf(project)
+	aspectRatio := domaingrid.VideoAspectRatioOf(project)
 	grid.VideoAspectRatio = &aspectRatio
 	if err := manager.Save(grid); err != nil {
 		return nil, err
@@ -451,7 +453,7 @@ func (s *GridTaskService) UploadGridImage(
 //
 // 跳过 pending/generating：worker 还在用那条记录，删掉会让它执行时找不到资源。
 func (s *GridTaskService) cleanupCheckpointGrids(
-	manager *service.GridManager, existing []*domain.GridGeneration, scriptFile string, episode int, groupIDs []string,
+	manager *service.GridManager, existing []*domaingrid.GridGeneration, scriptFile string, episode int, groupIDs []string,
 ) {
 	groupSet := map[string]bool{}
 	for _, id := range groupIDs {
@@ -461,7 +463,7 @@ func (s *GridTaskService) cleanupCheckpointGrids(
 		if old.ScriptFile != scriptFile || old.Episode != episode {
 			continue
 		}
-		if old.Status == domain.GridStatusPending || old.Status == domain.GridStatusGenerating {
+		if old.Status == domaingrid.GridStatusPending || old.Status == domaingrid.GridStatusGenerating {
 			continue
 		}
 		if len(old.SceneIDs) == 0 {
@@ -482,7 +484,7 @@ func (s *GridTaskService) cleanupCheckpointGrids(
 
 // validateGridItems 合并多条分镜的资产引用校验结果。
 func validateGridItems(
-	project *domain.ProjectFile, projectDir string, items []map[string]any, fields domain.StoryboardItemFields,
+	project *domainproject.ProjectFile, projectDir string, items []map[string]any, fields media.StoryboardItemFields,
 ) service.PreflightResult {
 	results := make([]service.PreflightResult, 0, len(items))
 	for _, item := range items {
@@ -492,7 +494,7 @@ func validateGridItems(
 }
 
 // loadGridOrNotFound 按 ID 取宫格记录；格式非法与不存在都是 404。
-func loadGridOrNotFound(projectDir, gridID string) (*domain.GridGeneration, error) {
+func loadGridOrNotFound(projectDir, gridID string) (*domaingrid.GridGeneration, error) {
 	manager, err := service.NewGridManager(projectDir)
 	if err != nil {
 		return nil, err
@@ -509,8 +511,8 @@ func loadGridOrNotFound(projectDir, gridID string) (*domain.GridGeneration, erro
 
 // ensureGridIdle 拒绝在途（pending/generating）的宫格被切分或上传：
 // worker 完成时会覆写联合图，与刚上传的图或按旧图的切分互相踩踏。
-func ensureGridIdle(grid *domain.GridGeneration) error {
-	if grid.Status == domain.GridStatusPending || grid.Status == domain.GridStatusGenerating {
+func ensureGridIdle(grid *domaingrid.GridGeneration) error {
+	if grid.Status == domaingrid.GridStatusPending || grid.Status == domaingrid.GridStatusGenerating {
 		return generateConflict("grid_generation_in_progress")
 	}
 	return nil
@@ -521,7 +523,7 @@ func ensureGridIdle(grid *domain.GridGeneration) error {
 // 入队不携带 provider：provider 由执行侧按当前项目配置解析（ADR 0001），
 // 因为只有 task 层能按 reference_images 判断走 t2i 还是 i2i 槽。
 func gridTaskPayload(
-	prompt, scriptFile string, sceneIDs []string, layout domain.GridLayout, videoAspectRatio string,
+	prompt, scriptFile string, sceneIDs []string, layout domaingrid.GridLayout, videoAspectRatio string,
 ) map[string]any {
 	return map[string]any{
 		"prompt":             prompt,
@@ -593,7 +595,6 @@ func gridImageRelativePath(gridID string) string {
 func describeGridRoute(projectName, gridID string) string {
 	return fmt.Sprintf("project=%s grid=%s", projectName, gridID)
 }
-
 
 // sortedSceneIDsCSV 是错误信息与日志用的稳定拼接。
 func sortedSceneIDsCSV(ids []string) string {

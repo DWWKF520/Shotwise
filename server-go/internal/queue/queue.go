@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 )
@@ -32,12 +32,12 @@ const (
 
 // ProjectLoader 按名读项目文件（*service.ProjectStore 满足）。读不到时返回 error。
 type ProjectLoader interface {
-	Get(name string) (*domain.ProjectFile, error)
+	Get(name string) (*project.ProjectFile, error)
 }
 
 // BucketResolver 为入队任务定视频能力桶；返回 nil 表示该任务不定桶。
 type BucketResolver func(
-	projectName string, project *domain.ProjectFile, taskType string, payload map[string]any, resourceID string,
+	projectName string, project *project.ProjectFile, taskType string, payload map[string]any, resourceID string,
 ) *provider.VideoBucket
 
 // TerminalEmitter 发布任务终态事件；nil 时 no-op。
@@ -138,7 +138,7 @@ func (q *Queue) deriveExecutionModelForEnqueue(
 	isVideo := mediaType == "video" || taskType == "video" || taskType == "reference_video"
 	isAudio := mediaType == "audio" || taskType == "tts"
 
-	var project *domain.ProjectFile
+	var project *project.ProjectFile
 	if projectName != "" {
 		if q.projects == nil {
 			return nil
@@ -184,7 +184,7 @@ func (q *Queue) deriveExecutionModelForEnqueue(
 
 // resolveQueuedBucket 定桶：有注入的定桶器就用它，否则用默认（任务类型表 + 参考路线退代表桶）。
 func (q *Queue) resolveQueuedBucket(
-	projectName string, project *domain.ProjectFile, taskType string, payload map[string]any, resourceID string,
+	projectName string, project *project.ProjectFile, taskType string, payload map[string]any, resourceID string,
 ) *provider.VideoBucket {
 	if q.bucketResolver != nil {
 		return q.bucketResolver(projectName, project, taskType, payload, resourceID)

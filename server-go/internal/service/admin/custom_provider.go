@@ -15,11 +15,11 @@
 package admin
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"net/http"
 	"strconv"
 	"strings"
@@ -29,7 +29,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/providers"
@@ -718,7 +718,7 @@ func (s *CustomProviderService) cleanupProjectRefs(prefix string) {
 		return
 	}
 	for _, name := range names {
-		if err := s.store.Update(name, func(pf *domain.ProjectFile) error {
+		if err := s.store.Update(name, func(pf *project.ProjectFile) error {
 			for _, field := range customProjectBackendFields(pf) {
 				if strings.HasPrefix(*field, prefix) {
 					*field = ""
@@ -734,7 +734,7 @@ func (s *CustomProviderService) cleanupProjectRefs(prefix string) {
 // customProjectBackendFields 返回 project.json 上会被级联清理的后端字段。
 //
 // 不含 video_provider_i2v / _r2v：与全局设置同理，桶引用刻意不做写入侧级联。
-func customProjectBackendFields(pf *domain.ProjectFile) map[string]*string {
+func customProjectBackendFields(pf *project.ProjectFile) map[string]*string {
 	return map[string]*string{
 		"video_backend":         &pf.VideoBackend,
 		"audio_backend":         &pf.AudioBackend,

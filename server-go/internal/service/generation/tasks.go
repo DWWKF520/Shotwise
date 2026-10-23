@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/queue"
@@ -56,9 +56,9 @@ func (d *TaskDispatcher) Execute(ctx context.Context, task *repository.TaskData)
 	switch task.TaskType {
 	case "storyboard":
 		return d.executeStoryboard(ctx, task)
-	case string(domain.AssetScene), string(domain.AssetProp), string(domain.AssetProduct):
-		return d.executeDesign(ctx, task, domain.AssetKind(task.TaskType))
-	case string(domain.AssetCharacter):
+	case string(project.AssetScene), string(project.AssetProp), string(project.AssetProduct):
+		return d.executeDesign(ctx, task, project.AssetKind(task.TaskType))
+	case string(project.AssetCharacter):
 		return d.executeCharacterTask(ctx, task)
 	case "tts":
 		return d.executeTTS(ctx, task)
@@ -220,7 +220,6 @@ func collectPayloadReferenceImages(projectDir string, payload map[string]any) ([
 	return refs, nil
 }
 
-
 // normalizeStoryboardPrompt 归一化分镜图 prompt：正文组装 + 统一反向提示词尾巴（尾巴幂等）。
 func normalizeStoryboardPrompt(raw any, style string) (string, error) {
 	body, err := BuildImagePromptBody(raw, style)
@@ -289,7 +288,6 @@ func BuildImagePromptText(raw any, style, styleDescription string) (string, erro
 // promptYAMLScalar 输出单个 YAML 纯量：取值安全（无结构歧义字符）时保持明文，
 // 否则用 JSON 双引号串——YAML 的双引号纯量与 JSON 兼容，等价 PyYAML 的转义行为。
 
-
 // imagePromptToYAML 把 imagePrompt 结构渲染为 YAML，键序 Style/Scene/Composition/Avoid
 // （对应 lib/prompt_utils.py::image_prompt_to_yaml；PyYAML 宽行不折行，此处逐行手写同形）。
 func imagePromptToYAML(p map[string]string, projectStyle string) string {
@@ -353,5 +351,3 @@ func appendVideoNegativeTail(prompt string) string {
 	}
 	return strings.TrimRight(prompt, " \t\n\r") + "\n\n" + videoNegativeTail
 }
-
-

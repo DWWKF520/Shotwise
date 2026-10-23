@@ -20,7 +20,8 @@ import (
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
@@ -76,16 +77,16 @@ func RegisterReferenceVideos(group *gin.RouterGroup, d ReferenceVideoDeps) {
 }
 
 // decodeReferences 解析 references 字段：缺失返回空切片，格式非法写出 422。
-func decodeReferences(c *gin.Context, raw any) ([]domain.AdReference, bool) {
+func decodeReferences(c *gin.Context, raw any) ([]media.AdReference, bool) {
 	if raw == nil {
-		return []domain.AdReference{}, true
+		return []media.AdReference{}, true
 	}
 	items, ok := raw.([]any)
 	if !ok {
 		httpkit.AbortFieldConstraint(c, "references", "list_type")
 		return nil, false
 	}
-	refs := make([]domain.AdReference, 0, len(items))
+	refs := make([]media.AdReference, 0, len(items))
 	for _, item := range items {
 		entry, ok := item.(map[string]any)
 		if !ok {
@@ -102,7 +103,7 @@ func decodeReferences(c *gin.Context, raw any) ([]domain.AdReference, bool) {
 			httpkit.AbortFieldConstraint(c, "references.name", "string_type")
 			return nil, false
 		}
-		refs = append(refs, domain.AdReference{Type: refType, Name: domain.NormalizeAssetName(name)})
+		refs = append(refs, media.AdReference{Type: refType, Name: domainproject.NormalizeAssetName(name)})
 	}
 	return refs, true
 }
@@ -162,7 +163,7 @@ func listReferenceUnits(d ReferenceVideoDeps) gin.HandlerFunc {
 			abortReferenceVideoErr(c, err)
 			return
 		}
-		if pf.ContentMode == string(domain.ContentAd) {
+		if pf.ContentMode == string(domainproject.ContentAd) {
 			c.JSON(http.StatusOK, gin.H{"units": servicereference.AnnotateAdUnitStaleness(script, script["reference_units"])})
 			return
 		}
@@ -189,7 +190,7 @@ func deriveReferenceUnits(d ReferenceVideoDeps) gin.HandlerFunc {
 			abortReferenceVideoErr(c, err)
 			return
 		}
-		if pf.ContentMode != string(domain.ContentAd) {
+		if pf.ContentMode != string(domainproject.ContentAd) {
 			abortReferenceVideoErr(c, &servicereference.AdOnlyDeriveError{})
 			return
 		}
@@ -199,7 +200,7 @@ func deriveReferenceUnits(d ReferenceVideoDeps) gin.HandlerFunc {
 		var annotated []any
 		err = d.Store.UpdateEpisodeScript(project, servicereference.EpisodeScriptResolverFor(episode, &requireAd, nil),
 			func(script map[string]any) error {
-				units := domain.SyncAdReferenceUnits(script, episode, maxUnitDuration)
+				units := media.SyncAdReferenceUnits(script, episode, maxUnitDuration)
 				annotated = servicereference.AnnotateAdUnitStaleness(script, servicereference.ToAnyList(units))
 				return nil
 			})
@@ -298,7 +299,7 @@ func patchReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		unitID := c.Param("unit_id")
 
 		refs, refsPresent := body["references"]
-		var resolvedRefs []domain.AdReference
+		var resolvedRefs []media.AdReference
 		if refsPresent && refs != nil {
 			var valid bool
 			resolvedRefs, valid = decodeReferences(c, refs)
@@ -329,7 +330,7 @@ func patchReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		}
 
 		requireAd := false
-		var resolverRefs []domain.AdReference
+		var resolverRefs []media.AdReference
 		if refsPresent && refs != nil {
 			resolverRefs = resolvedRefs
 		}
@@ -506,13 +507,13 @@ func precheckReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 
 		var unit map[string]any
 		var adShots []map[string]any
-		if pf.ContentMode == string(domain.ContentAd) {
+		if pf.ContentMode == string(domainproject.ContentAd) {
 			unit, err = servicereference.FindAdUnit(script, unitID)
 			if err != nil {
 				abortReferenceVideoErr(c, err)
 				return
 			}
-			adShots, err = domain.ResolveAdUnitShots(script, unit)
+			adShots, err = media.ResolveAdUnitShots(script, unit)
 			if err != nil {
 				apperr.Abort(c, apperr.NewText(http.StatusConflict, "ref_ad_stale_index", nil))
 				return
@@ -525,7 +526,7 @@ func precheckReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 			}
 		}
 
-		bucket := provider.VideoBucket(domain.ReferenceUnitVideoBucket(unit, adShots))
+		bucket := provider.VideoBucket(media.ReferenceUnitVideoBucket(unit, adShots))
 		dctx := service.ResolveProjectDurationContext(c.Request.Context(), d.Resolver, pf, bucket)
 		slot, slotErr := service.PrecheckUnit(dctx, unit, adShots)
 		if slotErr != nil {
@@ -628,7 +629,7 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 			abortReferenceVideoErr(c, err)
 			return
 		}
-		isAd := pf.ContentMode == string(domain.ContentAd)
+		isAd := pf.ContentMode == string(domainproject.ContentAd)
 		var unit map[string]any
 		var unitShots []map[string]any
 		var guardPrompt string
@@ -640,7 +641,7 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 				abortReferenceVideoErr(c, err)
 				return
 			}
-			unitShots, err = domain.ResolveAdUnitShots(script, unit)
+			unitShots, err = media.ResolveAdUnitShots(script, unit)
 			if err != nil {
 				apperr.Abort(c, apperr.NewText(http.StatusConflict, "ref_ad_stale_index", nil))
 				return
@@ -650,14 +651,14 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 				styleValue := pf.Style
 				style = &styleValue
 			}
-			guardPrompt = domain.RenderAdUnitPrompt(unitShots, style)
+			guardPrompt = media.RenderAdUnitPrompt(unitShots, style)
 		} else {
 			unit, err = servicereference.FindUnit(script, unitID)
 			if err != nil {
 				abortReferenceVideoErr(c, err)
 				return
 			}
-			guardPrompt = domain.AssembleShotsText(unit["shots"])
+			guardPrompt = media.AssembleShotsText(unit["shots"])
 		}
 
 		projectDir, err := d.Store.Dir(project)
@@ -667,9 +668,9 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		}
 		// ad 参考集由镜头字段继承而不是人工挑选，缺图在执行层按软口径跳过并记 warning，
 		// 提交期只硬拦未登记资产；narration/drama 按 unit 声明的 references 全量校验。
-		var refs []domain.AdReference
+		var refs []media.AdReference
 		if isAd {
-			refs = domain.AdUnitReferences(unitShots)
+			refs = media.AdUnitReferences(unitShots)
 		} else {
 			refs = unitTypedReferences(unit)
 		}
@@ -701,7 +702,7 @@ func generateReferenceUnit(d ReferenceVideoDeps) gin.HandlerFunc {
 		// 参考生视频按镜头是否携带参考图分流定桶（docs/adr/0054）：有参考图 → r2v，
 		// 无参考图的退化镜头降级 → i2v。解析闸让能力缺失 / 悬空引用在提交入口即返回
 		// 修复指引，而非任务面板里的异步失败。
-		bucket := provider.VideoBucket(domain.ReferenceUnitVideoBucket(unit, unitShots))
+		bucket := provider.VideoBucket(media.ReferenceUnitVideoBucket(unit, unitShots))
 		if err := servicereference.RequireVideoBucketCapability(c.Request.Context(), d.Resolver, pf, bucket); err != nil {
 			abortReferenceVideoErr(c, err)
 			return
@@ -845,9 +846,9 @@ func uploadReferenceUnitVideo(d ReferenceVideoDeps) gin.HandlerFunc {
 
 // unitTypedReferences 从 unit.references 收集类型化引用对：非对象条目与非字符串字段
 // 跳过（空字符串仍是合法 str，与 Python 的 isinstance 收集口径一致）。
-func unitTypedReferences(unit map[string]any) []domain.AdReference {
+func unitTypedReferences(unit map[string]any) []media.AdReference {
 	list, _ := unit["references"].([]any)
-	refs := make([]domain.AdReference, 0, len(list))
+	refs := make([]media.AdReference, 0, len(list))
 	for _, raw := range list {
 		entry, isMap := raw.(map[string]any)
 		if !isMap {
@@ -856,7 +857,7 @@ func unitTypedReferences(unit map[string]any) []domain.AdReference {
 		refType, typeOK := entry["type"].(string)
 		refName, nameOK := entry["name"].(string)
 		if typeOK && nameOK {
-			refs = append(refs, domain.AdReference{Type: refType, Name: refName})
+			refs = append(refs, media.AdReference{Type: refType, Name: refName})
 		}
 	}
 	return refs

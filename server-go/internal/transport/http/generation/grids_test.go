@@ -16,7 +16,8 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	domaingrid "github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -56,13 +57,13 @@ func newGridFixture(t *testing.T) gridFixture {
 	})
 
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
 		pf.GridStoryboard = true
 		pf.AspectRatio = "9:16"
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"})
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"})
 		return nil
 	}); err != nil {
 		t.Fatalf("enable grid: %v", err)
@@ -181,8 +182,8 @@ func TestGridGenerateCreatesRecordsAndTasks(t *testing.T) {
 // TestGridGenerateRejectsAdProject 校验广告项目在动作端点被拒（写入边界之外的第二道防线）。
 func TestGridGenerateRejectsAdProject(t *testing.T) {
 	f := newGridFixture(t)
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
-		pf.ContentMode = string(domain.ContentAd)
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
+		pf.ContentMode = string(project.ContentAd)
 		pf.GridStoryboard = false
 		pf.TargetDuration = intPtr(30)
 		return nil
@@ -200,7 +201,7 @@ func TestGridGenerateRejectsAdProject(t *testing.T) {
 // TestGridGenerateRejectsDisabledGrid 校验宫格开关关闭时拒绝生成。
 func TestGridGenerateRejectsDisabledGrid(t *testing.T) {
 	f := newGridFixture(t)
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
 		pf.GridStoryboard = false
 		return nil
 	}); err != nil {
@@ -303,7 +304,7 @@ func TestGridUploadNormalizesAndBumpsVersion(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("get grid: %v %v", err, found)
 	}
-	grid.Status = domain.GridStatusCompleted
+	grid.Status = domaingrid.GridStatusCompleted
 	if err := manager.Save(grid); err != nil {
 		t.Fatalf("save: %v", err)
 	}

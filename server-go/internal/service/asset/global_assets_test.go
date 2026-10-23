@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/migrations"
@@ -36,7 +36,7 @@ func newGlobalAssetFixture(t *testing.T) globalAssetFixture {
 		}
 	})
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	// 落一张场景 sheet 并登记进桶。
@@ -50,13 +50,13 @@ func newGlobalAssetFixture(t *testing.T) globalAssetFixture {
 	if err := os.WriteFile(filepath.Join(dir, "scenes", "客厅.png"), []byte("png-bytes"), 0o644); err != nil {
 		t.Fatalf("write sheet: %v", err)
 	}
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
 		if pf.Scenes == nil {
-			pf.Scenes = domain.AssetBucket{}
+			pf.Scenes = project.AssetBucket{}
 		}
-		pf.Scenes["客厅"] = domain.WrapAssetEntry(map[string]any{
-			"scene_sheet":  "scenes/客厅.png",
-			"description":  "测试场景",
+		pf.Scenes["客厅"] = project.WrapAssetEntry(map[string]any{
+			"scene_sheet": "scenes/客厅.png",
+			"description": "测试场景",
 		})
 		return nil
 	}); err != nil {
@@ -131,7 +131,7 @@ func TestApplyToProjectWritesBucket(t *testing.T) {
 		t.Fatalf("import: %v", err)
 	}
 	// 目标项目 p2
-	if _, err := f.store.Create("p2", "目标项目", domain.ContentNarration, domain.GenerationStoryboard, ""); err != nil {
+	if _, err := f.store.Create("p2", "目标项目", project.ContentNarration, project.GenerationStoryboard, ""); err != nil {
 		t.Fatalf("create p2: %v", err)
 	}
 	result, err := f.svc.ApplyToProject(context.Background(), ApplyToProjectInput{
@@ -168,14 +168,14 @@ func TestApplyToProjectRenamePolicy(t *testing.T) {
 		t.Fatalf("import: %v", err)
 	}
 	// 目标项目里先有一个同名场景。
-	if _, err := f.store.Create("p2", "目标项目", domain.ContentNarration, domain.GenerationStoryboard, ""); err != nil {
+	if _, err := f.store.Create("p2", "目标项目", project.ContentNarration, project.GenerationStoryboard, ""); err != nil {
 		t.Fatalf("create p2: %v", err)
 	}
-	if err := f.store.Update("p2", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p2", func(pf *project.ProjectFile) error {
 		if pf.Scenes == nil {
-			pf.Scenes = domain.AssetBucket{}
+			pf.Scenes = project.AssetBucket{}
 		}
-		pf.Scenes["客厅"] = domain.WrapAssetEntry(map[string]any{"description": "已有的"})
+		pf.Scenes["客厅"] = project.WrapAssetEntry(map[string]any{"description": "已有的"})
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -201,14 +201,14 @@ func TestApplyToProjectSkipPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
-	if _, err := f.store.Create("p2", "目标项目", domain.ContentNarration, domain.GenerationStoryboard, ""); err != nil {
+	if _, err := f.store.Create("p2", "目标项目", project.ContentNarration, project.GenerationStoryboard, ""); err != nil {
 		t.Fatalf("create p2: %v", err)
 	}
-	if err := f.store.Update("p2", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p2", func(pf *project.ProjectFile) error {
 		if pf.Scenes == nil {
-			pf.Scenes = domain.AssetBucket{}
+			pf.Scenes = project.AssetBucket{}
 		}
-		pf.Scenes["客厅"] = domain.WrapAssetEntry(map[string]any{"description": "已有的"})
+		pf.Scenes["客厅"] = project.WrapAssetEntry(map[string]any{"description": "已有的"})
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)

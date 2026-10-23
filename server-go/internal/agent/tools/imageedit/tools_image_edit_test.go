@@ -7,14 +7,14 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // fakeImageCaps 是 edit_images 的能力解析替身：err 非空时模拟 i2i 槽解析失败。
 type fakeImageCaps struct{ err error }
 
 func (f fakeImageCaps) ResolveImageBackend(
-	context.Context, *domain.ProjectFile, map[string]any, config.ImageCapability,
+	context.Context, *project.ProjectFile, map[string]any, config.ImageCapability,
 ) (config.ProviderModel, error) {
 	if f.err != nil {
 		return config.ProviderModel{}, f.err
@@ -23,7 +23,7 @@ func (f fakeImageCaps) ResolveImageBackend(
 }
 
 // ResolveResolution 让 fakeImageCaps 同时满足 service.ImageCapabilityResolver（宫格门控用）。
-func (f fakeImageCaps) ResolveResolution(context.Context, *domain.ProjectFile, string, string) (string, error) {
+func (f fakeImageCaps) ResolveResolution(context.Context, *project.ProjectFile, string, string) (string, error) {
 	return "2K", nil
 }
 

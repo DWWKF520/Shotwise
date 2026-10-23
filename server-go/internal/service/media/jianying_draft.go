@@ -25,10 +25,13 @@ import (
 	capcutSegment "github.com/shotwise/shotwise/internal/capcut/segment"
 	"github.com/shotwise/shotwise/internal/capcut/track"
 	"github.com/shotwise/shotwise/internal/capcut/types"
-	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/domain/character"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/fs"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // 剪映草稿导出的域错误。
@@ -222,7 +225,7 @@ func (s *JianyingDraftService) ExportEpisodeDraft(
 }
 
 // findEpisodeScript 定位指定集剧本。
-func (s *JianyingDraftService) findEpisodeScript(projectName string, pf *domain.ProjectFile, episode int) (map[string]any, error) {
+func (s *JianyingDraftService) findEpisodeScript(projectName string, pf *project.ProjectFile, episode int) (map[string]any, error) {
 	for _, meta := range pf.Episodes {
 		if meta.Episode != episode {
 			continue
@@ -252,22 +255,22 @@ func jianyingScriptContentMode(scriptData map[string]any) string {
 
 // collectVideoClips 从剧本收集已完成视频片段（storyboard 与 reference_video 两路）。
 func (s *JianyingDraftService) collectVideoClips(
-	projectName string, scriptData map[string]any, pf *domain.ProjectFile,
+	projectName string, scriptData map[string]any, pf *project.ProjectFile,
 ) ([]jianyingClip, error) {
 	generationMode := pf.GenerationMode
 	if generationMode == "reference_video" {
-		kind, err := domain.ResolveDeclaredKind(jianyingScriptContentMode(scriptData), generationMode)
+		kind, err := domainscript.ResolveDeclaredKind(jianyingScriptContentMode(scriptData), generationMode)
 		if err != nil {
 			return nil, err
 		}
 		return collectReferenceUnitClips(scriptData, s, projectName, kind)
 	}
-	kind, err := domain.ResolveDeclaredKind(jianyingScriptContentMode(scriptData), "")
+	kind, err := domainscript.ResolveDeclaredKind(jianyingScriptContentMode(scriptData), "")
 	if err != nil {
 		return nil, err
 	}
 	items, _ := scriptData[kind].([]any)
-	idField := domain.ScriptSkeletons[kind].IDField
+	idField := domainscript.ScriptSkeletons[kind].IDField
 	subtitleField := map[string]string{"narration": "novel_text", "ad": "voiceover_text"}[jianyingScriptContentMode(scriptData)]
 	isDrama := jianyingScriptContentMode(scriptData) == "drama"
 	projectDir, err := s.store.Dir(projectName)
@@ -331,7 +334,7 @@ func collectReferenceUnitClips(
 	switch kind {
 	case "shots":
 		unitsKey = "reference_units"
-		shotsByID = domain.AdShotsByID(scriptData)
+		shotsByID = media.AdShotsByID(scriptData)
 	case "video_units":
 		unitsKey = "video_units"
 	default:
@@ -377,7 +380,7 @@ func collectReferenceUnitClips(
 				if shot == nil {
 					continue
 				}
-				duration := domain.AdShotDurationSeconds(shot)
+				duration := media.AdShotDurationSeconds(shot)
 				text, _ := shot["voiceover_text"].(string)
 				if text != "" && duration > 0 {
 					clip.SubtitleSpans = append(clip.SubtitleSpans, subtitleSpan{
@@ -422,7 +425,7 @@ func utteranceSubtitleSpans(utterances any, language string, override *float64) 
 }
 
 // resolveCanvasSize 画布尺寸：项目 aspect_ratio 优先，未设时从首个视频探测（探测失败回退竖屏）。
-func resolveCanvasSize(pf *domain.ProjectFile, firstVideo string) (int, int) {
+func resolveCanvasSize(pf *project.ProjectFile, firstVideo string) (int, int) {
 	switch pf.AspectRatio {
 	case "16:9":
 		return 1920, 1080
@@ -713,7 +716,7 @@ func writeJianyingZip(zipPath, draftDir, draftName string) error {
 // stageJianyingFile 复制素材进暂存区（保留扩展名，随机文件名防碰撞）。
 func stageJianyingFile(source, stagingDir string) (string, error) {
 	target := filepath.Join(stagingDir,
-		fmt.Sprintf("%s%s", domain.NewVariantID(), strings.ToLower(filepath.Ext(source))))
+		fmt.Sprintf("%s%s", character.NewVariantID(), strings.ToLower(filepath.Ext(source))))
 	content, err := os.ReadFile(source)
 	if err != nil {
 		return "", err
@@ -723,9 +726,9 @@ func stageJianyingFile(source, stagingDir string) (string, error) {
 
 // --- 小助手 ---
 
-func jyStrPtr(value string) *string { return &value }
+func jyStrPtr(value string) *string   { return &value }
 func jyFltPtr(value float64) *float64 { return &value }
-func jyIntPtr(value int) *int       { return &value }
+func jyIntPtr(value int) *int         { return &value }
 func jyStringField(item map[string]any, key string) string {
 	value, _ := item[key].(string)
 	return value

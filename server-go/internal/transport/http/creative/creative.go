@@ -14,7 +14,7 @@ import (
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit"
 
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/textgen"
 	"gorm.io/gorm"
@@ -69,10 +69,10 @@ func RegisterCreative(group *gin.RouterGroup, deps CreativeDeps) {
 		}
 		contentMode := pf.ContentMode
 		if contentMode == "" {
-			contentMode = string(domain.ContentNarration)
+			contentMode = string(project.ContentNarration)
 		}
 		// ad 项目没有创作稿工作台。
-		if contentMode == string(domain.ContentAd) {
+		if contentMode == string(project.ContentAd) {
 			apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "request_invalid", nil))
 			return
 		}
@@ -113,7 +113,7 @@ func RegisterCreative(group *gin.RouterGroup, deps CreativeDeps) {
 // buildCreativeDraftPrompt 构造模式感知的自由文本请求（与 Python build_creative_draft_prompt 同形）。
 func buildCreativeDraftPrompt(operation, contentMode, sourceKind, content, instruction string) string {
 	modeInstruction := "这是小说改编的剧集项目。输出故事正文，保持人物动机、冲突和场景推进可供后续分集与改编使用。"
-	if contentMode == string(domain.ContentNarration) {
+	if contentMode == string(project.ContentNarration) {
 		modeInstruction = "这是短视频旁白项目。输出应是自然、可口播的叙事文本，画面信息只在确有帮助时简洁提示。"
 	} else if sourceKind == "screenplay" {
 		modeInstruction = "这是剧集剧本项目。保持场次、角色、对白和旁白清晰；修改既有文本时不得无故丢失台词。"

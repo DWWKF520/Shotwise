@@ -10,10 +10,9 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	servicescript "github.com/shotwise/shotwise/internal/service/script"
 )
-
 
 type planEpisodesIn struct {
 	Instructions string `json:"instructions,omitempty" jsonschema:"description=用户分集意见原文（可选，如「按章节对齐切分」）；原样注入规划 prompt 的「用户意见」分节，遵循强度由正文表达。每批调用都要重复带上，缺省/空白视同未传，最长 4000 字符"`
@@ -78,7 +77,7 @@ func formatPlanSummary(result *servicescript.PlanResult) string {
 	lines := []string{fmt.Sprintf("✅ 已规划 %d 集：", len(result.Episodes))}
 	for _, ep := range result.Episodes {
 		statusNote := ""
-		if ep.LedgerStatus == domain.LedgerStatusStale {
+		if ep.LedgerStatus == project.LedgerStatusStale {
 			statusNote = "（stale，需重做下游产物）"
 		}
 		lines = append(lines, fmt.Sprintf("- 第 %d 集《%s》%s｜体量约 %d｜钩子：%s",

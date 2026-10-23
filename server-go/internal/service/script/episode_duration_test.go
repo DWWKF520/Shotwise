@@ -7,7 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	"github.com/shotwise/shotwise/internal/domain/script"
 )
 
 // durationFixture 造一个含 3 个分镜的剧集，档位 [4,6,8]。
@@ -20,7 +21,7 @@ type durationFixture struct {
 func newDurationFixture(t *testing.T) durationFixture {
 	t.Helper()
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	script := map[string]any{
@@ -36,8 +37,8 @@ func newDurationFixture(t *testing.T) durationFixture {
 	if err := store.WriteScriptJSON("p1", "episode_1.json", script); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"})
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"})
 		return nil
 	}); err != nil {
 		t.Fatalf("register episode: %v", err)
@@ -150,7 +151,7 @@ func TestDurationPreviewDoesNotPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if domain.EpisodeDurationRevision(before) != domain.EpisodeDurationRevision(after) {
+	if script.EpisodeDurationRevision(before) != script.EpisodeDurationRevision(after) {
 		t.Fatal("预览不得写盘")
 	}
 }

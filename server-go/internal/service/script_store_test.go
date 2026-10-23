@@ -6,7 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -29,7 +30,7 @@ func validScriptPayload(title string, episode int) map[string]any {
 func newScriptFixture(t *testing.T, filename string, script map[string]any) (*ProjectStore, string) {
 	t.Helper()
 	store := NewProjectStore(t.TempDir())
-	if _, err := store.Create("proj", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create("proj", "测试项目", project.ContentNarration, project.GenerationStoryboard, "写实"); err != nil {
 		t.Fatal(err)
 	}
 	dir, err := store.Dir("proj")
@@ -210,7 +211,7 @@ func TestUpdateScriptMutationErrorSkipsWrite(t *testing.T) {
 	store, dir := newScriptFixture(t, serviceScriptFixture, validScriptPayload("标题", 1))
 	err := store.UpdateScript("proj", serviceScriptFixture, func(script map[string]any) error {
 		script["title"] = "半途而废"
-		return &domain.ScriptEditError{Message: "id 未命中", Key: domain.ScriptEditErrorKey}
+		return &domainscript.ScriptEditError{Message: "id 未命中", Key: domainscript.ScriptEditErrorKey}
 	})
 	if err == nil {
 		t.Fatal("mutate 报错应上抛")

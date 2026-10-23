@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
@@ -138,7 +138,7 @@ func boardJSON(value any) (string, error) {
 	if value == nil {
 		value = map[string]any{}
 	}
-	b, err := domain.CanonicalJSON(value)
+	b, err := media.CanonicalJSON(value)
 	if err != nil {
 		return "", err
 	}

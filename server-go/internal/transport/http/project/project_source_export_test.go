@@ -16,14 +16,14 @@ import (
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit/httpkittest"
 
 	"github.com/shotwise/shotwise/internal/auth"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
 func newSourceExportFixture(t *testing.T) (*gin.Engine, *service.ProjectStore) {
 	t.Helper()
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentDrama, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentDrama, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	authService := auth.New([]byte("test-secret-key-32-bytes-long!!"), false, nil)

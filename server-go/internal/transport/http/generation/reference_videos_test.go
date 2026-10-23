@@ -17,7 +17,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
@@ -36,7 +37,7 @@ type refResolverStub struct {
 }
 
 func (s *refResolverStub) VideoCapabilitiesForProjectBucket(
-	_ context.Context, _ *domain.ProjectFile, _ provider.VideoBucket,
+	_ context.Context, _ *project.ProjectFile, _ provider.VideoBucket,
 ) (config.VideoCapabilityView, error) {
 	if s.capsErr != nil {
 		return config.VideoCapabilityView{}, s.capsErr
@@ -44,16 +45,16 @@ func (s *refResolverStub) VideoCapabilitiesForProjectBucket(
 	return s.view, nil
 }
 
-func (s *refResolverStub) VideoGenerateAudioForProject(_ context.Context, _ *domain.ProjectFile) (bool, error) {
+func (s *refResolverStub) VideoGenerateAudioForProject(_ context.Context, _ *project.ProjectFile) (bool, error) {
 	return false, nil
 }
 
-func (s *refResolverStub) ResolveResolution(_ context.Context, _ *domain.ProjectFile, _, _ string) (string, error) {
+func (s *refResolverStub) ResolveResolution(_ context.Context, _ *project.ProjectFile, _, _ string) (string, error) {
 	return "", nil
 }
 
 func (s *refResolverStub) ResolveVideoBackend(
-	_ context.Context, _ *domain.ProjectFile, _ map[string]any, _ *provider.VideoBucket,
+	_ context.Context, _ *project.ProjectFile, _ map[string]any, _ *provider.VideoBucket,
 ) (config.ProviderModel, error) {
 	if s.backendErr != nil {
 		return config.ProviderModel{}, s.backendErr
@@ -90,21 +91,21 @@ type refVideoEnv struct {
 
 // newRefVideoEnv 建测试项目（指定内容模式与生成路线）、登记第 1 集与带设计图的角色阿离。
 func newRefVideoEnv(
-	t *testing.T, contentMode domain.ContentMode, generationMode domain.GenerationMode,
+	t *testing.T, contentMode project.ContentMode, generationMode project.GenerationMode,
 ) *refVideoEnv {
 	t.Helper()
 	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("demo", "Demo", contentMode, generationMode, "Anime"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		if pf.Characters == nil {
-			pf.Characters = domain.AssetBucket{}
+			pf.Characters = project.AssetBucket{}
 		}
-		pf.Characters["阿离"] = domain.WrapAssetEntry(map[string]any{
+		pf.Characters["阿离"] = project.WrapAssetEntry(map[string]any{
 			"name": "阿离", "description": "少女", "character_sheet": "characters/阿离/sheet.png",
 		})
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{
 			Episode: 1, Title: "第一集", ScriptFile: "scripts/episode_1.json",
 		})
 		return nil
@@ -138,8 +139,8 @@ func newRefVideoEnv(
 // dropAilSheet 把阿离的登记改成无设计图（触发 missing_sheet 口径的用例共用）。
 func (e *refVideoEnv) dropAilSheet(t *testing.T) {
 	t.Helper()
-	if err := e.store.Update("demo", func(pf *domain.ProjectFile) error {
-		pf.Characters["阿离"] = domain.WrapAssetEntry(map[string]any{"name": "阿离", "description": "少女"})
+	if err := e.store.Update("demo", func(pf *project.ProjectFile) error {
+		pf.Characters["阿离"] = project.WrapAssetEntry(map[string]any{"name": "阿离", "description": "少女"})
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -154,7 +155,7 @@ func refNarrationUnit() map[string]any {
 		"shots":            []any{map[string]any{"text": "@[阿离] 立于屋檐下。"}},
 		"duration_seconds": float64(4),
 		"references":       []any{map[string]any{"type": "character", "name": "阿离"}},
-		"generated_assets": domain.EmptyGeneratedAssets(),
+		"generated_assets": media.EmptyGeneratedAssets(),
 	}
 }
 
@@ -176,7 +177,7 @@ func refAdScript() map[string]any {
 			"unit_id":          "E1U01",
 			"shot_ids":         []any{"E1S01"},
 			"references":       []any{map[string]any{"type": "character", "name": "阿离"}},
-			"generated_assets": domain.EmptyGeneratedAssets(),
+			"generated_assets": media.EmptyGeneratedAssets(),
 		}},
 	}
 }
@@ -289,7 +290,7 @@ func TestRegisterReferenceVideosRoutes(t *testing.T) {
 // --- script-preview ---
 
 func TestPreviewReferenceScriptBasic(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refJSONReq(t, env, http.MethodPost,
@@ -321,7 +322,7 @@ func TestPreviewReferenceScriptBasic(t *testing.T) {
 
 // TestPreviewReferenceScriptUnregisteredWarning 验证未登记 @提及 只降级为 warning 不阻断预览。
 func TestPreviewReferenceScriptUnregisteredWarning(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refJSONReq(t, env, http.MethodPost,
@@ -350,7 +351,7 @@ func TestPreviewReferenceScriptUnregisteredWarning(t *testing.T) {
 // --- generate ---
 
 func TestGenerateReferenceUnitNarrationAccepted(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refJSONReq(t, env, http.MethodPost,
@@ -389,7 +390,7 @@ func TestGenerateReferenceUnitNarrationAccepted(t *testing.T) {
 // TestGenerateReferenceUnitNarrationUnregistered 验证 narration 的引用存在性是硬口径：
 // 未登记资产在提交期 400，并渲染 preflight 三段文案。
 func TestGenerateReferenceUnitNarrationUnregistered(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	unit := refNarrationUnit()
 	unit["references"] = []any{map[string]any{"type": "character", "name": "幽灵"}}
 	writeRefScript(t, env, map[string]any{"title": "第一集", "video_units": []any{unit}})
@@ -413,7 +414,7 @@ func TestGenerateReferenceUnitNarrationUnregistered(t *testing.T) {
 
 // TestGenerateReferenceUnitNarrationMissingSheet 验证 narration 缺设计图同样在提交期拒绝。
 func TestGenerateReferenceUnitNarrationMissingSheet(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	env.dropAilSheet(t)
 	writeRefScript(t, env, refNarrationScript())
 
@@ -430,7 +431,7 @@ func TestGenerateReferenceUnitNarrationMissingSheet(t *testing.T) {
 
 // TestGenerateReferenceUnitEmptyPrompt 验证空提示词在提交入口当场 400（与 SDK 入队同守卫口径）。
 func TestGenerateReferenceUnitEmptyPrompt(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	unit := refNarrationUnit()
 	unit["shots"] = []any{map[string]any{"text": "   "}}
 	unit["references"] = []any{}
@@ -448,7 +449,7 @@ func TestGenerateReferenceUnitEmptyPrompt(t *testing.T) {
 
 // TestGenerateReferenceUnitCapabilityGate 验证解析闸让能力缺失在提交入口返回修复指引。
 func TestGenerateReferenceUnitCapabilityGate(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 	env.resolver.backendErr = &config.VideoBucketCapabilityError{
 		Code: provider.FailureVideoCapabilityMissingR2V, Bucket: provider.BucketR2V,
@@ -470,7 +471,7 @@ func TestGenerateReferenceUnitCapabilityGate(t *testing.T) {
 }
 
 func TestGenerateReferenceUnitNotFound(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refJSONReq(t, env, http.MethodPost,
@@ -484,7 +485,7 @@ func TestGenerateReferenceUnitNotFound(t *testing.T) {
 }
 
 func TestGenerateReferenceUnitEpisodeNotFound(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refJSONReq(t, env, http.MethodPost,
@@ -496,7 +497,7 @@ func TestGenerateReferenceUnitEpisodeNotFound(t *testing.T) {
 
 // TestGenerateReferenceUnitNotReferenceMode 验证分镜路线项目在参考生入口被 409 拒绝。
 func TestGenerateReferenceUnitNotReferenceMode(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationStoryboard)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationStoryboard)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refJSONReq(t, env, http.MethodPost,
@@ -511,7 +512,7 @@ func TestGenerateReferenceUnitNotReferenceMode(t *testing.T) {
 
 // TestGenerateReferenceUnitAdAccepted 验证 ad 路线按镜头水合渲染守卫 prompt 并入队。
 func TestGenerateReferenceUnitAdAccepted(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentAd, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentAd, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refAdScript())
 
 	rec := refJSONReq(t, env, http.MethodPost,
@@ -537,7 +538,7 @@ func TestGenerateReferenceUnitAdAccepted(t *testing.T) {
 
 // TestGenerateReferenceUnitAdMissingSheetSoft 验证 ad 参考集缺图按软口径放行（只拦未登记）。
 func TestGenerateReferenceUnitAdMissingSheetSoft(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentAd, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentAd, project.GenerationReferenceVideo)
 	env.dropAilSheet(t)
 	writeRefScript(t, env, refAdScript())
 
@@ -553,7 +554,7 @@ func TestGenerateReferenceUnitAdMissingSheetSoft(t *testing.T) {
 
 // TestGenerateReferenceUnitAdStaleIndex 验证派生索引悬空时 409 提示重新派生。
 func TestGenerateReferenceUnitAdStaleIndex(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentAd, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentAd, project.GenerationReferenceVideo)
 	script := refAdScript()
 	units, _ := script["reference_units"].([]any)
 	unit, _ := units[0].(map[string]any)
@@ -574,7 +575,7 @@ func TestGenerateReferenceUnitAdStaleIndex(t *testing.T) {
 
 // TestUploadReferenceUnitVideoMissingFile 验证缺 file 字段按 FastAPI 形状 422。
 func TestUploadReferenceUnitVideoMissingFile(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refUploadReq(t, env,
@@ -589,7 +590,7 @@ func TestUploadReferenceUnitVideoMissingFile(t *testing.T) {
 
 // TestUploadReferenceUnitVideoUnsupportedType 验证非 ISO BMFF 扩展名 400。
 func TestUploadReferenceUnitVideoUnsupportedType(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refUploadReq(t, env,
@@ -605,7 +606,7 @@ func TestUploadReferenceUnitVideoUnsupportedType(t *testing.T) {
 }
 
 func TestUploadReferenceUnitVideoUnitNotFound(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 
 	rec := refUploadReq(t, env,
@@ -619,7 +620,7 @@ func TestUploadReferenceUnitVideoUnitNotFound(t *testing.T) {
 // TestUploadReferenceUnitVideoAccepted 覆盖 200 全链路：落盘 → 版本登记 → finalize 写回
 // generated_assets → 项目变更事件指纹随响应返回。
 func TestUploadReferenceUnitVideoAccepted(t *testing.T) {
-	env := newRefVideoEnv(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	env := newRefVideoEnv(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeRefScript(t, env, refNarrationScript())
 	content := []byte("fake-mp4-bytes")
 

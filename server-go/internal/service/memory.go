@@ -721,5 +721,3 @@ func marshalMetadataJSON(m map[string]any) (*string, error) {
 	text := string(b)
 	return &text, nil
 }
-
-

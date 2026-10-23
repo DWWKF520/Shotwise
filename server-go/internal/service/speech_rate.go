@@ -11,7 +11,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // DefaultSpeechRateUPS 是默认语速（阅读单位 / 秒）。中文可懂配音常见约 4–6 字 / 秒，取 5 为中位；
@@ -51,7 +51,7 @@ func IsValidSpeechRate(value float64) bool {
 //
 // 返回 nil 即「无覆盖」，调用方把它原样交给下面两个函数即回退语言默认。这里的守卫是对手改
 // project.json 与历史脏数据的读时兜底：估算语速不值得让一次已付费的生成崩在脏字段上。
-func ProjectSpeechRateOverride(project *domain.ProjectFile) *float64 {
+func ProjectSpeechRateOverride(project *project.ProjectFile) *float64 {
 	if project == nil || project.SpeechRate == nil {
 		return nil
 	}

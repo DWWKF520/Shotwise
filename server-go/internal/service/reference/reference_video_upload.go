@@ -27,11 +27,10 @@ import (
 // 不收 webm：字节原样存为 canonical .mp4，VP8/VP9 在 Safari/剪映一侧解码不可用；mp4/mov/m4v
 // 同属 ISO BMFF 容器家族。
 const (
-	uploadChunkSize     = 1024 * 1024
+	uploadChunkSize = 1024 * 1024
 )
 
 var uploadVideoExtensions = map[string]bool{".mp4": true, ".mov": true, ".m4v": true}
-
 
 // ValidateUploadVideo 按上传策略校验文件名扩展名与申报大小，返回该类型的字节上限。
 // declaredSize 只做头部预拒；实际写入字节数由落盘函数兜底。

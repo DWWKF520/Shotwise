@@ -9,14 +9,15 @@ import (
 	"github.com/shotwise/shotwise/internal/service"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // ValidateReferenceUnitsPreflight 对将入队的 unit 逐个校验引用资产，返回格式化错误串
 // （空串 = 通过）。script 非 nil 时按 ad 成员镜头现算参考集（索引悬空时报错），否则按 unit
 // 声明的 references。skipIDs 内的 unit 已产出、不入队，不参与校验。
 func ValidateReferenceUnitsPreflight(
-	project *domain.ProjectFile, projectDir string, units []map[string]any, script map[string]any, skipIDs map[string]bool,
+	project *project.ProjectFile, projectDir string, units []map[string]any, script map[string]any, skipIDs map[string]bool,
 ) (string, error) {
 	if project == nil {
 		return "", nil
@@ -29,7 +30,7 @@ func ValidateReferenceUnitsPreflight(
 		}
 		var references []service.ItemReference
 		if script != nil {
-			shots, err := domain.ResolveAdUnitShots(script, unit)
+			shots, err := media.ResolveAdUnitShots(script, unit)
 			if err != nil {
 				return "", err
 			}
@@ -60,15 +61,15 @@ func collectReferenceEntries(entries any) []service.ItemReference {
 		if assetType == "" || strings.TrimSpace(name) == "" {
 			continue
 		}
-		key := assetType + "\x00" + domain.NormalizeAssetName(name)
+		key := assetType + "\x00" + project.NormalizeAssetName(name)
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
 		references = append(references, service.ItemReference{
-			Kind:  domain.AssetKind(assetType),
+			Kind:  project.AssetKind(assetType),
 			Field: "references",
-			Name:  domain.NormalizeAssetName(name),
+			Name:  project.NormalizeAssetName(name),
 		})
 	}
 	return references
@@ -77,13 +78,13 @@ func collectReferenceEntries(entries any) []service.ItemReference {
 // collectAdShotReferences 从 ad 成员镜头的字段（内容唯一真相）收集类型化引用，不读索引缓存。
 func collectAdShotReferences(shots []map[string]any) []service.ItemReference {
 	fields := []struct {
-		kind  domain.AssetKind
+		kind  project.AssetKind
 		field string
 	}{
-		{domain.AssetProduct, "products_in_shot"},
-		{domain.AssetCharacter, "characters_in_shot"},
-		{domain.AssetScene, "scenes"},
-		{domain.AssetProp, "props"},
+		{project.AssetProduct, "products_in_shot"},
+		{project.AssetCharacter, "characters_in_shot"},
+		{project.AssetScene, "scenes"},
+		{project.AssetProp, "props"},
 	}
 	var references []service.ItemReference
 	seen := map[string]bool{}
@@ -98,7 +99,7 @@ func collectAdShotReferences(shots []map[string]any) []service.ItemReference {
 				if !ok || strings.TrimSpace(value) == "" {
 					continue
 				}
-				name := domain.NormalizeAssetName(value)
+				name := project.NormalizeAssetName(value)
 				key := string(f.kind) + "\x00" + name
 				if seen[key] {
 					continue

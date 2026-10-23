@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -29,7 +29,9 @@ func (e *EpisodeNotFoundError) Error() string { return fmt.Sprintf("episode %d n
 // NotReferenceVideoModeError 表示该集剧本不在参考生视频模式（409 ref_not_reference_video_mode）。
 type NotReferenceVideoModeError struct{}
 
-func (e *NotReferenceVideoModeError) Error() string { return "episode script is not in reference-video mode" }
+func (e *NotReferenceVideoModeError) Error() string {
+	return "episode script is not in reference-video mode"
+}
 
 // EpisodeScriptMissingError 表示 project.json 绑定的剧本文件缺失（404 ref_script_missing）。
 type EpisodeScriptMissingError struct{}
@@ -37,10 +39,10 @@ type EpisodeScriptMissingError struct{}
 func (e *EpisodeScriptMissingError) Error() string { return "episode script file missing" }
 
 // EpisodeScriptResolver 从 project.json 解析目标集的 script_file（在项目锁内被调用）。
-type EpisodeScriptResolver func(project *domain.ProjectFile) (string, error)
+type EpisodeScriptResolver func(project *project.ProjectFile) (string, error)
 
 // EpisodeScriptFile 从 project.json 找目标集绑定的剧本文件名；缺失时返回 EpisodeNotFoundError。
-func EpisodeScriptFile(project *domain.ProjectFile, episode int) (string, error) {
+func EpisodeScriptFile(project *project.ProjectFile, episode int) (string, error) {
 	for _, meta := range project.Episodes {
 		if meta.Episode == episode && meta.ScriptFile != "" {
 			return meta.ScriptFile, nil
@@ -49,11 +51,10 @@ func EpisodeScriptFile(project *domain.ProjectFile, episode int) (string, error)
 	return "", &EpisodeNotFoundError{Episode: episode}
 }
 
-
 // LoadEpisodeScript 只读加载指定集的剧本（对应 _load_episode_script）。
 //
 // 返回 (project, script, script_file)；任一前置校验失败时返回对应错误，script 可能为 nil。
-func (s *ProjectStore) LoadEpisodeScript(project string, episode int) (*domain.ProjectFile, map[string]any, string, error) {
+func (s *ProjectStore) LoadEpisodeScript(project string, episode int) (*project.ProjectFile, map[string]any, string, error) {
 	dir, err := s.Dir(project)
 	if err != nil {
 		return nil, nil, "", err
@@ -181,10 +182,10 @@ type EpisodeSource struct {
 
 // ResolveEpisodeSourceHook 由 script 包注册（依赖倒置：源文解析依赖剧集账本，归属 script 域，
 // 根包不反向依赖）。agent 工具与 reference 域经下面的 wrapper 调用。
-var ResolveEpisodeSourceHook func(projectDir string, episode int, source string, pf *domain.ProjectFile) (EpisodeSource, error)
+var ResolveEpisodeSourceHook func(projectDir string, episode int, source string, pf *project.ProjectFile) (EpisodeSource, error)
 
 // ResolveEpisodeSource 按统一优先级解析一集源文；实现见 script 包的注册函数。
-func ResolveEpisodeSource(projectDir string, episode int, source string, pf *domain.ProjectFile) (EpisodeSource, error) {
+func ResolveEpisodeSource(projectDir string, episode int, source string, pf *project.ProjectFile) (EpisodeSource, error) {
 	if ResolveEpisodeSourceHook == nil {
 		return EpisodeSource{}, errors.New("episode source resolver not registered")
 	}
@@ -192,7 +193,7 @@ func ResolveEpisodeSource(projectDir string, episode int, source string, pf *dom
 }
 
 // FindEpisodeEntry 返回该集条目；不存在返回 nil。
-func FindEpisodeEntry(pf *domain.ProjectFile, episode int) *domain.EpisodeMeta {
+func FindEpisodeEntry(pf *project.ProjectFile, episode int) *project.EpisodeMeta {
 	if pf == nil {
 		return nil
 	}
@@ -205,7 +206,7 @@ func FindEpisodeEntry(pf *domain.ProjectFile, episode int) *domain.EpisodeMeta {
 }
 
 // StoredReview 返回该集已存的确认记录；缺失返回 nil。
-func StoredReview(pf *domain.ProjectFile, episode int) *domain.Step1Review {
+func StoredReview(pf *project.ProjectFile, episode int) *project.Step1Review {
 	entry := FindEpisodeEntry(pf, episode)
 	if entry == nil {
 		return nil
@@ -237,11 +238,11 @@ func ContentFingerprint(path string) (*string, error) {
 }
 
 // ApplyConfirmation 就地把确认记录写入 project episodes[i].step1_review；集条目不存在返回 false。
-func ApplyConfirmation(pf *domain.ProjectFile, episode int, fingerprint, confirmedAt string) bool {
+func ApplyConfirmation(pf *project.ProjectFile, episode int, fingerprint, confirmedAt string) bool {
 	entry := FindEpisodeEntry(pf, episode)
 	if entry == nil {
 		return false
 	}
-	entry.Step1Review = &domain.Step1Review{Fingerprint: fingerprint, ConfirmedAt: confirmedAt}
+	entry.Step1Review = &project.Step1Review{Fingerprint: fingerprint, ConfirmedAt: confirmedAt}
 	return true
 }

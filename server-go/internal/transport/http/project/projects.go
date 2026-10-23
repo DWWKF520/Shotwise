@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/media"
@@ -148,11 +148,11 @@ func CreateProject(d ProjectDeps) gin.HandlerFunc {
 			}})
 			return
 		}
-		if !domain.IsValidContentMode(req.ContentMode) {
+		if !project.IsValidContentMode(req.ContentMode) {
 			apperr.Abort(c, apperr.BadRequest("invalid_content_mode", map[string]any{"mode": req.ContentMode}))
 			return
 		}
-		if !domain.IsValidGenerationMode(req.GenerationMode) {
+		if !project.IsValidGenerationMode(req.GenerationMode) {
 			apperr.Abort(c, apperr.BadRequest("invalid_generation_mode", map[string]any{"mode": req.GenerationMode}))
 			return
 		}
@@ -167,11 +167,11 @@ func CreateProject(d ProjectDeps) gin.HandlerFunc {
 		if name == "" {
 			name = d.Store.GenerateProjectName(title)
 		}
-		pf, err := d.Store.Create(name, title, domain.ContentMode(req.ContentMode),
-			domain.GenerationMode(req.GenerationMode), req.Style)
+		pf, err := d.Store.Create(name, title, project.ContentMode(req.ContentMode),
+			project.GenerationMode(req.GenerationMode), req.Style)
 		if err != nil {
 			switch {
-			case errors.Is(err, domain.ErrInvalidProjectName):
+			case errors.Is(err, project.ErrInvalidProjectName):
 				apperr.Abort(c, apperr.BadRequest("invalid_project_name", nil))
 			case errors.Is(err, service.ErrProjectExists):
 				apperr.Abort(c, apperr.Conflict("project_already_exists", map[string]any{"name": name}))
@@ -265,8 +265,8 @@ func UpdateProject(d ProjectDeps) gin.HandlerFunc {
 		}
 		// 走 Update 而不是 Get+Save：写盘守卫是「不更坏」，存量项目自带历史遗留字段问题时
 		// 仍可改元数据，只要这次写入没有引入新的结构错误。
-		var updated *domain.ProjectFile
-		err := d.Store.Update(name, func(pf *domain.ProjectFile) error {
+		var updated *project.ProjectFile
+		err := d.Store.Update(name, func(pf *project.ProjectFile) error {
 			if req.Title != nil {
 				pf.Title = *req.Title
 			}
@@ -382,7 +382,7 @@ func projectFingerprint(dir string) string {
 func abortProjectErr(c *gin.Context, err error) {
 	var traversal *fs.PathTraversalError
 	switch {
-	case errors.Is(err, fs.ErrNotFound), errors.Is(err, domain.ErrInvalidProjectName):
+	case errors.Is(err, fs.ErrNotFound), errors.Is(err, project.ErrInvalidProjectName):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "project_not_found", nil))
 	case errors.As(err, &traversal):
 		apperr.Abort(c, apperr.NewText(http.StatusNotFound, "project_not_found", nil))

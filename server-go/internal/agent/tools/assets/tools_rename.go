@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
@@ -21,7 +21,7 @@ import (
 
 // AssetRenamer 是级联改名能力（*asset.AssetService 满足）。
 type AssetRenamer interface {
-	Rename(project string, kind domain.AssetKind, oldName, newName string, dryRun bool) (asset.RenameReport, error)
+	Rename(project string, kind project.AssetKind, oldName, newName string, dryRun bool) (asset.RenameReport, error)
 }
 
 type renameAssetIn struct {

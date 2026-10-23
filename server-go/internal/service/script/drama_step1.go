@@ -59,7 +59,6 @@ func DramaNormalizedScriptSchema(supportedDurations []int) (map[string]any, erro
 	}, nil
 }
 
-
 // ParseDramaNormalizedScript 解析并校验 step1 规范化响应，返回归一化后的 {title, scenes}。
 //
 // 校验与 response_schema 同口径（extra=forbid、字段非空、时长硬约束、utterances 的 kind ⇄
@@ -195,5 +194,3 @@ func normalizeUtterances(raw any, loc string) ([]any, error) {
 	}
 	return out, nil
 }
-
-

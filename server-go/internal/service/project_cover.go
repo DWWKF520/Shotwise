@@ -9,12 +9,12 @@
 package service
 
 import (
-	"time"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
 )
 
 // coverMediaSubdirs 是参与指纹扫描的媒体子目录。
@@ -64,14 +64,14 @@ func ResolveProjectCover(
 	// 第一趟：任意一集有视频首帧都胜过任何分镜图，故两趟分开而不是逐 item 并列判断。
 	for _, script := range scripts {
 		for _, item := range coverItems(script) {
-			if thumb, ok := domain.GeneratedAssets(item)["video_thumbnail"].(string); ok && thumb != "" {
+			if thumb, ok := media.GeneratedAssets(item)["video_thumbnail"].(string); ok && thumb != "" {
 				return url(thumb)
 			}
 		}
 	}
 	for _, script := range scripts {
 		for _, item := range coverItems(script) {
-			if sheet, ok := domain.GeneratedAssets(item)["storyboard_image"].(string); ok && sheet != "" {
+			if sheet, ok := media.GeneratedAssets(item)["storyboard_image"].(string); ok && sheet != "" {
 				return url(sheet)
 			}
 		}

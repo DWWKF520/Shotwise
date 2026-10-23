@@ -7,7 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
 )
@@ -19,7 +20,7 @@ type fakeGridSplitter struct {
 }
 
 func (f *fakeGridSplitter) ApplySplit(
-	_ context.Context, _ string, grid *domain.GridGeneration,
+	_ context.Context, _ string, grid *grid.GridGeneration,
 ) (service.GridSplitResult, error) {
 	f.calls = append(f.calls, grid.ID)
 	if f.err != nil {
@@ -53,7 +54,7 @@ func newGridFixture(t *testing.T, sceneCount int) (*fakeAssetQueue, *fakeGenerat
 		"segments": segments,
 	}
 	return &fakeAssetQueue{}, &fakeGenerationProjects{
-		pf: &domain.ProjectFile{
+		pf: &project.ProjectFile{
 			ContentMode: "narration", GenerationMode: "storyboard", Style: "水墨",
 			AspectRatio: "16:9", GridStoryboard: true,
 		},

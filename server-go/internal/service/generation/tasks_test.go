@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 )
@@ -22,7 +22,7 @@ func newDispatcherFixture(t *testing.T, status int) (*TaskDispatcher, *service.P
 	t.Helper()
 	generator, _, _ := newImageGeneratorFixture(t, status)
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	return NewTaskDispatcher(store, generator), store, "p1"
@@ -89,7 +89,7 @@ func TestTaskDispatcherStoryboardEndToEnd(t *testing.T) {
 func TestTaskDispatcherStructuredPromptRendersYAML(t *testing.T) {
 	generator, gdb, _ := newImageGeneratorFixture(t, http.StatusOK)
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	dispatcher := NewTaskDispatcher(store, generator)
@@ -120,7 +120,7 @@ func TestTaskDispatcherLedgerRow(t *testing.T) {
 	// 独立夹具拿得到 DB：验证记账行身份与 segment_id。
 	generator, gdb, _ := newImageGeneratorFixture(t, http.StatusOK)
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	dispatcher := NewTaskDispatcher(store, generator)

@@ -6,9 +6,8 @@
 package script
 
 import (
-
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"regexp"
 	"sort"
 	"strings"
@@ -166,7 +165,6 @@ func ValidateNarrationNovelTextCoverage(segments []map[string]any, novelText str
 	return nil
 }
 
-
 // --- 小工具 ---
 
 func duplicateStrings(values []string) []string {
@@ -211,5 +209,3 @@ func uniqueSortedInts(values []int) []int {
 	sort.Ints(out)
 	return out
 }
-
-

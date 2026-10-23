@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -183,7 +183,7 @@ func submittedBaseURLForResume(submitted, current string) string {
 
 // resumeAspectRatio 解析 resume 请求比例：video 路径与常规路径同源（get_aspect_ratio(project,
 // "videos")），reference_video 路径直接取项目顶层 aspect_ratio、缺省 9:16。
-func resumeAspectRatio(project *domain.ProjectFile, taskType string) string {
+func resumeAspectRatio(project *project.ProjectFile, taskType string) string {
 	if taskType == "reference_video" {
 		if project.AspectRatio != "" {
 			return project.AspectRatio
@@ -197,7 +197,7 @@ func resumeAspectRatio(project *domain.ProjectFile, taskType string) string {
 //
 // 与常规路径的 videoDurationSeconds（非整数秒 fail loud）不同：resume 只用于让 backend 轮询/下载
 // 已提交的 job，脏数据（"8.0" / 不可解析）不该让在跑的付费任务卡死，故回退到 8。
-func resumeDurationSeconds(payload map[string]any, project *domain.ProjectFile) int {
+func resumeDurationSeconds(payload map[string]any, project *project.ProjectFile) int {
 	var raw any
 	if value, present := payload["duration_seconds"]; present && service.RefPresenceTruthy(value) {
 		raw = value

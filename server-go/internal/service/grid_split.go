@@ -18,7 +18,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domaingrid "github.com/shotwise/shotwise/internal/domain/grid"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -48,7 +49,7 @@ func NewGridService(store *ProjectStore) *GridService { return &GridService{stor
 //   - 每格覆写前旧文件先补登版本、覆写后登记新版本（source="grid_split"）；
 //   - frame_chain 中已不在剧本内的 scene id 跳过并收集到 MissingSceneIDs；
 //   - 完成后写 grid.split_at。
-func (s *GridService) ApplySplit(ctx context.Context, projectName string, grid *domain.GridGeneration) (GridSplitResult, error) {
+func (s *GridService) ApplySplit(ctx context.Context, projectName string, grid *domaingrid.GridGeneration) (GridSplitResult, error) {
 	projectDir, err := s.store.Dir(projectName)
 	if err != nil {
 		return GridSplitResult{}, err
@@ -77,7 +78,7 @@ func (s *GridService) ApplySplit(ctx context.Context, projectName string, grid *
 	if err != nil {
 		return GridSplitResult{}, err
 	}
-	items, idField, _, err := domain.ResolveScriptItems(script)
+	items, idField, _, err := domainscript.ResolveScriptItems(script)
 	if err != nil {
 		return GridSplitResult{}, err
 	}
@@ -120,7 +121,7 @@ func (s *GridService) ApplySplit(ctx context.Context, projectName string, grid *
 		if index >= len(cells) {
 			break
 		}
-		if frame.FrameType != domain.GridFrameFirst && frame.FrameType != domain.GridFrameTransition {
+		if frame.FrameType != domaingrid.GridFrameFirst && frame.FrameType != domaingrid.GridFrameTransition {
 			continue
 		}
 		if frame.NextSceneID == nil || *frame.NextSceneID == "" {
@@ -164,7 +165,7 @@ func (s *GridService) ApplySplit(ctx context.Context, projectName string, grid *
 	// 同语义），避免 PNG 已落盘却因 KeyError 留下孤儿文件。
 	if len(assetUpdates) > 0 {
 		err := s.store.UpdateScript(projectName, grid.ScriptFile, func(script map[string]any) error {
-			items, idField, _, err := domain.ResolveScriptItems(script)
+			items, idField, _, err := domainscript.ResolveScriptItems(script)
 			if err != nil {
 				return err
 			}
@@ -193,7 +194,7 @@ func (s *GridService) ApplySplit(ctx context.Context, projectName string, grid *
 		}
 	}
 
-	splitAt := domain.GridTimestampISO()
+	splitAt := domaingrid.GridTimestampISO()
 	grid.SplitAt = &splitAt
 	if err := manager.Save(grid); err != nil {
 		return GridSplitResult{}, err

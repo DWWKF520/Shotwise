@@ -28,7 +28,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainmedia "github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service/media"
 )
@@ -70,9 +70,6 @@ type TimelinePlanService interface {
 	GetPlan(ctx context.Context, planID, userID string) (map[string]any, error)
 	CreateRevision(ctx context.Context, planID string, p media.CreateRevisionParams) (map[string]any, error)
 }
-
-
-
 
 // timelineToolset 是单个项目的时间线工具上下文。
 type timelineToolset struct {
@@ -376,7 +373,7 @@ func (t timelineToolset) buildManifest(ctx context.Context, scriptArg *string) (
 		})
 	}
 
-	encoded, err := domain.CanonicalJSON(map[string]any{
+	encoded, err := domainmedia.CanonicalJSON(map[string]any{
 		"script": scriptName, "collection": collection, "items": items,
 	})
 	if err != nil {
@@ -768,7 +765,7 @@ func timelineValidation(plan, manifest map[string]any) map[string]any {
 
 // assemblyValidationLog 渲染结构化领域校验问题（对应 _assembly_validation_log）。
 func assemblyValidationLog(err error) []string {
-	var validationErr *domain.AssemblyPlanValidationError
+	var validationErr *domainmedia.AssemblyPlanValidationError
 	if !errors.As(err, &validationErr) {
 		return nil
 	}
@@ -846,7 +843,7 @@ func serviceTimeline(items []any, manifest map[string]any) ([]map[string]any, er
 		}
 
 		transitionName, _ := tools.AsString(mapValueOr(item, "transition_to_next", "cut"))
-		if !domain.SupportedTimelineTransitions[transitionName] {
+		if !domainmedia.SupportedTimelineTransitions[transitionName] {
 			return nil, fmt.Errorf("timeline_items[%d].transition_to_next must be cut, fade, dissolve, or wipe", index)
 		}
 		var transition any

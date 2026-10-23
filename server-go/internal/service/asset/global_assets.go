@@ -5,10 +5,10 @@
 package asset
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
@@ -177,10 +177,10 @@ func (s *GlobalAssetService) globalAssetsDir(assetType string) (string, error) {
 
 // Create 入库新资产;image 为空表示无图。冲突时清理已落盘文件并返回 409 语义错误。
 func (s *GlobalAssetService) Create(assetType, rawName, description, voiceStyle string, image io.Reader, imageFilename string) (*SerializedGlobalAsset, error) {
-	if !domain.IsGlobalLibraryKind(assetType) {
+	if !domainproject.IsGlobalLibraryKind(assetType) {
 		return nil, ErrGlobalInvalidType
 	}
-	name, err := domain.ValidateAssetName(rawName)
+	name, err := domainproject.ValidateAssetName(rawName)
 	if err != nil {
 		return nil, &AssetNameError{Raw: rawName}
 	}
@@ -223,7 +223,7 @@ func (s *GlobalAssetService) Patch(id string, name, description, voiceStyle *str
 	}
 	fields := map[string]any{}
 	if name != nil {
-		n, err := domain.ValidateAssetName(*name)
+		n, err := domainproject.ValidateAssetName(*name)
 		if err != nil {
 			return nil, &AssetNameError{Raw: *name}
 		}
@@ -302,21 +302,21 @@ type FromProjectInput struct {
 
 // GlobalAssetConflictError 是同类型同名已存在（带既有资产供前端展示）。
 type GlobalAssetConflictError struct {
-	Name    string
+	Name     string
 	Existing *SerializedGlobalAsset
 }
 
 func (e *GlobalAssetConflictError) Error() string { return "asset already exists: " + e.Name }
 
 // globalAssetBucketKey 把全局库类型映射到 project.json 的桶键。
-func globalAssetBucketKey(assetType string) (domain.AssetKind, bool) {
+func globalAssetBucketKey(assetType string) (domainproject.AssetKind, bool) {
 	switch assetType {
 	case "character":
-		return domain.AssetCharacter, true
+		return domainproject.AssetCharacter, true
 	case "scene":
-		return domain.AssetScene, true
+		return domainproject.AssetScene, true
 	case "prop":
-		return domain.AssetProp, true
+		return domainproject.AssetProp, true
 	}
 	return "", false
 }
@@ -360,7 +360,7 @@ func (s *GlobalAssetService) FromProject(ctx context.Context, in FromProjectInpu
 	if in.ResourceType == "character" {
 		voiceStyle = entry.MustString("voice_style")
 	}
-	spec, _ := domain.Spec(kind)
+	spec, _ := domainproject.Spec(kind)
 
 	// 源图：sheet 相对路径存在才拷贝。
 	sourceSheet := ""
@@ -583,30 +583,30 @@ func (s *GlobalAssetService) ApplyToProject(ctx context.Context, in ApplyToProje
 
 	// 按桶维护已占用名字集合（NFC 坐标系），供冲突判定与 rename 累积检查。
 	occupied := map[string]map[string]bool{}
-	for kind := range map[domain.AssetKind]bool{domain.AssetCharacter: true, domain.AssetScene: true, domain.AssetProp: true} {
-		spec, ok := domain.Spec(kind)
+	for kind := range map[domainproject.AssetKind]bool{domainproject.AssetCharacter: true, domainproject.AssetScene: true, domainproject.AssetProp: true} {
+		spec, ok := domainproject.Spec(kind)
 		if !ok {
 			continue
 		}
 		names := map[string]bool{}
 		if bucket, ok := pf.BucketRef(kind); ok && bucket != nil {
 			for key := range *bucket {
-				names[domain.NormalizeAssetName(key)] = true
+				names[domainproject.NormalizeAssetName(key)] = true
 			}
 		}
 		occupied[spec.BucketKey] = names
 	}
 
 	type applyPlan struct {
-		asset      *repository.Asset
-		kind       domain.AssetKind
-		bucketKey  string
-		sheetKey   string
-		name       string
+		asset       *repository.Asset
+		kind        domainproject.AssetKind
+		bucketKey   string
+		sheetKey    string
+		name        string
 		targetSheet string
-		srcSheet   string
+		srcSheet    string
 		targetAudio string
-		srcAudio   string
+		srcAudio    string
 	}
 	var plans []applyPlan
 	for _, assetID := range in.AssetIDs {
@@ -619,9 +619,9 @@ func (s *GlobalAssetService) ApplyToProject(ctx context.Context, in ApplyToProje
 			result.Failed = append(result.Failed, map[string]any{"id": asset.ID, "reason": "invalid_type"})
 			continue
 		}
-		spec, _ := domain.Spec(kind)
+		spec, _ := domainproject.Spec(kind)
 		names := occupied[spec.BucketKey]
-		desired := domain.NormalizeAssetName(asset.Name)
+		desired := domainproject.NormalizeAssetName(asset.Name)
 		if desired == "" {
 			result.Failed = append(result.Failed, map[string]any{"id": asset.ID, "reason": "invalid_name"})
 			continue
@@ -689,7 +689,7 @@ func (s *GlobalAssetService) ApplyToProject(ctx context.Context, in ApplyToProje
 		}
 	}
 	if len(plans) > 0 {
-		if err := s.store.Update(in.TargetProject, func(project *domain.ProjectFile) error {
+		if err := s.store.Update(in.TargetProject, func(project *domainproject.ProjectFile) error {
 			for _, plan := range plans {
 				bucket, ok := project.BucketRef(plan.kind)
 				if !ok {
@@ -698,7 +698,7 @@ func (s *GlobalAssetService) ApplyToProject(ctx context.Context, in ApplyToProje
 				// 桶可能尚未初始化（目标项目没有该类型条目）：先初始化再写，
 				// 否则向 nil map 赋值 panic。
 				if *bucket == nil {
-					*bucket = domain.AssetBucket{}
+					*bucket = domainproject.AssetBucket{}
 				}
 				payload := map[string]any{"description": plan.asset.Description}
 				if plan.asset.Type == "character" {
@@ -717,7 +717,7 @@ func (s *GlobalAssetService) ApplyToProject(ctx context.Context, in ApplyToProje
 				if !ok {
 					key = plan.name
 				}
-				(*bucket)[key] = domain.WrapAssetEntry(payload)
+				(*bucket)[key] = domainproject.WrapAssetEntry(payload)
 			}
 			return nil
 		}); err != nil {

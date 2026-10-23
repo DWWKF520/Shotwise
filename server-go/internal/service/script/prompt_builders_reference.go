@@ -5,17 +5,17 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"strconv"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
 // formatReferenceAssetNames 渲染资产块：`- 名称: 描述`（对应参考 builder 的 _format_asset_names）。
-func formatReferenceAssetNames(bucket *domain.AssetBucket) string {
+func formatReferenceAssetNames(bucket *project.AssetBucket) string {
 	names := assetNames(bucket)
 	if len(names) == 0 {
 		return "（暂无）"
@@ -34,7 +34,7 @@ func formatReferenceAssetNames(bucket *domain.AssetBucket) string {
 }
 
 // referenceCandidateBlock 渲染候选名块（对应 _candidate_block，用 ", " 连接、空集回退「（暂无）」）。
-func referenceCandidateBlock(characters, scenes, props *domain.AssetBucket) string {
+func referenceCandidateBlock(characters, scenes, props *project.AssetBucket) string {
 	join := func(names []string) string {
 		if len(names) == 0 {
 			return "（暂无）"
@@ -85,10 +85,10 @@ func formatReferenceOutlineBlock(episodeOutline, nextEpisodeOutline map[string]a
 // ReferenceUnitsSplitPromptOptions 是 BuildReferenceUnitsSplitPrompt 的入参。
 type ReferenceUnitsSplitPromptOptions struct {
 	NovelText          string
-	ProjectOverview    *domain.Overview
-	Characters         *domain.AssetBucket
-	Scenes             *domain.AssetBucket
-	Props              *domain.AssetBucket
+	ProjectOverview    *project.Overview
+	Characters         *project.AssetBucket
+	Scenes             *project.AssetBucket
+	Props              *project.AssetBucket
 	SupportedDurations []int
 	ReferenceDurations []int
 	TextDurations      []int
@@ -225,12 +225,12 @@ func RenderReferenceUnitsForStep2(units []map[string]any) string {
 
 // ReferenceVideoPromptOptions 是 BuildReferenceVideoPrompt 的入参。
 type ReferenceVideoPromptOptions struct {
-	ProjectOverview  *domain.Overview
+	ProjectOverview  *project.Overview
 	Style            string
 	StyleDescription string
-	Characters       *domain.AssetBucket
-	Scenes           *domain.AssetBucket
-	Props            *domain.AssetBucket
+	Characters       *project.AssetBucket
+	Scenes           *project.AssetBucket
+	Props            *project.AssetBucket
 	Step1Units       []map[string]any
 	MaxRefs          *int
 	Episode          int

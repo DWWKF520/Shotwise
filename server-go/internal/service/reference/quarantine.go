@@ -8,8 +8,8 @@
 package reference
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"strings"
@@ -289,7 +289,6 @@ func RenderQuarantineReport(draftPath, kind string, violations []DraftViolation,
 		"仍有违约时会返回刷新后的报告，可继续修改再晋升，无轮次上限。",
 		stage, len(violations), draftPath, RenderViolationReport(violations), field, PromoteToolName, episode)
 }
-
 
 // IntValueOK 取整数语义的值（bool 不算）。
 func IntValueOK(value any) (int, bool) {

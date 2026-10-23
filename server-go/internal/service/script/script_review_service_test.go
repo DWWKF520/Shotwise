@@ -6,11 +6,11 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service/reference"
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 )
@@ -34,7 +34,7 @@ type stubReviewCaps struct {
 }
 
 func (s *stubReviewCaps) VideoCapabilitiesForProjectBucket(
-	_ context.Context, _ *domain.ProjectFile, bucket provider.VideoBucket,
+	_ context.Context, _ *project.ProjectFile, bucket provider.VideoBucket,
 ) (config.VideoCapabilityView, error) {
 	if bucket == provider.BucketI2V && s.i2vErr != nil {
 		return config.VideoCapabilityView{}, s.i2vErr
@@ -45,28 +45,28 @@ func (s *stubReviewCaps) VideoCapabilitiesForProjectBucket(
 	return s.view, nil
 }
 
-func (s *stubReviewCaps) VideoGenerateAudioForProject(_ context.Context, _ *domain.ProjectFile) (bool, error) {
+func (s *stubReviewCaps) VideoGenerateAudioForProject(_ context.Context, _ *project.ProjectFile) (bool, error) {
 	return false, nil
 }
 
-func (s *stubReviewCaps) ResolveResolution(_ context.Context, _ *domain.ProjectFile, _, _ string) (string, error) {
+func (s *stubReviewCaps) ResolveResolution(_ context.Context, _ *project.ProjectFile, _, _ string) (string, error) {
 	return "", nil
 }
 
 // makeReviewProject 建测试项目：登记第 1 集与两个角色（references 派生的解析依赖资产登记）。
-func makeReviewProject(t *testing.T, mode domain.ContentMode, generationMode domain.GenerationMode) (*service.ProjectStore, string) {
+func makeReviewProject(t *testing.T, mode project.ContentMode, generationMode project.GenerationMode) (*service.ProjectStore, string) {
 	t.Helper()
 	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("demo", "Demo", mode, generationMode, "Anime"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		if pf.Characters == nil {
-			pf.Characters = domain.AssetBucket{}
+			pf.Characters = project.AssetBucket{}
 		}
-		pf.Characters["阿离"] = domain.WrapAssetEntry(map[string]any{"name": "阿离", "description": "少女"})
-		pf.Characters["裴与"] = domain.WrapAssetEntry(map[string]any{"name": "裴与", "description": "将军"})
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{
+		pf.Characters["阿离"] = project.WrapAssetEntry(map[string]any{"name": "阿离", "description": "少女"})
+		pf.Characters["裴与"] = project.WrapAssetEntry(map[string]any{"name": "裴与", "description": "将军"})
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{
 			Episode: 1, Title: "第一集", ScriptFile: "scripts/episode_1.json",
 		})
 		return nil
@@ -81,10 +81,10 @@ func makeReviewProject(t *testing.T, mode domain.ContentMode, generationMode dom
 }
 
 // makeManualSplitProject 建手动预拆分场景的项目：账本为空，仅靠派生文件自愈。
-func makeManualSplitProject(t *testing.T, mode domain.ContentMode) (*service.ProjectStore, string) {
+func makeManualSplitProject(t *testing.T, mode project.ContentMode) (*service.ProjectStore, string) {
 	t.Helper()
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("demo", "Demo", mode, domain.GenerationStoryboard, "Anime"); err != nil {
+	if _, err := store.Create("demo", "Demo", mode, project.GenerationStoryboard, "Anime"); err != nil {
 		t.Fatal(err)
 	}
 	dir, err := store.Dir("demo")
@@ -304,7 +304,7 @@ func reviewShotsHaveNoDurationKey(t *testing.T, unit map[string]any) {
 
 func TestScriptReviewDramaGateFlow(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 
 	state, err := svc.GetState(ctx, "demo", 1)
@@ -361,7 +361,7 @@ func TestScriptReviewDramaGateFlow(t *testing.T) {
 
 func TestScriptReviewDramaEditingAfterConfirmRepends(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 	if _, err := svc.Confirm(ctx, "demo", 1); err != nil {
@@ -397,7 +397,7 @@ func TestScriptReviewDramaEditingAfterConfirmRepends(t *testing.T) {
 
 func TestScriptReviewDramaWhitespaceReformatKeepsConfirmed(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	path := writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 	if _, err := svc.Confirm(ctx, "demo", 1); err != nil {
@@ -425,7 +425,7 @@ func TestScriptReviewDramaWhitespaceReformatKeepsConfirmed(t *testing.T) {
 
 func TestScriptReviewNarrationPendingThenConfirm(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentNarration, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentNarration, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, "step1_segments.json", narrationStep1())
 
@@ -452,7 +452,7 @@ func TestScriptReviewNarrationPendingThenConfirm(t *testing.T) {
 
 func TestScriptReviewNarrationEditNovelTextRepends(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentNarration, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentNarration, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, "step1_segments.json", narrationStep1())
 	if _, err := svc.Confirm(ctx, "demo", 1); err != nil {
@@ -477,7 +477,7 @@ func TestScriptReviewNarrationEditNovelTextRepends(t *testing.T) {
 
 func TestScriptReviewRVNoStep1ThenPendingThenConfirmed(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 
 	state, err := svc.GetState(ctx, "demo", 1)
@@ -533,12 +533,12 @@ func TestScriptReviewRVNoStep1ThenPendingThenConfirmed(t *testing.T) {
 
 func TestScriptReviewRVEditingShotTextRependsAndRederivesReferences(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		if pf.Scenes == nil {
-			pf.Scenes = domain.AssetBucket{}
+			pf.Scenes = project.AssetBucket{}
 		}
-		pf.Scenes["屋檐"] = domain.WrapAssetEntry(map[string]any{"name": "屋檐", "description": "雨夜屋檐"})
+		pf.Scenes["屋檐"] = project.WrapAssetEntry(map[string]any{"name": "屋檐", "description": "雨夜屋檐"})
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -578,7 +578,7 @@ func TestScriptReviewRVEditingShotTextRependsAndRederivesReferences(t *testing.T
 
 func TestScriptReviewRVQuarantinedStep1BlocksConfirmAndStep2(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	if _, err := svc.Confirm(ctx, "demo", 1); err != nil {
@@ -630,7 +630,7 @@ func TestScriptReviewRVQuarantinedStep1BlocksConfirmAndStep2(t *testing.T) {
 }
 
 func TestScriptReviewRVQuarantineNotApplicableToNonReferencePaths(t *testing.T) {
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	pf, err := store.Get("demo")
 	if err != nil {
 		t.Fatal(err)
@@ -645,7 +645,7 @@ func TestScriptReviewRVQuarantineNotApplicableToNonReferencePaths(t *testing.T) 
 
 func TestScriptReviewRVConfirmRejectsUnitDurationOutOfRange(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	bad := rvStep1()
 	bad["units"].([]any)[0].(map[string]any)["duration_seconds"] = float64(9999)
@@ -657,12 +657,12 @@ func TestScriptReviewRVConfirmRejectsUnitDurationOutOfRange(t *testing.T) {
 
 func TestScriptReviewRVConfirmRederivesReferencesWhenEditedOutsideSave(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		if pf.Scenes == nil {
-			pf.Scenes = domain.AssetBucket{}
+			pf.Scenes = project.AssetBucket{}
 		}
-		pf.Scenes["屋檐"] = domain.WrapAssetEntry(map[string]any{"name": "屋檐", "description": "雨夜屋檐"})
+		pf.Scenes["屋檐"] = project.WrapAssetEntry(map[string]any{"name": "屋檐", "description": "雨夜屋檐"})
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -695,7 +695,7 @@ func TestScriptReviewRVConfirmRederivesReferencesWhenEditedOutsideSave(t *testin
 
 func TestScriptReviewDurationTiersNarrowsByResolutionConstraint(t *testing.T) {
 	ctx := context.Background()
-	store, _ := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, _ := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "gemini-aistudio",
@@ -723,7 +723,7 @@ func TestScriptReviewDurationTiersNarrowsByResolutionConstraint(t *testing.T) {
 
 func TestScriptReviewDurationTiersNoneWhenCapsAndRawUnresolved(t *testing.T) {
 	ctx := context.Background()
-	store, _ := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, _ := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{resolveErr: errors.New("video_capabilities backend unreachable")}
 	svc := NewScriptReviewService(store, resolver)
 
@@ -738,7 +738,7 @@ func TestScriptReviewDurationTiersNoneWhenCapsAndRawUnresolved(t *testing.T) {
 
 func TestScriptReviewDurationTiersNoneForNonReferenceVideo(t *testing.T) {
 	ctx := context.Background()
-	store, _ := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, _ := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "custom-acme",
@@ -759,7 +759,7 @@ func TestScriptReviewDurationTiersNoneForNonReferenceVideo(t *testing.T) {
 
 func TestScriptReviewDurationTiersUsesCapsForCustomProvider(t *testing.T) {
 	ctx := context.Background()
-	store, _ := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, _ := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "custom-acme",
@@ -788,7 +788,7 @@ func TestScriptReviewDurationTiersUsesCapsForCustomProvider(t *testing.T) {
 
 func TestScriptReviewMigrationTakesSlotFromCaps(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "custom-acme",
@@ -814,7 +814,7 @@ func TestScriptReviewMigrationTakesSlotFromCaps(t *testing.T) {
 
 func TestScriptReviewMigrationCustomProviderTakesSlotFromCaps(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "custom-acme",
@@ -843,7 +843,7 @@ func TestScriptReviewMigrationCustomProviderTakesSlotFromCaps(t *testing.T) {
 
 func TestScriptReviewMigrationCustomProviderDirectConfirmTakesSlot(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "custom-acme",
@@ -868,8 +868,8 @@ func TestScriptReviewMigrationCustomProviderDirectConfirmTakesSlot(t *testing.T)
 
 func TestScriptReviewMigrationBuiltinFallsBackToRegistryWhenCapsUnavailable(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		pf.VideoBackend = "gemini-aistudio/veo-3.1-generate-preview"
 		return nil
 	}); err != nil {
@@ -893,7 +893,7 @@ func TestScriptReviewMigrationBuiltinFallsBackToRegistryWhenCapsUnavailable(t *t
 
 func TestScriptReviewMigrationFallsBackToStructuralClamp(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1WithDurations(t, 6, 4))
 
@@ -908,7 +908,7 @@ func TestScriptReviewMigrationFallsBackToStructuralClamp(t *testing.T) {
 
 func TestScriptReviewLegacyDraftMigratedOnReadWrittenBackIdempotent(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1())
 
@@ -947,7 +947,7 @@ func TestScriptReviewLegacyDraftMigratedOnReadWrittenBackIdempotent(t *testing.T
 
 func TestScriptReviewLegacyDraftCanBeConfirmedAndSaved(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1())
 
@@ -972,7 +972,7 @@ func TestScriptReviewLegacyDraftCanBeConfirmedAndSaved(t *testing.T) {
 
 func TestScriptReviewConfirmSurvivesMigrationWithoutReopening(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1())
 
@@ -980,7 +980,7 @@ func TestScriptReviewConfirmSurvivesMigrationWithoutReopening(t *testing.T) {
 	if err != nil || before == nil {
 		t.Fatalf("取迁移前指纹失败: %v", err)
 	}
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		service.ApplyConfirmation(pf, 1, *before, "2026-01-01T00:00:00Z")
 		return nil
 	}); err != nil {
@@ -1011,7 +1011,7 @@ func TestScriptReviewConfirmSurvivesMigrationWithoutReopening(t *testing.T) {
 
 func TestScriptReviewConfirmReopensWhenMigrationClampsDuration(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "custom-acme",
@@ -1026,7 +1026,7 @@ func TestScriptReviewConfirmReopensWhenMigrationClampsDuration(t *testing.T) {
 	if err != nil || before == nil {
 		t.Fatalf("取迁移前指纹失败: %v", err)
 	}
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		service.ApplyConfirmation(pf, 1, *before, "2026-01-01T00:00:00Z")
 		return nil
 	}); err != nil {
@@ -1047,7 +1047,7 @@ func TestScriptReviewConfirmReopensWhenMigrationClampsDuration(t *testing.T) {
 
 func TestScriptReviewClampingMigrationReopensGrandfatheredEpisode(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "custom-acme",
@@ -1077,7 +1077,7 @@ func TestScriptReviewClampingMigrationReopensGrandfatheredEpisode(t *testing.T) 
 
 func TestScriptReviewConfirmDirectCallConfirmsMigratedContent(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	resolver := &stubReviewCaps{
 		view: config.VideoCapabilityView{
 			ProviderID:         "custom-acme",
@@ -1102,11 +1102,11 @@ func TestScriptReviewConfirmDirectCallConfirmsMigratedContent(t *testing.T) {
 
 func TestScriptReviewMigrationDoesNotConfirmUnconfirmedEpisode(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, legacyRVStep1())
 
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		service.ApplyConfirmation(pf, 1, strings.Repeat("0", 64), "2026-01-01T00:00:00Z")
 		return nil
 	}); err != nil {
@@ -1125,7 +1125,7 @@ func TestScriptReviewMigrationDoesNotConfirmUnconfirmedEpisode(t *testing.T) {
 
 func TestScriptReviewReferenceVideoApplicable(t *testing.T) {
 	ctx := context.Background()
-	store, _ := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, _ := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	pf, err := store.Get("demo")
 	if err != nil {
 		t.Fatal(err)
@@ -1148,7 +1148,7 @@ func TestScriptReviewReferenceVideoApplicable(t *testing.T) {
 func TestScriptReviewAdNotApplicable(t *testing.T) {
 	ctx := context.Background()
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("addemo", "Ad", domain.ContentAd, domain.GenerationStoryboard, "Anime"); err != nil {
+	if _, err := store.Create("addemo", "Ad", project.ContentAd, project.GenerationStoryboard, "Anime"); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
@@ -1172,7 +1172,7 @@ func TestScriptReviewAdNotApplicable(t *testing.T) {
 
 func TestScriptReviewSaveInvalidContentRejected(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 
@@ -1185,7 +1185,7 @@ func TestScriptReviewSaveInvalidContentRejected(t *testing.T) {
 
 func TestScriptReviewConfirmWithoutStep1Rejected(t *testing.T) {
 	ctx := context.Background()
-	store, _ := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, _ := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 
 	_, err := svc.Confirm(ctx, "demo", 1)
@@ -1195,7 +1195,7 @@ func TestScriptReviewConfirmWithoutStep1Rejected(t *testing.T) {
 func TestScriptReviewSaveNotApplicableRejected(t *testing.T) {
 	ctx := context.Background()
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("addemo", "Ad", domain.ContentAd, domain.GenerationStoryboard, "Anime"); err != nil {
+	if _, err := store.Create("addemo", "Ad", project.ContentAd, project.GenerationStoryboard, "Anime"); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
@@ -1206,7 +1206,7 @@ func TestScriptReviewSaveNotApplicableRejected(t *testing.T) {
 
 func TestScriptReviewGetStateUnregisteredEpisodeRejected(t *testing.T) {
 	ctx := context.Background()
-	store, _ := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, _ := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 
 	_, err := svc.GetState(ctx, "demo", 99)
@@ -1215,7 +1215,7 @@ func TestScriptReviewGetStateUnregisteredEpisodeRejected(t *testing.T) {
 
 func TestScriptReviewSaveUnregisteredEpisodeWritesNoOrphan(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 
 	_, err := svc.SaveContent(ctx, "demo", 99, dramaStep1(), nil)
@@ -1228,7 +1228,7 @@ func TestScriptReviewSaveUnregisteredEpisodeWritesNoOrphan(t *testing.T) {
 
 func TestScriptReviewSaveStaleFingerprintConflictsReferenceVideo(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	path := writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	state, err := svc.GetState(ctx, "demo", 1)
@@ -1280,7 +1280,7 @@ func TestScriptReviewSaveStaleFingerprintConflictsReferenceVideo(t *testing.T) {
 
 func TestScriptReviewSaveStaleFingerprintConflictsDrama(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	path := writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 	state, err := svc.GetState(ctx, "demo", 1)
@@ -1312,7 +1312,7 @@ func TestScriptReviewSaveStaleFingerprintConflictsDrama(t *testing.T) {
 
 func TestScriptReviewSaveWithoutFingerprintSkipsBaselineCheck(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	other := rvStep1()
@@ -1332,7 +1332,7 @@ func TestScriptReviewSaveWithoutFingerprintSkipsBaselineCheck(t *testing.T) {
 
 func TestScriptReviewRVSaveClearsStaleStep2QuarantineOnChange(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationReferenceVideo)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationReferenceVideo)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, service.ReferenceVideoStep1Filename, rvStep1())
 	// 先经一次保存把归一化形状落盘，「内容未变」的比较才有同一基准。
@@ -1364,7 +1364,7 @@ func TestScriptReviewRVSaveClearsStaleStep2QuarantineOnChange(t *testing.T) {
 
 func TestScriptReviewConfirmCorruptStep1Rejected(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	path := writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 	if err := os.WriteFile(path, []byte("\x00\x01 not json at all {"), 0o644); err != nil {
@@ -1378,7 +1378,7 @@ func TestScriptReviewConfirmCorruptStep1Rejected(t *testing.T) {
 func TestScriptReviewConfirmNonObjectStep1Rejected(t *testing.T) {
 	ctx := context.Background()
 	for _, payload := range []string{"null", "[]", "\"not an object\"", "{}"} {
-		store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+		store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 		svc := NewScriptReviewService(store, &stubReviewCaps{})
 		path := writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 		if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
@@ -1394,7 +1394,7 @@ func TestScriptReviewConfirmNonObjectStep1Rejected(t *testing.T) {
 
 func TestScriptReviewGrandfatheredConfirmedWhenStep2Exists(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 	writeReviewStep2(t, dir)
@@ -1417,7 +1417,7 @@ func TestScriptReviewGrandfatheredConfirmedWhenStep2Exists(t *testing.T) {
 
 func TestScriptReviewFingerprintMismatchAfterEditRepends(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeReviewProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makeReviewProject(t, project.ContentDrama, project.GenerationStoryboard)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 	writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 	writeReviewStep2(t, dir)
@@ -1443,7 +1443,7 @@ func TestScriptReviewFingerprintMismatchAfterEditRepends(t *testing.T) {
 
 func TestScriptReviewGetStateSelfHealsOrphan(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeManualSplitProject(t, domain.ContentNarration)
+	store, dir := makeManualSplitProject(t, project.ContentNarration)
 	writeReviewSourceText(t, dir, "episode_1.txt", "裴与出征后的第二年。")
 	writeReviewStep1(t, dir, "step1_segments.json", narrationStep1())
 
@@ -1462,7 +1462,7 @@ func TestScriptReviewGetStateSelfHealsOrphan(t *testing.T) {
 	if entry == nil {
 		t.Fatal("自愈应登记第 1 集条目")
 	}
-	if entry.LedgerStatus != domain.LedgerStatusConsumed {
+	if entry.LedgerStatus != project.LedgerStatusConsumed {
 		t.Fatalf("ledger_status = %s，已有 step1 中间文件应为 consumed", entry.LedgerStatus)
 	}
 	if entry.SourceRange != nil {
@@ -1472,7 +1472,7 @@ func TestScriptReviewGetStateSelfHealsOrphan(t *testing.T) {
 
 func TestScriptReviewConfirmSelfHealsAndUnblocksStep2(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeManualSplitProject(t, domain.ContentDrama)
+	store, dir := makeManualSplitProject(t, project.ContentDrama)
 	writeReviewSourceText(t, dir, "episode_1.txt", "任意派生内容")
 	writeReviewStep1(t, dir, "step1_normalized_script.json", dramaStep1())
 
@@ -1494,7 +1494,7 @@ func TestScriptReviewConfirmSelfHealsAndUnblocksStep2(t *testing.T) {
 
 func TestScriptReviewSelfHealNeverAnchorsEvenWhenSourceTextMatches(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeManualSplitProject(t, domain.ContentNarration)
+	store, dir := makeManualSplitProject(t, project.ContentNarration)
 	writeReviewSourceText(t, dir, "novel.txt", "裴与出征后的第二年，送回一个襁褓中的婴儿。后续内容在此。")
 	writeReviewSourceText(t, dir, "episode_1.txt", "裴与出征后的第二年，送回一个襁褓中的婴儿。")
 
@@ -1516,7 +1516,7 @@ func TestScriptReviewSelfHealNeverAnchorsEvenWhenSourceTextMatches(t *testing.T)
 
 func TestScriptReviewSelfHealRegistersAllOrphans(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeManualSplitProject(t, domain.ContentNarration)
+	store, dir := makeManualSplitProject(t, project.ContentNarration)
 	writeReviewSourceText(t, dir, "episode_1.txt", "第一集内容")
 	writeReviewSourceText(t, dir, "episode_2.txt", "第二集内容")
 
@@ -1534,12 +1534,12 @@ func TestScriptReviewSelfHealRegistersAllOrphans(t *testing.T) {
 
 func TestScriptReviewSelfHealPreservesExistingLedgerEntries(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeManualSplitProject(t, domain.ContentNarration)
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{
+	store, dir := makeManualSplitProject(t, project.ContentNarration)
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{
 			Episode: 1, Title: "第一集", ScriptFile: "scripts/episode_1.json",
-			LedgerStatus: domain.LedgerStatusPlanned,
-			SourceRange:  &domain.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 5},
+			LedgerStatus: project.LedgerStatusPlanned,
+			SourceRange:  &project.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 5},
 		})
 		return nil
 	}); err != nil {
@@ -1558,10 +1558,10 @@ func TestScriptReviewSelfHealPreservesExistingLedgerEntries(t *testing.T) {
 	if entry == nil {
 		t.Fatal("第 1 集条目应保留")
 	}
-	if entry.LedgerStatus != domain.LedgerStatusPlanned {
+	if entry.LedgerStatus != project.LedgerStatusPlanned {
 		t.Fatalf("已登记条目的 ledger_status 被改写: %s", entry.LedgerStatus)
 	}
-	want := domain.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 5}
+	want := project.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 5}
 	if entry.SourceRange == nil || *entry.SourceRange != want {
 		t.Fatalf("已登记条目的 source_range 被改写: %+v", entry.SourceRange)
 	}
@@ -1572,7 +1572,7 @@ func TestScriptReviewSelfHealPreservesExistingLedgerEntries(t *testing.T) {
 
 func TestScriptReviewSelfHealNotAppliedWhenDerivativeMissing(t *testing.T) {
 	ctx := context.Background()
-	store, _ := makeManualSplitProject(t, domain.ContentNarration)
+	store, _ := makeManualSplitProject(t, project.ContentNarration)
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 
 	_, err := svc.GetState(ctx, "demo", 1)
@@ -1588,7 +1588,7 @@ func TestScriptReviewSelfHealNotAppliedWhenDerivativeMissing(t *testing.T) {
 
 func TestScriptReviewSelfHealIdempotentNoDuplicates(t *testing.T) {
 	ctx := context.Background()
-	store, dir := makeManualSplitProject(t, domain.ContentNarration)
+	store, dir := makeManualSplitProject(t, project.ContentNarration)
 	writeReviewSourceText(t, dir, "episode_1.txt", "第一集派生内容")
 	svc := NewScriptReviewService(store, &stubReviewCaps{})
 

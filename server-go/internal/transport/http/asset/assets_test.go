@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/asset"
 	"github.com/shotwise/shotwise/internal/transport/http/project"
@@ -29,7 +29,7 @@ func newAssetFixture(t *testing.T) assetFixture {
 	t.Helper()
 	root := t.TempDir()
 	store := service.NewProjectStore(root)
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", domainproject.ContentNarration, domainproject.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -240,7 +240,7 @@ func TestRenameCharacterCascade(t *testing.T) {
 		t.Fatalf("create = %d %v", status, body)
 	}
 	// 手工把路径字段指向按名落盘的生成物
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p1", func(pf *domainproject.ProjectFile) error {
 		pf.Characters["阿明"].SetString("character_sheet", "characters/阿明.png")
 		pf.CharacterRelations = map[string]any{
 			"revision":         1.0,
@@ -427,7 +427,7 @@ func TestDeleteCharacterRemovesRelationReferences(t *testing.T) {
 			t.Fatalf("create %s = %d %v", name, status, body)
 		}
 	}
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p1", func(pf *domainproject.ProjectFile) error {
 		pf.CharacterRelations = map[string]any{
 			"edges":            []any{map[string]any{"source": "阿明", "target": "阿红"}},
 			"suppressed_pairs": []any{map[string]any{"source": "阿明", "target": "阿红"}},
@@ -526,8 +526,8 @@ func TestAssetRouteTableMatchesSpec(t *testing.T) {
 		got[entry.Method+" "+entry.Path] = true
 	}
 	var want []string
-	for _, kind := range domain.AssetTypeOrder {
-		subdir := domain.AssetSpecs[kind].Subdir
+	for _, kind := range domainproject.AssetTypeOrder {
+		subdir := domainproject.AssetSpecs[kind].Subdir
 		base := "/api/v1/projects/:name/" + subdir
 		want = append(want,
 			"POST "+base,
@@ -546,7 +546,7 @@ func TestAssetRouteTableMatchesSpec(t *testing.T) {
 	}
 }
 
-func keysOf(b domain.AssetBucket) []string {
+func keysOf(b domainproject.AssetBucket) []string {
 	out := make([]string, 0, len(b))
 	for k := range b {
 		out = append(out, k)

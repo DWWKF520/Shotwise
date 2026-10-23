@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // CanvasImageOperationSplit 是宫格切分操作标识（提交路径的默认操作）。
@@ -255,7 +255,7 @@ func isCanvasProjectResourceType(resourceType string) bool {
 	if resourceType == StoryboardResourceType {
 		return true
 	}
-	_, ok := domain.Spec(domain.AssetKind(resourceType))
+	_, ok := project.Spec(project.AssetKind(resourceType))
 	return ok
 }
 

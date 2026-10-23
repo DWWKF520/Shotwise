@@ -8,14 +8,15 @@
 package reference
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -63,7 +64,7 @@ func voiceWarningsAsMaps(warnings []voiceWarning) []map[string]any {
 // references 是本次实际随请求发出的参考图列表（已按能力上限裁剪），其顺序即「图片N」编号——与
 // reference_images 严格等长同序，被裁掉的名字退化为原文不产生悬空绑定。
 func RenderUnitPrompt(
-	text string, project *domain.ProjectFile, references []map[string]any,
+	text string, project *domainproject.ProjectFile, references []map[string]any,
 	settings VoiceRenderSettings, style string,
 ) RenderedUnitPrompt {
 	shots, mentions := parsePrompt(text)
@@ -76,7 +77,7 @@ func RenderUnitPrompt(
 		name, _ := ref["name"].(string)
 		entry := map[string]any{
 			"type": ref["type"],
-			"name": domain.NormalizeAssetName(name),
+			"name": domainproject.NormalizeAssetName(name),
 		}
 		if id, ok := ref["variant_id"].(string); ok && id != "" {
 			entry["variant_id"] = id
@@ -142,10 +143,10 @@ func RenderUnitPrompt(
 // RenderAdBackendPrompt 把 ad 派生 unit 的结构化镜头渲染成三段论 backend prompt
 // （对应 render_ad_backend_prompt），与剧集路径共用第一、三段与音频接线。
 func RenderAdBackendPrompt(
-	shots []map[string]any, entries []map[string]any, project *domain.ProjectFile,
+	shots []map[string]any, entries []map[string]any, project *domainproject.ProjectFile,
 	settings VoiceRenderSettings, style string,
 ) (RenderedUnitPrompt, error) {
-	body := domain.RenderAdUnitPrompt(shots, nil)
+	body := media.RenderAdUnitPrompt(shots, nil)
 	if strings.TrimSpace(body) == "" {
 		return RenderedUnitPrompt{}, fmt.Errorf("reference video unit prompt is empty: all member shots have no visual content")
 	}
@@ -160,7 +161,7 @@ func RenderAdBackendPrompt(
 		assetType, _ := entry["asset_type"].(string)
 		name, isString := entry["name"].(string)
 		if assetType == "character" && isString {
-			characterImageNo[domain.NormalizeAssetName(name)] = i + 1
+			characterImageNo[domainproject.NormalizeAssetName(name)] = i + 1
 		}
 	}
 
@@ -197,9 +198,9 @@ func referenceSubjectLabel(ref map[string]any) string {
 }
 
 // characterBucket 返回项目角色表（按归一名索引）；project 为 nil 时按空表处理。
-func characterBucket(project *domain.ProjectFile) domain.AssetBucket {
+func characterBucket(project *domainproject.ProjectFile) domainproject.AssetBucket {
 	if project == nil {
-		return domain.AssetBucket{}
+		return domainproject.AssetBucket{}
 	}
 	return project.Characters
 }
@@ -230,7 +231,7 @@ func joinNonEmpty(parts []string, sep string) string {
 // 资产名，ad 传参考条目的展示 label）。图号按位置直接编号（非名字查表）：不同类型的资产允许
 // 同名，位置编号天然不受影响；空 label 占位不产出绑定行，编号照样前进。
 func renderSegmentOne(
-	labels, speakers []string, audioNo map[string]int, characters domain.AssetBucket, settings VoiceRenderSettings,
+	labels, speakers []string, audioNo map[string]int, characters domainproject.AssetBucket, settings VoiceRenderSettings,
 ) string {
 	var lines []string
 	parts := make([]string, 0, len(labels))
@@ -251,7 +252,7 @@ func renderSegmentOne(
 //
 // 两条无声路径（模型不产音的 C 类、本集关闭音频）都不注入声音声明；台词行不受影响、照常进第二段。
 func renderVoiceDeclarations(
-	speakers []string, audioNo map[string]int, characters domain.AssetBucket, settings VoiceRenderSettings,
+	speakers []string, audioNo map[string]int, characters domainproject.AssetBucket, settings VoiceRenderSettings,
 ) []string {
 	if settings.isSilent() {
 		return nil
@@ -298,7 +299,7 @@ func numberAudioSpeakers(audioSpeakers []string, characterImageNo map[string]int
 //
 // 台词行的说话人按资产表判定而非参考图列表：纯画外角色无参考图，台词行照常重组。裸画外音行
 // 属于字幕 / TTS 的后续输入，整行丢弃；未闭合花括号行原样发送。
-func renderSegmentTwo(shots []map[string]any, subjects []string, characters domain.AssetBucket) string {
+func renderSegmentTwo(shots []map[string]any, subjects []string, characters domainproject.AssetBucket) string {
 	var blocks []string
 	for index, shot := range shots {
 		bodyText, _ := shot["text"].(string)
@@ -388,7 +389,7 @@ func deriveAdUtterances(shots []map[string]any) []shotUtterance {
 func RenderMentionsAsSubjects(text string, names []string) string {
 	normalized := make(map[string]bool, len(names))
 	for _, name := range names {
-		normalized[domain.NormalizeAssetName(name)] = true
+		normalized[domainproject.NormalizeAssetName(name)] = true
 	}
 	text = normalizeShotSource(text)
 	runes := []rune(text)
@@ -396,7 +397,7 @@ func RenderMentionsAsSubjects(text string, names []string) string {
 	last := 0
 	for _, span := range iterMentions(runes) {
 		b.WriteString(string(runes[last:span.start]))
-		if normalized[domain.NormalizeAssetName(span.name)] {
+		if normalized[domainproject.NormalizeAssetName(span.name)] {
 			b.WriteString("<" + span.name + ">")
 		} else {
 			b.WriteString(string(runes[span.start:span.end]))
@@ -411,7 +412,7 @@ func RenderMentionsAsSubjects(text string, names []string) string {
 // （对应 resolve_reference_audio_paths）。
 //
 // 只收录字段指向 characters/refs_audio 内且文件确实存在的条目；key 是归一后的角色名。
-func ResolveReferenceAudioPaths(project *domain.ProjectFile, projectDir string) map[string]string {
+func ResolveReferenceAudioPaths(project *domainproject.ProjectFile, projectDir string) map[string]string {
 	resolved := map[string]string{}
 	for name, entry := range characterBucket(project) {
 		if entry == nil {
@@ -434,7 +435,7 @@ func ResolveReferenceAudioPaths(project *domain.ProjectFile, projectDir string) 
 func AudioPathSet(audioPaths map[string]string) map[string]bool {
 	out := make(map[string]bool, len(audioPaths))
 	for name := range audioPaths {
-		out[domain.NormalizeAssetName(name)] = true
+		out[domainproject.NormalizeAssetName(name)] = true
 	}
 	return out
 }
@@ -502,9 +503,9 @@ func AppendProductFidelityTail(prompt string, productNames []string) string {
 // 返回 “{"image", "label", "name", "kind"}“ 列表；kind 供截断时让 sheet 优先存活。
 // 脏数据（产品名非字符串、引用不存在的产品）按既有装配口径跳过不抛。
 func collectProductReferencesForNames(
-	project *domain.ProjectFile, projectDir string, names []string,
+	project *domainproject.ProjectFile, projectDir string, names []string,
 ) []map[string]any {
-	spec, ok := domain.Spec(domain.AssetProduct)
+	spec, ok := domainproject.Spec(domainproject.AssetProduct)
 	if !ok {
 		return nil
 	}
@@ -514,12 +515,12 @@ func collectProductReferencesForNames(
 		if name == "" {
 			continue
 		}
-		canonical := domain.NormalizeAssetName(name)
+		canonical := domainproject.NormalizeAssetName(name)
 		if seen[canonical] {
 			continue
 		}
 		seen[canonical] = true
-		entry := lookupAssetEntry(project, domain.AssetProduct, canonical)
+		entry := lookupAssetEntry(project, domainproject.AssetProduct, canonical)
 		if entry == nil {
 			continue
 		}
@@ -544,8 +545,8 @@ func collectProductReferencesForNames(
 }
 
 // collectProductReferenceImages 取产品原图（保真验收锚点）的项目内绝对路径；缺失文件跳过。
-func collectProductReferenceImages(project *domain.ProjectFile, projectDir, resourceID string) []string {
-	entry := lookupAssetEntry(project, domain.AssetProduct, domain.NormalizeAssetName(resourceID))
+func collectProductReferenceImages(project *domainproject.ProjectFile, projectDir, resourceID string) []string {
+	entry := lookupAssetEntry(project, domainproject.AssetProduct, domainproject.NormalizeAssetName(resourceID))
 	if entry == nil {
 		return nil
 	}
@@ -563,7 +564,7 @@ func collectProductReferenceImages(project *domain.ProjectFile, projectDir, reso
 }
 
 // lookupAssetEntry 按归一名在指定资产桶里取条目。
-func lookupAssetEntry(project *domain.ProjectFile, kind domain.AssetKind, name string) *domain.AssetEntry {
+func lookupAssetEntry(project *domainproject.ProjectFile, kind domainproject.AssetKind, name string) *domainproject.AssetEntry {
 	if project == nil {
 		return nil
 	}
@@ -613,7 +614,7 @@ func DedupeTypedReferences(references []map[string]any) []map[string]any {
 		if variantKey == "" {
 			variantKey, _ = ref["variant_slug"].(string)
 		}
-		key := refType + "\x00" + domain.NormalizeAssetName(name) + "\x00" + variantKey
+		key := refType + "\x00" + domainproject.NormalizeAssetName(name) + "\x00" + variantKey
 		if seen[key] {
 			continue
 		}
@@ -626,18 +627,18 @@ func DedupeTypedReferences(references []map[string]any) []map[string]any {
 // ResolveUnitReferences 把 unit.references 转成绝对路径列表（按 references 顺序、按类型+归一名去重）。
 //
 // 任一 reference 在 project.json 对应 bucket 缺失或 sheet 不存在时返回 *missingReferenceError。
-func ResolveUnitReferences(project *domain.ProjectFile, projectDir string, references []map[string]any) ([]string, error) {
+func ResolveUnitReferences(project *domainproject.ProjectFile, projectDir string, references []map[string]any) ([]string, error) {
 	var missing []missingReference
 	var resolved []string
 	for _, ref := range DedupeTypedReferences(references) {
 		refType, _ := ref["type"].(string)
 		name, _ := ref["name"].(string)
-		spec, ok := domain.Spec(domain.AssetKind(refType))
+		spec, ok := domainproject.Spec(domainproject.AssetKind(refType))
 		if !ok {
 			missing = append(missing, missingReference{AssetType: refType, Name: name})
 			continue
 		}
-		entry := lookupAssetEntry(project, domain.AssetKind(refType), domain.NormalizeAssetName(name))
+		entry := lookupAssetEntry(project, domainproject.AssetKind(refType), domainproject.NormalizeAssetName(name))
 		if entry == nil {
 			missing = append(missing, missingReference{AssetType: refType, Name: name})
 			continue
@@ -674,7 +675,7 @@ func ResolveUnitReferences(project *domain.ProjectFile, projectDir string, refer
 }
 
 // characterVariantEntry 取角色衍生形态的原始条目（含 image_path）；按 slug 排序稳定遍历。
-func characterVariantEntry(character *domain.AssetEntry, identifier string) map[string]any {
+func characterVariantEntry(character *domainproject.AssetEntry, identifier string) map[string]any {
 	if character == nil {
 		return nil
 	}
@@ -682,7 +683,7 @@ func characterVariantEntry(character *domain.AssetEntry, identifier string) map[
 	if len(rawVariants) == 0 {
 		return nil
 	}
-	target := domain.NormalizeAssetName(identifier)
+	target := domainproject.NormalizeAssetName(identifier)
 	slugs := make([]string, 0, len(rawVariants))
 	for slug := range rawVariants {
 		slugs = append(slugs, slug)
@@ -698,7 +699,7 @@ func characterVariantEntry(character *domain.AssetEntry, identifier string) map[
 		if rawSlug == "" {
 			rawSlug = slug
 		}
-		if id == identifier || domain.NormalizeAssetName(rawSlug) == target {
+		if id == identifier || domainproject.NormalizeAssetName(rawSlug) == target {
 			imagePath, _ := raw["image_path"].(string)
 			return map[string]any{"id": id, "slug": rawSlug, "image_path": imagePath}
 		}
@@ -711,7 +712,7 @@ func characterVariantEntry(character *domain.AssetEntry, identifier string) map[
 // 与 narration/drama 的 ResolveUnitReferences（缺图硬失败）不同，ad 的参考集由分组器从镜头字段
 // 自动继承，缺图按软口径跳过并记 warning。产品沿用注入二元规则且排在所有其它参考之前。
 func ResolveAdUnitReferenceEntries(
-	project *domain.ProjectFile, projectDir string, references []map[string]any,
+	project *domainproject.ProjectFile, projectDir string, references []map[string]any,
 ) ([]map[string]any, []map[string]any) {
 	var warnings []map[string]any
 	var productNames []string
@@ -725,7 +726,7 @@ func ResolveAdUnitReferenceEntries(
 		if name == "" {
 			continue
 		}
-		canonical := domain.NormalizeAssetName(name)
+		canonical := domainproject.NormalizeAssetName(name)
 		if refType == "product" {
 			if !seenProducts[canonical] {
 				seenProducts[canonical] = true
@@ -733,7 +734,7 @@ func ResolveAdUnitReferenceEntries(
 			}
 			continue
 		}
-		if _, ok := domain.Spec(domain.AssetKind(refType)); ok {
+		if _, ok := domainproject.Spec(domainproject.AssetKind(refType)); ok {
 			key := refType + "\x00" + canonical
 			if !seenAssets[key] {
 				seenAssets[key] = true
@@ -750,7 +751,7 @@ func ResolveAdUnitReferenceEntries(
 		}
 	}
 	for _, name := range productNames {
-		if !injectedProducts[domain.NormalizeAssetName(name)] {
+		if !injectedProducts[domainproject.NormalizeAssetName(name)] {
 			warnings = append(warnings, map[string]any{
 				"key": "ref_ad_reference_skipped", "params": map[string]any{"type": "product", "name": name},
 			})
@@ -758,8 +759,8 @@ func ResolveAdUnitReferenceEntries(
 	}
 
 	for _, ref := range assetRefs {
-		spec, _ := domain.Spec(domain.AssetKind(ref.assetType))
-		entry := lookupAssetEntry(project, domain.AssetKind(ref.assetType), ref.canonical)
+		spec, _ := domainproject.Spec(domainproject.AssetKind(ref.assetType))
+		entry := lookupAssetEntry(project, domainproject.AssetKind(ref.assetType), ref.canonical)
 		sheetRel := ""
 		if entry != nil {
 			sheetRel = entry.MustString(spec.SheetKey)

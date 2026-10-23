@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
@@ -272,7 +272,7 @@ var audioLayeredKeys = layeredKeys{
 //
 // 键名与 layeredKeys 的 project 层键位一一对应，新增键位时同步补此表（漏配即该层恒空、
 // 静默降级到全局层，是解析链最难察觉的一类缺陷）。
-func projectProviderValue(project *domain.ProjectFile, key string) string {
+func projectProviderValue(project *project.ProjectFile, key string) string {
 	if project == nil {
 		return ""
 	}
@@ -317,7 +317,7 @@ func NewResolver(db *gorm.DB) *Resolver {
 // 桶键与默认键都在同一个明文文件里，降级只该丢掉 DB 那部分，不该顺带把桶口径也降成项目
 // 默认层——否则配了 video_provider_r2v 的参考视频项目会拿 video_backend 的档位收编剧本。
 // 层内取值口径与 resolveLayered 的项目层一致（含裸 provider 覆盖）。
-func ProjectVideoBackendIDs(project *domain.ProjectFile) (ProviderModel, bool) {
+func ProjectVideoBackendIDs(project *project.ProjectFile) (ProviderModel, bool) {
 	if project == nil {
 		return ProviderModel{}, false
 	}
@@ -343,7 +343,7 @@ func ProjectVideoBackendIDs(project *domain.ProjectFile) (ProviderModel, bool) {
 //
 // 返回值不含「分辨率↔时长」「参考图↔时长」联动约束，收窄在 service 侧
 // EffectiveReferenceDurations。
-func ResolveRawSupportedDurations(project *domain.ProjectFile, caps *VideoCapabilityView) []int {
+func ResolveRawSupportedDurations(project *project.ProjectFile, caps *VideoCapabilityView) []int {
 	if caps != nil && len(caps.SupportedDurations) > 0 {
 		return append([]int(nil), caps.SupportedDurations...)
 	}
@@ -362,7 +362,7 @@ func ResolveRawSupportedDurations(project *domain.ProjectFile, caps *VideoCapabi
 // 图片任务不锁定执行身份（任务周期短，排队期间配置漂移的窗口小），故 payload 层无桶键，
 // 只认 image_provider / image_model 的历史格式。
 func (r *Resolver) ResolveImageBackend(
-	ctx context.Context, project *domain.ProjectFile, payload map[string]any, cap ImageCapability,
+	ctx context.Context, project *project.ProjectFile, payload map[string]any, cap ImageCapability,
 ) (ProviderModel, error) {
 	if providerID := trustedPayloadProvider(payloadString(payload, "image_provider")); providerID != "" {
 		if model := payloadModelOrDefault(payloadString(payload, "image_model"), providerID, provider.MediaImage); model != "" {
@@ -384,7 +384,7 @@ func (r *Resolver) ResolveImageBackend(
 // payload 恒为最高优先级：入队时锁进桶键 video_provider_<cap> 的执行身份原样返回、不过能力闸，
 // 只过身份可用性校验（悬空即报错）——已入队任务按 payload 照常执行，不回头补校验。
 func (r *Resolver) ResolveVideoBackend(
-	ctx context.Context, project *domain.ProjectFile, payload map[string]any, bucket *provider.VideoBucket,
+	ctx context.Context, project *project.ProjectFile, payload map[string]any, bucket *provider.VideoBucket,
 ) (ProviderModel, error) {
 	if pinnedBucket, pinned, ok := payloadVideoPinnedPair(payload, bucket); ok {
 		if _, err := r.ensureVideoIdentityResolvable(ctx, pinned, pinnedBucket); err != nil {
@@ -418,7 +418,7 @@ func (r *Resolver) ResolveVideoBackend(
 //
 // payload 层服务于历史任务（携带 audio_provider + audio_model）的排空。
 func (r *Resolver) ResolveAudioBackend(
-	ctx context.Context, project *domain.ProjectFile, payload map[string]any,
+	ctx context.Context, project *project.ProjectFile, payload map[string]any,
 ) (ProviderModel, error) {
 	if providerID := trustedPayloadProvider(payloadString(payload, "audio_provider")); providerID != "" {
 		if model := payloadModelOrDefault(payloadString(payload, "audio_model"), providerID, provider.MediaAudio); model != "" {
@@ -452,7 +452,7 @@ func (r *Resolver) DefaultAudioBackend(ctx context.Context) (ProviderModel, erro
 
 // VideoBackend 解析项目当前配置的视频身份（不定桶，不做有效身份收敛），供配置展示与
 // 「当前选的是哪个」类判断使用。
-func (r *Resolver) VideoBackend(ctx context.Context, project *domain.ProjectFile) (ProviderModel, error) {
+func (r *Resolver) VideoBackend(ctx context.Context, project *project.ProjectFile) (ProviderModel, error) {
 	return r.resolveLayered(ctx, project, videoDefaultLayeredKeys)
 }
 
@@ -466,7 +466,7 @@ func (r *Resolver) VideoBackend(ctx context.Context, project *domain.ProjectFile
 // Go 侧 project.json 域结构未保留该 legacy 字段、custom_provider_model 亦无 resolution 列，
 // 两级待对应字段迁移后补齐；当前只落 model_settings 一级。
 func (r *Resolver) ResolveResolution(
-	ctx context.Context, project *domain.ProjectFile, providerID, modelID string,
+	ctx context.Context, project *project.ProjectFile, providerID, modelID string,
 ) (string, error) {
 	if project == nil || providerID == "" || modelID == "" {
 		return "", nil
@@ -483,7 +483,7 @@ func (r *Resolver) ResolveResolution(
 //
 // 项目层字段兼容裸 provider 覆盖（parseProjectProvider）；全局层要求 "provider/model" 完整
 // 形态，含 "/" 才作数。供应商级禁用在此统一拦截。
-func (r *Resolver) resolveLayered(ctx context.Context, project *domain.ProjectFile, keys layeredKeys) (ProviderModel, error) {
+func (r *Resolver) resolveLayered(ctx context.Context, project *project.ProjectFile, keys layeredKeys) (ProviderModel, error) {
 	if project != nil {
 		for _, key := range []string{keys.projectBucketKey, keys.projectDefaultKey} {
 			if key == "" {

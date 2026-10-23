@@ -3,13 +3,13 @@ package script
 import "github.com/shotwise/shotwise/internal/service"
 
 import (
-	"github.com/shotwise/shotwise/internal/service/reference"
 	"encoding/json"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 func TestParseNarrationStep1DraftAndValidate(t *testing.T) {
@@ -142,9 +142,9 @@ func TestReviewStatusAndConfirmation(t *testing.T) {
 	if err := os.MkdirAll(drafts, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		ContentMode: "narration",
-		Episodes:    []domain.EpisodeMeta{{Episode: 1, ScriptFile: "scripts/episode_1.json"}},
+		Episodes:    []project.EpisodeMeta{{Episode: 1, ScriptFile: "scripts/episode_1.json"}},
 	}
 	if got := ReviewStatus(dir, pf, episode); got != ReviewStatusNoStep1 {
 		t.Fatalf("want no_step1, got %s", got)

@@ -6,7 +6,6 @@ package publishing
 
 import (
 	"strings"
-
 )
 
 // PlatformCapabilities 是单个平台的能力声明（JSON 字段名与 Python asdict 对齐）。

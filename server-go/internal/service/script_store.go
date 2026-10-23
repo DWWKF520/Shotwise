@@ -10,7 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -144,11 +145,11 @@ func (s *ProjectStore) writeScriptFile(dir, filename string, script map[string]a
 // 改后合法放行；改后非法时，改前已非法或没有改前快照则放行（不为历史遗留背锅），
 // 否则拒绝。改前快照读不到（文件不存在或损坏）时按严格校验处理。
 func guardNoWorse(before, after map[string]any) error {
-	afterErrors := domain.ValidateScriptStructure(after)
+	afterErrors := domainscript.ValidateScriptStructure(after)
 	if len(afterErrors) == 0 {
 		return nil
 	}
-	if before != nil && len(domain.ValidateScriptStructure(before)) > 0 {
+	if before != nil && len(domainscript.ValidateScriptStructure(before)) > 0 {
 		return nil
 	}
 	return &ScriptStructureValidationError{Errors: afterErrors}
@@ -225,7 +226,7 @@ func recomputeScriptMetadata(script map[string]any) {
 	}
 	metadata["updated_at"] = now
 
-	items, _, kind, err := domain.ResolveScriptItems(script)
+	items, _, kind, err := domainscript.ResolveScriptItems(script)
 	if err != nil {
 		return
 	}
@@ -237,7 +238,7 @@ func recomputeScriptMetadata(script map[string]any) {
 		}
 	}
 	metadata["total_scenes"] = len(clean)
-	metadata["estimated_duration_seconds"] = domain.ScriptDurationTotal(kind, clean)
+	metadata["estimated_duration_seconds"] = domainscript.ScriptDurationTotal(kind, clean)
 }
 
 // syncEpisodeFromScript 把剧本的集号/标题/script_file 同步进 project.json 的 episodes。
@@ -249,13 +250,13 @@ func (s *ProjectStore) syncEpisodeFromScript(project, scriptFilename string) err
 	if err != nil {
 		return err
 	}
-	return s.Update(project, func(pf *domain.ProjectFile) error {
+	return s.Update(project, func(pf *domainproject.ProjectFile) error {
 		return applyEpisodeSync(pf, script, filename)
 	})
 }
 
 // applyEpisodeSync 就地同步一集的元数据（供已持项目锁的调用方复用）。
-func applyEpisodeSync(pf *domain.ProjectFile, script map[string]any, scriptFilename string) error {
+func applyEpisodeSync(pf *domainproject.ProjectFile, script map[string]any, scriptFilename string) error {
 	filename := NormalizeScriptFilename(scriptFilename)
 	if err := requireFilenameEpisodeConsistency(script, filename); err != nil {
 		return err
@@ -296,7 +297,7 @@ func applyEpisodeSync(pf *domain.ProjectFile, script map[string]any, scriptFilen
 		}
 	}
 	if index < 0 {
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{Episode: episodeNum})
+		pf.Episodes = append(pf.Episodes, domainproject.EpisodeMeta{Episode: episodeNum})
 		index = len(pf.Episodes) - 1
 	}
 	// 只同步核心元数据；统计字段由读时计算注入，不落盘。

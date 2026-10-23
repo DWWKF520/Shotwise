@@ -10,18 +10,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // fakeEpisodeStore 是分集账本工具的替身：Get 返回同一指针，Update 就地 mutate。
 type fakeEpisodeStore struct {
-	pf  *domain.ProjectFile
+	pf  *project.ProjectFile
 	dir string
 }
 
-func (f *fakeEpisodeStore) Get(string) (*domain.ProjectFile, error) { return f.pf, nil }
-func (f *fakeEpisodeStore) Dir(string) (string, error)              { return f.dir, nil }
-func (f *fakeEpisodeStore) Update(_ string, mutate func(*domain.ProjectFile) error) error {
+func (f *fakeEpisodeStore) Get(string) (*project.ProjectFile, error) { return f.pf, nil }
+func (f *fakeEpisodeStore) Dir(string) (string, error)               { return f.dir, nil }
+func (f *fakeEpisodeStore) Update(_ string, mutate func(*project.ProjectFile) error) error {
 	return mutate(f.pf)
 }
 
@@ -191,9 +191,9 @@ func TestEpisodePlannerPlanEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "source", "novel.txt"), []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		Title: "测试", ContentMode: "narration", SourceLanguage: "zh",
-		SourceKind: "novel", Episodes: []domain.EpisodeMeta{},
+		SourceKind: "novel", Episodes: []project.EpisodeMeta{},
 	}
 	store := &fakeEpisodeStore{pf: pf, dir: dir}
 	completion := &fakeCompletion{outputs: []string{
@@ -212,7 +212,7 @@ func TestEpisodePlannerPlanEndToEnd(t *testing.T) {
 	}
 	summary := result.Episodes[0]
 	if summary.Episode != 1 || summary.Title != "第一集" || summary.ReadingUnits != 14 ||
-		summary.LedgerStatus != domain.LedgerStatusPlanned {
+		summary.LedgerStatus != project.LedgerStatusPlanned {
 		t.Fatalf("摘要有误: %+v", summary)
 	}
 	if len(pf.Episodes) != 1 {
@@ -257,9 +257,9 @@ func TestEpisodePlannerRejectsMissingSourceRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 已有条目缺 source_range（老项目遗留）→ 拒绝规划并指路全量重置。
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		ContentMode: "narration",
-		Episodes:    []domain.EpisodeMeta{{Episode: 1, Title: "旧", ScriptFile: "scripts/episode_1.json"}},
+		Episodes:    []project.EpisodeMeta{{Episode: 1, Title: "旧", ScriptFile: "scripts/episode_1.json"}},
 	}
 	planner, err := NewEpisodePlanner(&fakeEpisodeStore{pf: pf, dir: dir}, "p1", &fakeCompletion{})
 	if err != nil {
@@ -279,7 +279,7 @@ func TestEpisodePlannerRejectsChangedSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "source", "novel.txt"), []byte("甲乙丙丁"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pf := &domain.ProjectFile{ContentMode: "narration", Episodes: []domain.EpisodeMeta{}}
+	pf := &project.ProjectFile{ContentMode: "narration", Episodes: []project.EpisodeMeta{}}
 	planner, err := NewEpisodePlanner(&fakeEpisodeStore{pf: pf, dir: dir}, "p1", &fakeCompletion{})
 	if err != nil {
 		t.Fatal(err)
@@ -311,15 +311,15 @@ func TestResetPlanningFullAndPartial(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "source", "episode_2.txt"), []byte("手工内容"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		ContentMode: "narration",
-		Episodes: []domain.EpisodeMeta{
+		Episodes: []project.EpisodeMeta{
 			{Episode: 1, Title: "一", ScriptFile: "scripts/episode_1.json",
-				SourceRange:  &domain.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 4},
-				LedgerStatus: domain.LedgerStatusPlanned},
+				SourceRange:  &project.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 4},
+				LedgerStatus: project.LedgerStatusPlanned},
 			{Episode: 2, Title: "二", ScriptFile: "scripts/episode_2.json"},
 		},
-		PlanningCursor:     &domain.PlanningCursor{SourceFile: "source/novel.txt", Offset: 4},
+		PlanningCursor:     &project.PlanningCursor{SourceFile: "source/novel.txt", Offset: 4},
 		SourceFingerprints: ComputeSourceFingerprints(DiscoverSources(dir)),
 	}
 	store := &fakeEpisodeStore{pf: pf, dir: dir}
@@ -386,10 +386,10 @@ func TestResetPlanningRequiresConfirmationForConsumed(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "scripts", "episode_1.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		ContentMode: "narration",
-		Episodes: []domain.EpisodeMeta{{Episode: 1, Title: "一", ScriptFile: "scripts/episode_1.json",
-			SourceRange: &domain.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 4}}},
+		Episodes: []project.EpisodeMeta{{Episode: 1, Title: "一", ScriptFile: "scripts/episode_1.json",
+			SourceRange: &project.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 4}}},
 	}
 	store := &fakeEpisodeStore{pf: pf, dir: dir}
 	result, confirmation, err := ResetEpisodePlanning(store, "p1", 1, false)

@@ -11,7 +11,7 @@ import (
 	"github.com/shotwise/shotwise/internal/service"
 	"sort"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/script"
 )
 
 // imagePromptSchema 构造 image_prompt 的 JSON Schema。
@@ -23,7 +23,7 @@ func imagePromptSchema() map[string]any {
 			"composition": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"shot_type": map[string]any{"type": "string", "enum": toAnyStrings(domain.ShotTypes())},
+					"shot_type": map[string]any{"type": "string", "enum": toAnyStrings(script.ShotTypes())},
 					"lighting":  map[string]any{"type": "string"},
 					"ambiance":  map[string]any{"type": "string"},
 				},
@@ -40,7 +40,7 @@ func imagePromptSchema() map[string]any {
 func videoPromptSchema(withDialogue bool) map[string]any {
 	properties := map[string]any{
 		"action":         map[string]any{"type": "string"},
-		"camera_motion":  map[string]any{"type": "string", "enum": toAnyStrings(domain.CameraMotions())},
+		"camera_motion":  map[string]any{"type": "string", "enum": toAnyStrings(script.CameraMotions())},
 		"ambiance_audio": map[string]any{"type": "string"},
 	}
 	required := []any{"action", "camera_motion"}

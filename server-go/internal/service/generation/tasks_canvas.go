@@ -23,7 +23,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/provider"
@@ -146,7 +146,7 @@ func (d *TaskDispatcher) executeCanvasImageTask(ctx context.Context, task *repos
 // project 来源时顺带返回已加载的 project.json（AI 路径要用）；media 来源返回 nil。
 func (d *TaskDispatcher) resolveCanvasImageSource(
 	task *repository.TaskData,
-) (sourceAbs, projectDir, sourceID string, pf *domain.ProjectFile, err error) {
+) (sourceAbs, projectDir, sourceID string, pf *project.ProjectFile, err error) {
 	projectDir, err = d.store.Dir(task.ProjectName)
 	if err != nil {
 		return "", "", "", nil, err
@@ -225,7 +225,7 @@ func (d *TaskDispatcher) generateCanvasAIOutputs(
 	ctx context.Context,
 	task *repository.TaskData,
 	operation, sourceAbs, projectDir, sourceID string,
-	pf *domain.ProjectFile,
+	pf *project.ProjectFile,
 ) ([]map[string]any, error) {
 	if d.images == nil {
 		return nil, fmt.Errorf("canvas AI operation requires an image generator")

@@ -4,13 +4,13 @@
 package reference
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -39,7 +39,7 @@ func (c ReferenceSplitCaps) TiersFor(hasReferences bool) []int {
 
 // FetchReferenceSplitCaps 解析参考视频拆分所需的视频能力；能力未知时停止，不伪造时长档位。
 func FetchReferenceSplitCaps(
-	ctx context.Context, r service.VideoCapabilityResolver, project *domain.ProjectFile,
+	ctx context.Context, r service.VideoCapabilityResolver, project *project.ProjectFile,
 ) (ReferenceSplitCaps, error) {
 	if r == nil || project == nil {
 		return ReferenceSplitCaps{}, fmt.Errorf("video_capabilities_unresolved: 视频能力不可解析")
@@ -195,7 +195,7 @@ func ValidateUnitDurationTier(label string, duration int, hasReferences bool, ca
 
 // CollectReferenceFlatViolations 逐 unit 收齐 step1 扁平产出的全部违约（不在首个违约处中断）。
 func CollectReferenceFlatViolations(
-	flatUnits []map[string]any, project *domain.ProjectFile,
+	flatUnits []map[string]any, project *project.ProjectFile,
 	episode int, novelText string, caps ReferenceSplitCaps, sourceLanguage string,
 ) []DraftViolation {
 	speechRateOverride := service.ProjectSpeechRateOverride(project)
@@ -226,7 +226,7 @@ func CollectReferenceFlatViolations(
 // LLM 只写内容，机器写结构：unit_id 按数组序号编号、shots 由 `镜头N：` 切分、references 由
 // `@[名称]` 派生（首现顺序即参考图编号）。
 func BuildReferenceUnitsFromFlat(
-	flatUnits []map[string]any, project *domain.ProjectFile, episode int, maxRefs *int,
+	flatUnits []map[string]any, project *project.ProjectFile, episode int, maxRefs *int,
 ) ([]map[string]any, error) {
 	units := make([]map[string]any, 0, len(flatUnits))
 	for index, flat := range flatUnits {
@@ -342,7 +342,7 @@ type ReferenceDraftRevalidation struct {
 
 // RevalidateReferenceStep1Draft 按产出时那套校验器全量重判 step1 隔离草稿，只读、不写盘、不清草稿。
 func RevalidateReferenceStep1Draft(
-	ctx context.Context, projectDir string, project *domain.ProjectFile, episode int,
+	ctx context.Context, projectDir string, project *project.ProjectFile, episode int,
 	draft *QuarantinedDraft, resolver service.VideoCapabilityResolver,
 ) (ReferenceDraftRevalidation, error) {
 	if draft == nil {
@@ -491,7 +491,7 @@ func ReferenceStep2FlatContent(responseText string, episode int) (map[string]any
 // 保结构 diff 在此落地：unit 数与顺序、台词规范行逐字、每 unit 的镜头数都由 step1 定稿。逐 unit 的
 // 违约收齐后一次抛出（*DraftViolations），供调用方把整份产出连同报告落到隔离草稿。
 func MergeReferenceVisual(
-	step1Units []map[string]any, responseText string, episode int, project *domain.ProjectFile, maxRefs *int,
+	step1Units []map[string]any, responseText string, episode int, project *project.ProjectFile, maxRefs *int,
 ) (map[string]any, error) {
 	root, err := service.ParseJSONObject(responseText)
 	if err != nil {

@@ -14,7 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/asset"
@@ -42,14 +42,14 @@ func newVariantFixture(t *testing.T) variantFixture {
 		}
 	})
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentDrama, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentDrama, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
 		if pf.Characters == nil {
-			pf.Characters = domain.AssetBucket{}
+			pf.Characters = project.AssetBucket{}
 		}
-		pf.Characters["阿明"] = domain.WrapAssetEntry(map[string]any{"description": "少年"})
+		pf.Characters["阿明"] = project.WrapAssetEntry(map[string]any{"description": "少年"})
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)

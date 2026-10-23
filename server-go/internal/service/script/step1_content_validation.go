@@ -13,13 +13,14 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service/reference"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service/reference"
 
 	"github.com/shotwise/shotwise/internal/service"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	"github.com/shotwise/shotwise/internal/domain/script"
 )
 
 // ValidateStep1Content 按变体校验结构化 step1 内容，返回规范化后的完整内容。
@@ -307,7 +308,7 @@ func validateReferenceStep1Unit(raw any, where string) (map[string]any, error) {
 		}
 		shots = append(shots, shot)
 	}
-	low, high := domain.ReferenceUnitDurationRange()
+	low, high := script.ReferenceUnitDurationRange()
 	duration, err := step1RequireIntRange(unit, "duration_seconds", low, high, where)
 	if err != nil {
 		return nil, err
@@ -393,7 +394,7 @@ func validateReferenceResource(raw any, where string) (map[string]any, error) {
 // 正文改了引用而 references 停留旧值，step2 会以陈旧的参考图映射生成。只做机械派生，
 // 不校验能力上限 / 引用完整性（未登记的名称静默落入 missing、不进 references）——与 web
 // 审阅对 drama / narration 只做结构校验同口径。
-func rederiveUnitReferences(units any, project *domain.ProjectFile) {
+func rederiveUnitReferences(units any, project *project.ProjectFile) {
 	list, ok := units.([]any)
 	if !ok {
 		return

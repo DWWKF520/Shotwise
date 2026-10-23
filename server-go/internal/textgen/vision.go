@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
 	"gorm.io/gorm"
@@ -90,7 +90,7 @@ type VisionGenerator interface {
 
 // NewVisionGenerator 按项目解析出的文本 provider 构造视觉生成器。
 // 解析到的 provider 不支持图像输入时返回 ErrUnsupportedProvider。
-func NewVisionGenerator(ctx context.Context, db *gorm.DB, project *domain.ProjectFile, task TaskType) (VisionGenerator, error) {
+func NewVisionGenerator(ctx context.Context, db *gorm.DB, project *project.ProjectFile, task TaskType) (VisionGenerator, error) {
 	gen, err := NewGenerator(ctx, db, project, task)
 	if err != nil {
 		return nil, err

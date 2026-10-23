@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
-func refProject() *domain.ProjectFile {
-	characters := domain.AssetBucket{"李明": domain.NewAssetEntry()}
-	return &domain.ProjectFile{Characters: characters}
+func refProject() *project.ProjectFile {
+	characters := project.AssetBucket{"李明": project.NewAssetEntry()}
+	return &project.ProjectFile{Characters: characters}
 }
 
 func TestParsePromptAndRenderShotsTextRoundTrip(t *testing.T) {

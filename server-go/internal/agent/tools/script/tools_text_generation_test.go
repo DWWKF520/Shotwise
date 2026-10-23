@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 	servicescript "github.com/shotwise/shotwise/internal/service/script"
 )
@@ -18,7 +18,7 @@ import (
 type fakeTextGenCaps struct{ durations []int }
 
 func (f fakeTextGenCaps) VideoCapabilitiesForProject(
-	context.Context, *domain.ProjectFile,
+	context.Context, *project.ProjectFile,
 ) (config.VideoCapabilityView, error) {
 	return config.VideoCapabilityView{ProviderID: "p", ModelID: "m", SupportedDurations: f.durations}, nil
 }
@@ -37,12 +37,12 @@ func (f *fakeGenerationProjects) SaveScript(_, scriptFilename string, script map
 }
 
 func staticGenFactory(out string) servicescript.TextCompletionFactory {
-	return func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
+	return func(context.Context, *project.ProjectFile) (servicescript.TextCompletion, error) {
 		return &fakeTextCompletion{outputs: []string{out}}, nil
 	}
 }
 
-func newTextGenProject(t *testing.T, contentMode string, pf *domain.ProjectFile) (*fakeGenerationProjects, string) {
+func newTextGenProject(t *testing.T, contentMode string, pf *project.ProjectFile) (*fakeGenerationProjects, string) {
 	t.Helper()
 	dir := t.TempDir()
 	for _, sub := range []string{"source", "scripts"} {
@@ -57,7 +57,7 @@ func newTextGenProject(t *testing.T, contentMode string, pf *domain.ProjectFile)
 }
 
 func TestSplitNarrationSegmentsTool(t *testing.T) {
-	pf := &domain.ProjectFile{}
+	pf := &project.ProjectFile{}
 	projects, dir := newTextGenProject(t, "narration", pf)
 	novel := "他推开门。风灌了进来。"
 	if err := os.WriteFile(filepath.Join(dir, "source", "episode_1.txt"), []byte(novel), 0o644); err != nil {
@@ -85,7 +85,7 @@ func TestSplitNarrationSegmentsTool(t *testing.T) {
 }
 
 func TestNormalizeDramaScriptTool(t *testing.T) {
-	pf := &domain.ProjectFile{}
+	pf := &project.ProjectFile{}
 	projects, dir := newTextGenProject(t, "drama", pf)
 	if err := os.WriteFile(filepath.Join(dir, "source", "episode_1.txt"), []byte("他推开门。"), 0o644); err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestNormalizeDramaScriptTool(t *testing.T) {
 }
 
 func TestConfirmScriptReviewTool(t *testing.T) {
-	pf := &domain.ProjectFile{Episodes: []domain.EpisodeMeta{{Episode: 1, ScriptFile: "scripts/episode_1.json"}}}
+	pf := &project.ProjectFile{Episodes: []project.EpisodeMeta{{Episode: 1, ScriptFile: "scripts/episode_1.json"}}}
 	projects, dir := newTextGenProject(t, "narration", pf)
 	step1 := filepath.Join(service.EpisodeDraftsDir(dir, 1), "step1_segments.json")
 	if err := os.MkdirAll(filepath.Dir(step1), 0o755); err != nil {
@@ -138,7 +138,7 @@ func TestConfirmScriptReviewTool(t *testing.T) {
 }
 
 func TestGenerateEpisodeScriptToolNarration(t *testing.T) {
-	pf := &domain.ProjectFile{Episodes: []domain.EpisodeMeta{{Episode: 1, ScriptFile: "scripts/episode_1.json"}}}
+	pf := &project.ProjectFile{Episodes: []project.EpisodeMeta{{Episode: 1, ScriptFile: "scripts/episode_1.json"}}}
 	projects, dir := newTextGenProject(t, "narration", pf)
 	// step1 片段表。
 	step1 := filepath.Join(service.EpisodeDraftsDir(dir, 1), "step1_segments.json")
@@ -193,7 +193,7 @@ func TestGenerateEpisodeScriptToolNarration(t *testing.T) {
 }
 
 func TestGenerateEpisodeScriptToolReferenceNotMigrated(t *testing.T) {
-	pf := &domain.ProjectFile{GenerationMode: string(domain.GenerationReferenceVideo)}
+	pf := &project.ProjectFile{GenerationMode: string(project.GenerationReferenceVideo)}
 	projects, dir := newTextGenProject(t, "narration", pf)
 	step1 := filepath.Join(service.EpisodeDraftsDir(dir, 1), "step1_reference_units.json")
 	if err := os.MkdirAll(filepath.Dir(step1), 0o755); err != nil {

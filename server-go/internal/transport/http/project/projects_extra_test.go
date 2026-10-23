@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/service"
@@ -27,7 +27,7 @@ type projectExtraFixture struct {
 	store  *service.ProjectStore
 }
 
-func newProjectExtraFixture(t *testing.T, contentMode domain.ContentMode) projectExtraFixture {
+func newProjectExtraFixture(t *testing.T, contentMode project.ContentMode) projectExtraFixture {
 	t.Helper()
 	gdb, dialect, err := db.Open("sqlite://"+filepath.Join(t.TempDir(), "t.db"), logger.Silent)
 	if err != nil {
@@ -42,13 +42,13 @@ func newProjectExtraFixture(t *testing.T, contentMode domain.ContentMode) projec
 		}
 	})
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", contentMode, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", contentMode, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
 		pf.Episodes = append(pf.Episodes,
-			domain.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"},
-			domain.EpisodeMeta{Episode: 2, ScriptFile: "scripts/episode_2.json"},
+			project.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"},
+			project.EpisodeMeta{Episode: 2, ScriptFile: "scripts/episode_2.json"},
 		)
 		return nil
 	}); err != nil {
@@ -108,7 +108,7 @@ func (f projectExtraFixture) do(t *testing.T, method, path string, body any) (in
 
 // TestProjectScriptRoundtrip 校验剧本读取与 404。
 func TestProjectScriptRoundtrip(t *testing.T) {
-	f := newProjectExtraFixture(t, domain.ContentDrama)
+	f := newProjectExtraFixture(t, project.ContentDrama)
 	status, body := f.do(t, http.MethodGet, "/api/v1/projects/p1/scripts/episode_1.json", nil)
 	if status != http.StatusOK || body["script"] == nil {
 		t.Fatalf("status = %d body=%v", status, body)
@@ -121,7 +121,7 @@ func TestProjectScriptRoundtrip(t *testing.T) {
 
 // TestScriptScenePatchWhitelist 校验 drama 场景 PATCH：白名单内字段生效、未命中 404。
 func TestScriptScenePatchWhitelist(t *testing.T) {
-	f := newProjectExtraFixture(t, domain.ContentDrama)
+	f := newProjectExtraFixture(t, project.ContentDrama)
 	script := map[string]any{
 		"content_mode": "drama",
 		"episode":      1,
@@ -165,7 +165,7 @@ func TestScriptScenePatchWhitelist(t *testing.T) {
 
 // TestScriptShotPatchAndReorder 校验 ad 镜头 PATCH 与全排列重排。
 func TestScriptShotPatchAndReorder(t *testing.T) {
-	f := newProjectExtraFixture(t, domain.ContentAd)
+	f := newProjectExtraFixture(t, project.ContentAd)
 	script := map[string]any{
 		"content_mode": "ad",
 		"shots": []any{
@@ -210,7 +210,7 @@ func TestScriptShotPatchAndReorder(t *testing.T) {
 
 // TestEpisodeDeleteRenumbersDisplay 校验删集：取消计数、剩余集重排显示编号、剧本入已删清单。
 func TestEpisodeDeleteRenumbersDisplay(t *testing.T) {
-	f := newProjectExtraFixture(t, domain.ContentNarration)
+	f := newProjectExtraFixture(t, project.ContentNarration)
 	status, body := f.do(t, http.MethodDelete, "/api/v1/projects/p1/episodes/1", nil)
 	if status != http.StatusOK {
 		t.Fatalf("status = %d body=%v", status, body)
@@ -246,7 +246,7 @@ func TestEpisodeDeleteRenumbersDisplay(t *testing.T) {
 
 // TestEpisodeDisplayNumberMove 校验显示编号调整。
 func TestEpisodeDisplayNumberMove(t *testing.T) {
-	f := newProjectExtraFixture(t, domain.ContentNarration)
+	f := newProjectExtraFixture(t, project.ContentNarration)
 	status, _ := f.do(t, http.MethodPatch, "/api/v1/projects/p1/episodes/2/display-number",
 		map[string]any{"display_episode": 1})
 	if status != http.StatusOK {
@@ -267,7 +267,7 @@ func TestEpisodeDisplayNumberMove(t *testing.T) {
 
 // TestEpisodeTitleSyncsMirror 校验标题改的是剧本顶层并镜像回 project.json。
 func TestEpisodeTitleSyncsMirror(t *testing.T) {
-	f := newProjectExtraFixture(t, domain.ContentNarration)
+	f := newProjectExtraFixture(t, project.ContentNarration)
 	status, body := f.do(t, http.MethodPatch, "/api/v1/projects/p1/episodes/1", map[string]any{
 		"title": "新标题",
 	})
@@ -297,7 +297,7 @@ func TestEpisodeTitleSyncsMirror(t *testing.T) {
 
 // TestOverviewPatch 校验概述字段级覆盖。
 func TestOverviewPatch(t *testing.T) {
-	f := newProjectExtraFixture(t, domain.ContentNarration)
+	f := newProjectExtraFixture(t, project.ContentNarration)
 	status, body := f.do(t, http.MethodPatch, "/api/v1/projects/p1/overview", map[string]any{
 		"synopsis": "新梗概",
 	})
@@ -319,7 +319,7 @@ func TestOverviewPatch(t *testing.T) {
 
 // TestSegmentPatchRequiresNarration 校验 segments PATCH 的模式守卫。
 func TestSegmentPatchRequiresNarration(t *testing.T) {
-	f := newProjectExtraFixture(t, domain.ContentDrama)
+	f := newProjectExtraFixture(t, project.ContentDrama)
 	status, _ := f.do(t, http.MethodPatch, "/api/v1/projects/p1/segments/E1S1", map[string]any{
 		"script_file": "episode_1.json", "duration_seconds": 9,
 	})

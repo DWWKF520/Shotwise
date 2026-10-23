@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -16,7 +16,7 @@ import (
 // videoResolutionReader 是可选能力：能解析项目生效分辨率的解析器据其收窄时长档位。
 // *config.Resolver 满足；测试替身未实现时跳过分辨率联动约束。
 type videoResolutionReader interface {
-	ResolveResolution(ctx context.Context, project *domain.ProjectFile, providerID, modelID string) (string, error)
+	ResolveResolution(ctx context.Context, project *project.ProjectFile, providerID, modelID string) (string, error)
 }
 
 // FetchVideoDurations 解析项目当前视频身份的 (default_duration, supported_durations)。
@@ -25,7 +25,7 @@ type videoResolutionReader interface {
 // 未收窄的集合交给 LLM 会产出执行期必然被拒的时长。default_duration 是用户配置的原样值，
 // 成员性由调用方按各自口径判定。durations 为空时报错（调用方决定是硬错还是软回退）。
 func FetchVideoDurations(
-	ctx context.Context, reader VideoCapabilityReader, project *domain.ProjectFile,
+	ctx context.Context, reader VideoCapabilityReader, project *project.ProjectFile,
 ) (*int, []int, error) {
 	if reader == nil || project == nil {
 		return nil, nil, fmt.Errorf("video capabilities not configured")
@@ -46,7 +46,7 @@ func FetchVideoDurations(
 // 的视频侧口径）：交集为空时返回原候选——空集说明声明自相矛盾，清空会让上游拿不到任何可用时长。
 // 型号不在注册表（自定义供应商）时不施加联动约束。
 func constrainDurationsByResolution(
-	project *domain.ProjectFile, view config.VideoCapabilityView, candidates []int,
+	project *project.ProjectFile, view config.VideoCapabilityView, candidates []int,
 ) []int {
 	if len(candidates) == 0 {
 		return candidates

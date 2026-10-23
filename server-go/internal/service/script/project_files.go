@@ -11,16 +11,16 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -218,7 +218,7 @@ func (s *FileService) sourcePath(projectName, filename string) (string, error) {
 
 // DraftStepFile 是该模式在指定步骤应使用的目标文件名（ad 无 step1 → ok=false）。
 func DraftStepFile(contentMode, generationMode string, stepNum int) (string, bool) {
-	if contentMode == string(domain.ContentAd) {
+	if contentMode == string(project.ContentAd) {
 		return "", false
 	}
 	if stepNum != 1 {
@@ -422,7 +422,7 @@ func (s *FileService) DeleteCharacterReferenceAudio(projectName, charName string
 	if err != nil {
 		return err
 	}
-	bucket, ok := pf.BucketRef(domain.AssetCharacter)
+	bucket, ok := pf.BucketRef(project.AssetCharacter)
 	if !ok || bucket == nil {
 		return &service.MediaAssetNotFoundError{MediaAssetID: charName}
 	}
@@ -437,8 +437,8 @@ func (s *FileService) DeleteCharacterReferenceAudio(projectName, charName string
 			_ = os.Remove(stale)
 		}
 	}
-	return s.store.Update(projectName, func(update *domain.ProjectFile) error {
-		updateBucket, ok := update.BucketRef(domain.AssetCharacter)
+	return s.store.Update(projectName, func(update *project.ProjectFile) error {
+		updateBucket, ok := update.BucketRef(project.AssetCharacter)
 		if !ok || updateBucket == nil {
 			return service.ErrResourceMissingInScript
 		}

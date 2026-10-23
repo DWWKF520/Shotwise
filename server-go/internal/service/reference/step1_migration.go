@@ -12,12 +12,13 @@
 package reference
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"log/slog"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	"github.com/shotwise/shotwise/internal/domain/script"
 )
 
 // legacyShotDurationField 与 legacyUnitDurationField 是迁移会剥掉的镜头级字段与 unit 级退役字段。
@@ -72,7 +73,7 @@ func MigrateUnitDurations(units any, supportedDurations []int) (bool, []service.
 
 	changed := false
 	var warnings []service.MigrationWarning
-	low, high := domain.ReferenceUnitDurationRange()
+	low, high := script.ReferenceUnitDurationRange()
 
 	for _, raw := range list {
 		unit, ok := raw.(map[string]any)
@@ -174,7 +175,7 @@ func RenderMigrationWarnings(warnings []service.MigrationWarning) string {
 // 改过）时不动，返回 false，照常按待审处理。
 //
 // 仅适用于迁移无 warnings 的情形（纯格式收编，时长取值未被 clamp 改写）。
-func CarryConfirmationThroughMigration(pf *domain.ProjectFile, episode int, before, after string) bool {
+func CarryConfirmationThroughMigration(pf *project.ProjectFile, episode int, before, after string) bool {
 	stored := service.StoredReview(pf, episode)
 	if stored == nil || stored.Fingerprint != before {
 		return false
@@ -186,7 +187,7 @@ func CarryConfirmationThroughMigration(pf *domain.ProjectFile, episode int, befo
 // ScriptGenStore 实现方都满足）。
 type step1MigrationStore interface {
 	Dir(name string) (string, error)
-	Update(name string, mutate func(*domain.ProjectFile) error) error
+	Update(name string, mutate func(*project.ProjectFile) error) error
 }
 
 // MigrateStep1DraftInPlace 对已读入内存的 step1 草稿就地做一次性时长收编迁移并回写
@@ -212,7 +213,7 @@ type step1MigrationStore interface {
 func MigrateStep1DraftInPlace(
 	store step1MigrationStore, projectName string,
 	content map[string]any, episode int, supportedDurations []int,
-) (*domain.ProjectFile, []service.MigrationWarning, error) {
+) (*project.ProjectFile, []service.MigrationWarning, error) {
 	if content == nil {
 		return nil, nil, nil
 	}
@@ -226,12 +227,12 @@ func MigrateStep1DraftInPlace(
 		return nil, nil, nil
 	}
 
-	var updated *domain.ProjectFile
+	var updated *project.ProjectFile
 	if len(warnings) > 0 {
 		// clamp 改写了实际时长取值，是内容变更：不平移确认。已存过指纹的分集不插手——
 		// 确认的是迁移前内容时指纹已自然失配，确认的是别的内容时 review_status 本就判
 		// pending_review；无指纹的 grandfather 存量集显式记下迁移前指纹使其退回待审。
-		err := store.Update(projectName, func(pf *domain.ProjectFile) error {
+		err := store.Update(projectName, func(pf *project.ProjectFile) error {
 			updated = pf
 			stored := service.StoredReview(pf, episode)
 			if stored == nil || stored.Fingerprint == "" {
@@ -248,7 +249,7 @@ func MigrateStep1DraftInPlace(
 		}
 	} else {
 		after := service.ContentFingerprintOfData(content)
-		err := store.Update(projectName, func(pf *domain.ProjectFile) error {
+		err := store.Update(projectName, func(pf *project.ProjectFile) error {
 			updated = pf
 			CarryConfirmationThroughMigration(pf, episode, before, after)
 			return nil

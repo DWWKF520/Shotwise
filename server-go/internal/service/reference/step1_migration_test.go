@@ -6,7 +6,7 @@ import (
 	"github.com/shotwise/shotwise/internal/service"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/script"
 )
 
 // legacyStep1Unit 构造一份收编前形态的 unit（per-shot 时长 + duration_override 标记）。
@@ -80,7 +80,7 @@ func TestMigrateUnitDurationsFallsBackToShotSumWhenDirty(t *testing.T) {
 func TestMigrateUnitDurationsClampsOutOfRange(t *testing.T) {
 	unit := legacyStep1Unit("E1U1", []int{15, 15, 15, 15}, float64(9999))
 	_, warnings := MigrateUnitDurations([]any{unit}, nil)
-	_, high := domain.ReferenceUnitDurationRange()
+	_, high := script.ReferenceUnitDurationRange()
 	if service.IntValueOrZero(unit["duration_seconds"]) != high {
 		t.Fatalf("duration_seconds = %v, want clamp 到区间上界 %d", unit["duration_seconds"], high)
 	}

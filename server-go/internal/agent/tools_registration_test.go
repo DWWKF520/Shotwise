@@ -1,19 +1,20 @@
 package agent
 
 import (
-	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"context"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
-	"github.com/shotwise/shotwise/internal/service/media"
 	"github.com/shotwise/shotwise/internal/service/asset"
+	"github.com/shotwise/shotwise/internal/service/media"
 )
 
 // 本文件验证「37 个工具在依赖齐备时全部注册」——迁移完成的收口证据。
@@ -23,12 +24,12 @@ import (
 // ScriptReviewProjects / ProjectWriter / RelationProjects / EpisodeStore。
 type regProjects struct {
 	dir string
-	pf  *domain.ProjectFile
+	pf  *project.ProjectFile
 }
 
-func (p *regProjects) Get(string) (*domain.ProjectFile, error) { return p.pf, nil }
-func (p *regProjects) Dir(string) (string, error)              { return p.dir, nil }
-func (p *regProjects) Update(_ string, mutate func(*domain.ProjectFile) error) error {
+func (p *regProjects) Get(string) (*project.ProjectFile, error) { return p.pf, nil }
+func (p *regProjects) Dir(string) (string, error)               { return p.dir, nil }
+func (p *regProjects) Update(_ string, mutate func(*project.ProjectFile) error) error {
 	return mutate(p.pf)
 }
 func (p *regProjects) ReadScriptJSON(_, _ string) (map[string]any, error) {
@@ -41,22 +42,22 @@ func (p *regProjects) ScriptFileNames(string) ([]string, error)       { return n
 type regVideoCaps struct{}
 
 func (regVideoCaps) VideoCapabilitiesForProject(
-	context.Context, *domain.ProjectFile,
+	context.Context, *project.ProjectFile,
 ) (config.VideoCapabilityView, error) {
 	return config.VideoCapabilityView{ProviderID: "p", ModelID: "m", SupportedDurations: []int{4, 6, 8}}, nil
 }
 
 func (regVideoCaps) VideoCapabilitiesForProjectBucket(
-	context.Context, *domain.ProjectFile, provider.VideoBucket,
+	context.Context, *project.ProjectFile, provider.VideoBucket,
 ) (config.VideoCapabilityView, error) {
 	return config.VideoCapabilityView{ProviderID: "p", ModelID: "m", SupportedDurations: []int{4, 6, 8}}, nil
 }
 
-func (regVideoCaps) VideoGenerateAudioForProject(context.Context, *domain.ProjectFile) (bool, error) {
+func (regVideoCaps) VideoGenerateAudioForProject(context.Context, *project.ProjectFile) (bool, error) {
 	return true, nil
 }
 
-func (regVideoCaps) ResolveResolution(context.Context, *domain.ProjectFile, string, string) (string, error) {
+func (regVideoCaps) ResolveResolution(context.Context, *project.ProjectFile, string, string) (string, error) {
 	return "", nil
 }
 
@@ -64,12 +65,12 @@ func (regVideoCaps) ResolveResolution(context.Context, *domain.ProjectFile, stri
 type regImageCaps struct{}
 
 func (regImageCaps) ResolveImageBackend(
-	context.Context, *domain.ProjectFile, map[string]any, config.ImageCapability,
+	context.Context, *project.ProjectFile, map[string]any, config.ImageCapability,
 ) (config.ProviderModel, error) {
 	return config.ProviderModel{ProviderID: "p", ModelID: "m"}, nil
 }
 
-func (regImageCaps) ResolveResolution(context.Context, *domain.ProjectFile, string, string) (string, error) {
+func (regImageCaps) ResolveResolution(context.Context, *project.ProjectFile, string, string) (string, error) {
 	return "", nil
 }
 
@@ -104,19 +105,19 @@ func (regScripts) UpdateScript(_ string, _ string, mutate func(map[string]any) e
 
 type regRenamer struct{}
 
-func (regRenamer) Rename(string, domain.AssetKind, string, string, bool) (asset.RenameReport, error) {
+func (regRenamer) Rename(string, project.AssetKind, string, string, bool) (asset.RenameReport, error) {
 	return asset.RenameReport{}, nil
 }
 
 type regSplitter struct{}
 
-func (regSplitter) ApplySplit(context.Context, string, *domain.GridGeneration) (service.GridSplitResult, error) {
+func (regSplitter) ApplySplit(context.Context, string, *grid.GridGeneration) (service.GridSplitResult, error) {
 	return service.GridSplitResult{}, nil
 }
 
 type regAssets struct{}
 
-func (regAssets) Upsert(string, domain.AssetKind, string, map[string]any) (bool, error) {
+func (regAssets) Upsert(string, project.AssetKind, string, map[string]any) (bool, error) {
 	return false, nil
 }
 
@@ -158,13 +159,13 @@ func TestAllExpectedToolsRegistered(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "p1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pf := &domain.ProjectFile{Title: "t", ContentMode: "narration", Style: "s", GenerationMode: "storyboard"}
+	pf := &project.ProjectFile{Title: "t", ContentMode: "narration", Style: "s", GenerationMode: "storyboard"}
 	projects := &regProjects{dir: filepath.Join(dir, "p1"), pf: pf}
 
 	rt, err := NewRuntime(context.Background(), ModelConfig{}, dir, nil, nil,
 		WithAssetProjects(projects),
 		WithVideoCapabilities(regVideoCaps{}),
-		WithRelationAnalysis(func(context.Context, *domain.ProjectFile) (RelationTextGenerator, error) {
+		WithRelationAnalysis(func(context.Context, *project.ProjectFile) (RelationTextGenerator, error) {
 			return regGenerator{}, nil
 		}, projects),
 		WithProjectWriters(regAssets{}, projects),
@@ -174,14 +175,14 @@ func TestAllExpectedToolsRegistered(t *testing.T) {
 		WithGenerationTools(&regQueue{}, projects),
 		WithImageEditTools(&regQueue{}, projects, regImageCaps{}),
 		WithGridTools(&regQueue{}, projects, regImageCaps{}, regSplitter{}),
-		WithEpisodePlanning(projects, func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
+		WithEpisodePlanning(projects, func(context.Context, *project.ProjectFile) (servicescript.TextCompletion, error) {
 			return regGenerator{}, nil
 		}),
-		WithTextGenerationTools(func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
+		WithTextGenerationTools(func(context.Context, *project.ProjectFile) (servicescript.TextCompletion, error) {
 			return regGenerator{}, nil
 		}, projects),
 		WithScriptReviewTools(projects),
-		WithReferenceTools(func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
+		WithReferenceTools(func(context.Context, *project.ProjectFile) (servicescript.TextCompletion, error) {
 			return regGenerator{}, nil
 		}, projects, regVideoCaps{}),
 		WithVideoGeneration(&regQueue{}, projects, regVideoCaps{}, regScripts{}),

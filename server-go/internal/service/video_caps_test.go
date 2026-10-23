@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -22,7 +22,7 @@ type fakeVideoCapsResolver struct {
 }
 
 func (f *fakeVideoCapsResolver) VideoCapabilitiesForProjectBucket(
-	_ context.Context, _ *domain.ProjectFile, bucket provider.VideoBucket,
+	_ context.Context, _ *project.ProjectFile, bucket provider.VideoBucket,
 ) (config.VideoCapabilityView, error) {
 	if f.viewErr != nil {
 		return config.VideoCapabilityView{}, f.viewErr
@@ -35,11 +35,11 @@ func (f *fakeVideoCapsResolver) VideoCapabilitiesForProjectBucket(
 	return f.view, nil
 }
 
-func (f *fakeVideoCapsResolver) VideoGenerateAudioForProject(context.Context, *domain.ProjectFile) (bool, error) {
+func (f *fakeVideoCapsResolver) VideoGenerateAudioForProject(context.Context, *project.ProjectFile) (bool, error) {
 	return f.generateAu, f.audioErr
 }
 
-func (f *fakeVideoCapsResolver) ResolveResolution(context.Context, *domain.ProjectFile, string, string) (string, error) {
+func (f *fakeVideoCapsResolver) ResolveResolution(context.Context, *project.ProjectFile, string, string) (string, error) {
 	return f.resolution, nil
 }
 
@@ -137,13 +137,13 @@ func TestUnitScriptDurationDirtyData(t *testing.T) {
 
 func TestDefaultUnitDurationPrefersProjectPreference(t *testing.T) {
 	preferred := 6
-	pf := &domain.ProjectFile{DefaultDuration: &preferred}
+	pf := &project.ProjectFile{DefaultDuration: &preferred}
 	dctx := ProjectDurationContext{SupportedDurations: []int{4, 6, 8}, ProviderID: "gemini-aistudio", ModelName: "veo-3.1-generate-preview"}
 	if got := DefaultUnitDuration(dctx, pf, false); got != 6 {
 		t.Fatalf("项目偏好应被采信: %d", got)
 	}
 	drifted := 5
-	pf2 := &domain.ProjectFile{DefaultDuration: &drifted}
+	pf2 := &project.ProjectFile{DefaultDuration: &drifted}
 	if got := DefaultUnitDuration(dctx, pf2, false); got != 4 {
 		t.Fatalf("偏好非档位成员应退到最短档: %d", got)
 	}
@@ -154,7 +154,7 @@ func TestDefaultUnitDurationPrefersProjectPreference(t *testing.T) {
 }
 
 func TestAssertAudioSwitchSupported(t *testing.T) {
-	project := &domain.ProjectFile{ContentMode: "drama", GenerationMode: "reference_video"}
+	project := &project.ProjectFile{ContentMode: "drama", GenerationMode: "reference_video"}
 	resolver := &fakeVideoCapsResolver{view: veoView(), generateAu: false}
 	err := AssertAudioSwitchSupported(context.Background(), resolver, project, provider.BucketR2V)
 	var conflict *AudioSwitchConflictError
@@ -168,7 +168,7 @@ func TestAssertAudioSwitchSupported(t *testing.T) {
 }
 
 func TestResolveProjectIsSilent(t *testing.T) {
-	project := &domain.ProjectFile{ContentMode: "drama", GenerationMode: "storyboard"}
+	project := &project.ProjectFile{ContentMode: "drama", GenerationMode: "storyboard"}
 	// 本集关闭音频 → 无声。
 	resolver := &fakeVideoCapsResolver{view: veoView(), generateAu: false}
 	if !ResolveProjectIsSilent(context.Background(), resolver, project) {
@@ -214,9 +214,9 @@ func TestVideoPromptToYAMLOrdersSections(t *testing.T) {
 }
 
 func TestBuildDramaVideoPromptInjectsVoiceProfiles(t *testing.T) {
-	entry := domain.NewAssetEntry()
+	entry := project.NewAssetEntry()
 	entry.SetString("voice_style", "低沉")
-	bucket := domain.AssetBucket{"阿明": entry}
+	bucket := project.AssetBucket{"阿明": entry}
 	prompt := map[string]any{"action": "说话", "voice_profiles": []any{map[string]any{"Speaker": "残留"}}}
 	utterances := []any{map[string]any{"kind": "dialogue", "speaker": "阿明", "text": "你好"},
 		map[string]any{"kind": "voiceover", "text": "旁白"}}

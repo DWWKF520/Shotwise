@@ -15,7 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 )
@@ -37,7 +37,7 @@ func NewCreationSkillCatalog(gdb *gorm.DB, workflows *WorkflowService) *Creation
 }
 
 func catalogJSON(value any) string {
-	encoded, err := domain.WorkflowCanonicalJSON(value)
+	encoded, err := creation.WorkflowCanonicalJSON(value)
 	if err != nil {
 		return "{}"
 	}
@@ -71,7 +71,7 @@ func catalogStringList(raw string) []string {
 }
 
 // manifestPayload 由内置清单算出可比对载荷。
-func manifestPayload(skill *domain.CreationSkillDefinition) map[string]any {
+func manifestPayload(skill *creation.CreationSkillDefinition) map[string]any {
 	version := skill.LatestVersion
 	compatibility := version.Compatibility
 	var gridStoryboards any
@@ -159,11 +159,11 @@ func storedPayload(
 }
 
 func payloadEqual(left, right map[string]any) bool {
-	encodedLeft, err := domain.WorkflowCanonicalJSON(left)
+	encodedLeft, err := creation.WorkflowCanonicalJSON(left)
 	if err != nil {
 		return false
 	}
-	encodedRight, err := domain.WorkflowCanonicalJSON(right)
+	encodedRight, err := creation.WorkflowCanonicalJSON(right)
 	if err != nil {
 		return false
 	}
@@ -175,7 +175,7 @@ func skillFromRecords(
 	definition *repository.CreationSkillDefinition,
 	version *repository.CreationSkillVersion,
 	compatibility *repository.CreationSkillCompatibility,
-) *domain.CreationSkillDefinition {
+) *creation.CreationSkillDefinition {
 	var gridStoryboards map[bool]bool
 	if compatibility.GridStoryboardsJSON != nil {
 		gridStoryboards = map[bool]bool{}
@@ -190,9 +190,9 @@ func skillFromRecords(
 		scopes[item] = true
 	}
 	if len(scopes) == 0 {
-		scopes[domain.CreationScopeProject] = true
+		scopes[creation.CreationScopeProject] = true
 	}
-	skillVersion := domain.CreationSkillVersion{
+	skillVersion := creation.CreationSkillVersion{
 		ID:                            version.ID,
 		SkillID:                       version.SkillID,
 		Version:                       version.Version,
@@ -200,7 +200,7 @@ func skillFromRecords(
 		Summary:                       version.Summary,
 		Category:                      version.Category,
 		WorkflowTemplateRevisionAlias: version.WorkflowTemplateRevisionAlias,
-		Compatibility: domain.NewCreationSkillCompatibility(
+		Compatibility: creation.NewCreationSkillCompatibility(
 			stringSetFromList(catalogStringList(compatibility.ContentModesJSON)),
 			stringSetFromList(catalogStringList(compatibility.GenerationModesJSON)),
 			stringSetFromList(catalogStringList(compatibility.RequiredInputsJSON)),
@@ -212,7 +212,7 @@ func skillFromRecords(
 		EstimatedCostHint:  version.EstimatedCostHint,
 		WorkflowRevisionID: version.WorkflowRevisionID,
 	}
-	return &domain.CreationSkillDefinition{
+	return &creation.CreationSkillDefinition{
 		ID:            definition.ID,
 		Slug:          definition.Slug,
 		LatestVersion: skillVersion,
@@ -232,7 +232,7 @@ func stringSetFromList(values []string) map[string]bool {
 // GetPersistedCreationSkillVersion 解析供计划编译使用的已发布版本。
 func (c *CreationSkillCatalog) GetPersistedCreationSkillVersion(
 	ctx context.Context, skillVersionID string,
-) (*domain.CreationSkillDefinition, *domain.CreationSkillVersion, error) {
+) (*creation.CreationSkillDefinition, *creation.CreationSkillVersion, error) {
 	var version repository.CreationSkillVersion
 	if err := c.db.WithContext(ctx).Where("id = ?", skillVersionID).Take(&version).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -279,7 +279,7 @@ func (c *CreationSkillCatalog) GetPersistedCreationSkillVersion(
 
 // ensureOfficialWorkflowRevision 解析或发布官方 Skill 版本绑定的不可变工作流 revision。
 func (c *CreationSkillCatalog) ensureOfficialWorkflowRevision(
-	ctx context.Context, tx *gorm.DB, skill *domain.CreationSkillDefinition, currentRevisionID string,
+	ctx context.Context, tx *gorm.DB, skill *creation.CreationSkillDefinition, currentRevisionID string,
 ) (string, error) {
 	if currentRevisionID != "" && !strings.HasPrefix(currentRevisionID, "official:") {
 		var revision repository.WorkflowRevision
@@ -369,9 +369,9 @@ func intToString(value int64) string {
 func (c *CreationSkillCatalog) SyncOfficialCreationSkills(ctx context.Context) (int, error) {
 	changed := 0
 	err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		manifestByID := map[string]*domain.CreationSkillDefinition{}
-		for i := range domain.OfficialCreationSkills {
-			manifestByID[domain.OfficialCreationSkills[i].ID] = &domain.OfficialCreationSkills[i]
+		manifestByID := map[string]*creation.CreationSkillDefinition{}
+		for i := range creation.OfficialCreationSkills {
+			manifestByID[creation.OfficialCreationSkills[i].ID] = &creation.OfficialCreationSkills[i]
 		}
 		var existing []repository.CreationSkillDefinition
 		if err := tx.Where("official = ?", true).Find(&existing).Error; err != nil {
@@ -386,7 +386,7 @@ func (c *CreationSkillCatalog) SyncOfficialCreationSkills(ctx context.Context) (
 				changed++
 			}
 		}
-		for _, skill := range domain.OfficialCreationSkills {
+		for _, skill := range creation.OfficialCreationSkills {
 			current := skill
 			var definition repository.CreationSkillDefinition
 			err := tx.Where("id = ?", current.ID).Take(&definition).Error
@@ -586,7 +586,7 @@ func (c *CreationSkillCatalog) ListCreationSkills(
 		ver := version
 		comp := compatibility
 		skill := skillFromRecords(&def, &ver, &comp)
-		report := domain.CompatibilityReportWithAlternatives(
+		report := creation.CompatibilityReportWithAlternatives(
 			skill, project, availableInputs, alternativeSkillIDs(skill, project, availableInputs),
 		)
 		items = append(items, map[string]any{
@@ -610,11 +610,11 @@ func (c *CreationSkillCatalog) ListCreationSkills(
 
 // alternativeSkillIDs 列出当前项目可用的其它官方 Skill。
 func alternativeSkillIDs(
-	skill *domain.CreationSkillDefinition, project map[string]any, availableInputs map[string]bool,
+	skill *creation.CreationSkillDefinition, project map[string]any, availableInputs map[string]bool,
 ) []string {
 	alternatives := make([]string, 0)
-	for i := range domain.OfficialCreationSkills {
-		other := &domain.OfficialCreationSkills[i]
+	for i := range creation.OfficialCreationSkills {
+		other := &creation.OfficialCreationSkills[i]
 		if other.ID == skill.ID || !other.Active {
 			continue
 		}

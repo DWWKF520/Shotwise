@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
 )
@@ -249,13 +249,13 @@ func (b *minimaxImageBackend) submit(
 // 否则过小的短边会让 aspect_size 产出 <512 的边，随后对宽高独立夹取会破坏比例。结果被 8 整除、
 // 长边受 2048 收口，每边再经 clamp 夹进 [512, 2048] 兜底。
 func (b *minimaxImageBackend) resolveDimensions(req provider.ImageGenerationRequest) (int, int) {
-	short := domain.ResolutionToShortEdge(req.ImageSize, domain.ImageTierShortEdge, minimaxImageDefaultShort)
+	short := project.ResolutionToShortEdge(req.ImageSize, project.ImageTierShortEdge, minimaxImageDefaultShort)
 	if short < minimaxImageMinEdge {
 		short = minimaxImageMinEdge
 	}
 	maxLong := minimaxImageMaxEdge
 	ratio := minimaxImageMaxRatio
-	w, h := domain.AspectSize(req.AspectRatio, short, domain.AspectSizeOptions{
+	w, h := project.AspectSize(req.AspectRatio, short, project.AspectSizeOptions{
 		RoundTo:     minimaxImageRoundTo,
 		MaxLongEdge: &maxLong,
 		MaxRatio:    &ratio,

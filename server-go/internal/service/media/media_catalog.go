@@ -31,9 +31,9 @@ const (
 
 // 媒体来源取值。
 const (
-	MediaOriginUpload    = "upload"
-	MediaOriginEdited    = "edited"
-	MediaOriginImported  = "imported"
+	MediaOriginUpload   = "upload"
+	MediaOriginEdited   = "edited"
+	MediaOriginImported = "imported"
 )
 
 // 索引摘要状态取值。

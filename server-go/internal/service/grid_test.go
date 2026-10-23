@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -18,7 +20,7 @@ import (
 func newGridProject(t *testing.T) (*ProjectStore, string) {
 	t.Helper()
 	store := NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	dir, err := store.Dir("p1")
@@ -76,7 +78,7 @@ func TestGridManagerRejectsBadIDAndRoundTrips(t *testing.T) {
 		t.Fatal("非法 id 应被拒")
 	}
 
-	grid := domain.NewGridGeneration(1, "episode_1.json", []string{"E1S1"}, 2, 2, "grid_4", "p", "m", "16:9", nil)
+	grid := grid.NewGridGeneration(1, "episode_1.json", []string{"E1S1"}, 2, 2, "grid_4", "p", "m", "16:9", nil)
 	if err := manager.Save(grid); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +108,7 @@ func TestApplyGridSplitWritesCellsAndScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grid := domain.NewGridGeneration(1, "episode_1.json", []string{"E1S1", "E1S2"}, 2, 2, "grid_4", "p", "m", "16:9", nil)
+	grid := grid.NewGridGeneration(1, "episode_1.json", []string{"E1S1", "E1S2"}, 2, 2, "grid_4", "p", "m", "16:9", nil)
 	if err := manager.Save(grid); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +142,7 @@ func TestApplyGridSplitWritesCellsAndScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items, idField, _, err := domain.ResolveScriptItems(script)
+	items, idField, _, err := domainscript.ResolveScriptItems(script)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +189,7 @@ func TestApplyGridSplitSkipsMissingScenes(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 帧链里放进一个剧本已不存在的分镜（规划后 agent 改过剧本的情形）。
-	grid := domain.NewGridGeneration(1, "episode_1.json", []string{"E1S1", "E9S9"}, 2, 2, "grid_4", "p", "m", "16:9", nil)
+	grid := grid.NewGridGeneration(1, "episode_1.json", []string{"E1S1", "E9S9"}, 2, 2, "grid_4", "p", "m", "16:9", nil)
 	if err := manager.Save(grid); err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +219,7 @@ func TestApplyGridSplitRequiresComposite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grid := domain.NewGridGeneration(1, "episode_1.json", []string{"E1S1"}, 2, 2, "grid_4", "p", "m", "16:9", nil)
+	grid := grid.NewGridGeneration(1, "episode_1.json", []string{"E1S1"}, 2, 2, "grid_4", "p", "m", "16:9", nil)
 	if err := manager.Save(grid); err != nil {
 		t.Fatal(err)
 	}
@@ -225,4 +227,3 @@ func TestApplyGridSplitRequiresComposite(t *testing.T) {
 		t.Fatal("尚无联合图应报错")
 	}
 }
-

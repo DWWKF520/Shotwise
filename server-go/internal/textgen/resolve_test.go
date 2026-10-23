@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/migrations"
 )
@@ -60,7 +60,7 @@ func TestResolveTarget(t *testing.T) {
 	cases := []struct {
 		name         string
 		settings     map[string]string
-		project      *domain.ProjectFile
+		project      *project.ProjectFile
 		task         TaskType
 		wantProvider string
 		wantModel    string
@@ -91,19 +91,19 @@ func TestResolveTarget(t *testing.T) {
 		{
 			name:     "项目档位优先于全局档位",
 			settings: map[string]string{"text_backend_complex": "gemini-aistudio/g-complex"},
-			project:  &domain.ProjectFile{TextBackendComplex: "gemini-aistudio/p-tier"},
+			project:  &project.ProjectFile{TextBackendComplex: "gemini-aistudio/p-tier"},
 			task:     TaskScript, wantProvider: "gemini-aistudio", wantModel: "p-tier",
 		},
 		{
 			name:     "项目默认优先于全局档位",
 			settings: map[string]string{"text_backend_complex": "gemini-aistudio/g-complex"},
-			project:  &domain.ProjectFile{DefaultTextBackend: "gemini-aistudio/p-def"},
+			project:  &project.ProjectFile{DefaultTextBackend: "gemini-aistudio/p-def"},
 			task:     TaskScript, wantProvider: "gemini-aistudio", wantModel: "p-def",
 		},
 		{
 			name:     "项目裸 provider 取文本默认模型",
 			settings: map[string]string{"default_text_backend": "gemini-aistudio/g-def"},
-			project:  &domain.ProjectFile{TextBackendComplex: "gemini-aistudio"},
+			project:  &project.ProjectFile{TextBackendComplex: "gemini-aistudio"},
 			task:     TaskScript, wantProvider: "gemini-aistudio", wantModel: "gemini-3-flash-preview",
 		},
 		{
@@ -119,7 +119,7 @@ func TestResolveTarget(t *testing.T) {
 		{
 			name:     "项目层解析到非 gemini 供应商报错而非回落全局",
 			settings: map[string]string{"text_backend_complex": "gemini-aistudio/g-complex"},
-			project:  &domain.ProjectFile{TextBackendComplex: "dashscope/qwen-plus"},
+			project:  &project.ProjectFile{TextBackendComplex: "dashscope/qwen-plus"},
 			task:     TaskScript, wantErr: ErrUnsupportedProvider,
 		},
 		{

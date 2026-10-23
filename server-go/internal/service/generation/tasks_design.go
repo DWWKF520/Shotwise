@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -20,8 +21,8 @@ import (
 //
 // character 不在此路径：其后还需头像裁剪（lib/character_avatar），依赖未迁移的 infra/img，
 // 由调用方 fail loud。
-func (d *TaskDispatcher) executeDesign(ctx context.Context, task *repository.TaskData, kind domain.AssetKind) (map[string]any, error) {
-	spec, ok := domain.Spec(kind)
+func (d *TaskDispatcher) executeDesign(ctx context.Context, task *repository.TaskData, kind project.AssetKind) (map[string]any, error) {
+	spec, ok := project.Spec(kind)
 	if !ok {
 		return nil, fmt.Errorf("unknown asset kind: %s", kind)
 	}
@@ -50,13 +51,13 @@ func (d *TaskDispatcher) executeDesign(ctx context.Context, task *repository.Tas
 	var prompt string
 	var refs []provider.ReferenceImage
 	switch kind {
-	case domain.AssetScene:
-		prompt = domain.BuildScenePrompt(key, raw, pf.Style, "")
-	case domain.AssetProp:
-		prompt = domain.BuildPropPrompt(key, raw, pf.Style, "")
-	case domain.AssetProduct:
+	case project.AssetScene:
+		prompt = creation.BuildScenePrompt(key, raw, pf.Style, "")
+	case project.AssetProp:
+		prompt = creation.BuildPropPrompt(key, raw, pf.Style, "")
+	case project.AssetProduct:
 		// 产品 sheet 由实拍原图整理而来：原图全量作为 i2i 参考，缺失文件跳过。
-		prompt = domain.BuildProductPrompt(key, raw)
+		prompt = creation.BuildProductPrompt(key, raw)
 		refs = existingReferenceImages(projectDir, entry)
 	default:
 		return nil, fmt.Errorf("design task not supported for %s", kind)
@@ -95,7 +96,7 @@ func (d *TaskDispatcher) executeDesign(ctx context.Context, task *repository.Tas
 	}
 
 	// 写回 sheet 字段（对应 _update_asset_sheet）：项目锁内读改写，经「不更坏」校验落盘。
-	if err := d.store.Update(task.ProjectName, func(p *domain.ProjectFile) error {
+	if err := d.store.Update(task.ProjectName, func(p *project.ProjectFile) error {
 		b, ok := p.BucketRef(kind)
 		if !ok {
 			return fmt.Errorf("unknown asset kind: %s", kind)
@@ -115,7 +116,7 @@ func (d *TaskDispatcher) executeDesign(ctx context.Context, task *repository.Tas
 
 // existingReferenceImages 解析产品原图列表：逐项 SafeJoin，越界、缺失或指向目录的条目跳过；
 // 全部缺失时返回 nil（退化为纯文生图，与 Python _collect_product_reference_images 一致）。
-func existingReferenceImages(projectDir string, entry *domain.AssetEntry) []provider.ReferenceImage {
+func existingReferenceImages(projectDir string, entry *project.AssetEntry) []provider.ReferenceImage {
 	if entry == nil {
 		return nil
 	}

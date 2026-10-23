@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
@@ -59,7 +59,7 @@ func truncateUTF8Bytes(name string, maxBytes int) string {
 // 文本，voice = 用户选定音色），不回落全局旁白配置。生成产物须满足与参考音频上传同口径
 // 的校验（≤15MB、时长 2-10 秒）；校验失败任务落 failed，不静默放行不合规样本。
 func (d *TaskDispatcher) executeVoiceSampleTask(ctx context.Context, task *repository.TaskData) (map[string]any, error) {
-	characterName, err := domain.ValidateAssetName(task.ResourceID)
+	characterName, err := domainproject.ValidateAssetName(task.ResourceID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid character name: %s", task.ResourceID)
 	}
@@ -87,7 +87,7 @@ func (d *TaskDispatcher) executeVoiceSampleTask(ctx context.Context, task *repos
 	}
 	// 入队后、worker 取到任务前角色可能已被删除：执行前重新核实存在，避免花钱合成
 	// 一段没有归属的孤儿预览。
-	if characters, ok := project.BucketRef(domain.AssetCharacter); !ok {
+	if characters, ok := project.BucketRef(domainproject.AssetCharacter); !ok {
 		return nil, fmt.Errorf("character bucket missing")
 	} else if _, ok := characters.ResolveKey(characterName); !ok {
 		return nil, fmt.Errorf("character not found: %s", characterName)

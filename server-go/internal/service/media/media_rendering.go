@@ -17,12 +17,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/fs"
-	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 	"gorm.io/gorm"
 )
 
@@ -819,7 +819,7 @@ func (s *MediaRenderingService) ReviewFinalArtifact(ctx context.Context, planID,
 		timelineList = list
 	}
 	packaging := service.ParseJSONValue(revision.PackagingJSON)
-	expectedDuration, err := domain.ExpectedTimelineDuration(timelineList, packaging)
+	expectedDuration, err := media.ExpectedTimelineDuration(timelineList, packaging)
 	if err != nil {
 		return nil, err
 	}
@@ -833,19 +833,19 @@ func (s *MediaRenderingService) ReviewFinalArtifact(ctx context.Context, planID,
 	if !audioPresent {
 		audioCheck["severity"] = "info"
 	}
-	audioQuality, err := domain.AudioQualityCheck(audioPresent, silenceSegments, duration)
+	audioQuality, err := media.AudioQualityCheck(audioPresent, silenceSegments, duration)
 	if err != nil {
 		return nil, err
 	}
-	audioLevels := domain.AudioLevelCheck(audioMetrics)
+	audioLevels := media.AudioLevelCheck(audioMetrics)
 	if audioMetricsError != "" {
 		audioLevels["analysis_error"] = audioMetricsError
 	}
-	blackCheck, err := domain.ClassifyBlackFrameEdges(blackSegments, duration)
+	blackCheck, err := media.ClassifyBlackFrameEdges(blackSegments, duration)
 	if err != nil {
 		return nil, err
 	}
-	subtitleCheck, err := domain.SubtitleBoundsCheck(service.ParseJSONValue(revision.SubtitleJSON), duration)
+	subtitleCheck, err := media.SubtitleBoundsCheck(service.ParseJSONValue(revision.SubtitleJSON), duration)
 	if err != nil {
 		return nil, err
 	}
@@ -1232,7 +1232,7 @@ func probeFormatDuration(value any) (float64, error) {
 }
 
 // detectBlackFrames 用 blackdetect 滤镜扫黑场区间
-// （对应 _detect_black_frames，解析在 domain.ParseBlackFrameLog）。
+// （对应 _detect_black_frames，解析在 media.ParseBlackFrameLog）。
 func (s *MediaRenderingService) detectBlackFrames(ctx context.Context, path string) ([]map[string]any, error) {
 	tool, err := ffmpeg.ResolveTool("ffmpeg")
 	if err != nil {
@@ -1245,11 +1245,11 @@ func (s *MediaRenderingService) detectBlackFrames(ctx context.Context, path stri
 	if err != nil {
 		return nil, err
 	}
-	return domain.ParseBlackFrameLog(string(stderr)), nil
+	return media.ParseBlackFrameLog(string(stderr)), nil
 }
 
 // detectAudioMetrics 跑响度与峰值分析（对应 _detect_audio_metrics，
-// 解析在 domain.ParseAudioMetricsLog）。
+// 解析在 media.ParseAudioMetricsLog）。
 func (s *MediaRenderingService) detectAudioMetrics(ctx context.Context, path string) (map[string]any, error) {
 	tool, err := ffmpeg.ResolveTool("ffmpeg")
 	if err != nil {
@@ -1262,11 +1262,11 @@ func (s *MediaRenderingService) detectAudioMetrics(ctx context.Context, path str
 	if err != nil {
 		return nil, err
 	}
-	return domain.ParseAudioMetricsLog(string(stderr)), nil
+	return media.ParseAudioMetricsLog(string(stderr)), nil
 }
 
 // detectSilenceSegments 用 silencedetect 滤镜扫静音区间
-// （对应 _detect_silence_segments，解析在 domain.ParseSilencedetectLog）。
+// （对应 _detect_silence_segments，解析在 media.ParseSilencedetectLog）。
 func (s *MediaRenderingService) detectSilenceSegments(ctx context.Context, path string) ([]map[string]any, error) {
 	tool, err := ffmpeg.ResolveTool("ffmpeg")
 	if err != nil {
@@ -1279,7 +1279,7 @@ func (s *MediaRenderingService) detectSilenceSegments(ctx context.Context, path 
 	if err != nil {
 		return nil, err
 	}
-	return domain.ParseSilencedetectLog(string(stderr)), nil
+	return media.ParseSilencedetectLog(string(stderr)), nil
 }
 
 // extractReviewFrame 从成片里抽一帧存成 JPEG（对应 _extract_review_frame）。
@@ -1347,12 +1347,12 @@ func (s *MediaRenderingService) ExportSubtitles(
 	}
 	var content string
 	if format == "srt" {
-		content, err = domain.GenerateSRT(cues)
+		content, err = media.GenerateSRT(cues)
 	} else {
-		content, err = domain.GenerateVTT(cues)
+		content, err = media.GenerateVTT(cues)
 	}
 	if err != nil {
-		var validation *domain.SubtitleValidationError
+		var validation *media.SubtitleValidationError
 		if errors.As(err, &validation) {
 			return nil, &SubtitleExportError{Message: "subtitle configuration is invalid"}
 		}

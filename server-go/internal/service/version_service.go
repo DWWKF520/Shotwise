@@ -13,7 +13,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -39,11 +40,11 @@ var restorableResourceTypes = map[string]bool{
 }
 
 // resourceToAssetKind 是 resource_type（复数）→ 资产类型（单数）的映射。
-var resourceToAssetKind = map[string]domain.AssetKind{
-	"characters": domain.AssetCharacter,
-	"scenes":     domain.AssetScene,
-	"props":      domain.AssetProp,
-	"products":   domain.AssetProduct,
+var resourceToAssetKind = map[string]project.AssetKind{
+	"characters": project.AssetCharacter,
+	"scenes":     project.AssetScene,
+	"props":      project.AssetProp,
+	"products":   project.AssetProduct,
 }
 
 // VersionService 是版本查询 / 还原的应用服务。
@@ -85,10 +86,10 @@ func (s *VersionService) Restore(
 		if err != nil {
 			return nil, err
 		}
-		if pf.ContentMode == string(domain.ContentAd) {
+		if pf.ContentMode == string(project.ContentAd) {
 			return nil, ErrAdGridNotSupported
 		}
-		if pf.GenerationMode != string(domain.GenerationStoryboard) || !pf.GridStoryboard {
+		if pf.GenerationMode != string(project.GenerationStoryboard) || !pf.GridStoryboard {
 			return nil, ErrGridStoryboardNotEnabled
 		}
 	}
@@ -189,12 +190,12 @@ func (s *VersionService) syncMetadata(
 }
 
 // updateAssetSheet 更新资产表里的定妆图 / 设计稿字段路径。资产条目已被删除时静默跳过。
-func (s *VersionService) updateAssetSheet(kind domain.AssetKind, projectName, name, sheetPath string) {
-	spec, ok := domain.Spec(kind)
+func (s *VersionService) updateAssetSheet(kind project.AssetKind, projectName, name, sheetPath string) {
+	spec, ok := project.Spec(kind)
 	if !ok {
 		return
 	}
-	err := s.store.Update(projectName, func(pf *domain.ProjectFile) error {
+	err := s.store.Update(projectName, func(pf *project.ProjectFile) error {
 		bucket, ok := pf.BucketRef(kind)
 		if !ok || bucket == nil {
 			return ErrResourceMissingInScript
@@ -218,7 +219,7 @@ func (s *VersionService) updateAssetSheet(kind domain.AssetKind, projectName, na
 // syncStoryboardMetadata 把每集剧本里该镜头的 storyboard_image 指回还原后的文件。
 func (s *VersionService) syncStoryboardMetadata(projectName, sceneID, relative string) {
 	s.syncScriptsBestEffort(projectName, func(script map[string]any) error {
-		items, idField, _, err := domain.ResolveScriptItems(script)
+		items, idField, _, err := domainscript.ResolveScriptItems(script)
 		if err != nil {
 			return err
 		}
@@ -241,7 +242,7 @@ func (s *VersionService) syncStoryboardMetadata(projectName, sceneID, relative s
 // 历史本地文件不再对应，一并清空（缩略图文件本身由还原端点删除）。
 func (s *VersionService) syncVideoMetadata(projectName, sceneID, relative string) {
 	s.syncScriptsBestEffort(projectName, func(script map[string]any) error {
-		items, idField, _, err := domain.ResolveScriptItems(script)
+		items, idField, _, err := domainscript.ResolveScriptItems(script)
 		if err != nil {
 			return err
 		}

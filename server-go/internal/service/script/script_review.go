@@ -15,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // 审核状态取值。
@@ -30,7 +30,7 @@ const (
 const step1KindReferenceVideo = "reference_video"
 
 // Step1Kind 返回项目的 step1 变体；无结构化 step1 中间态（如 ad）时返回 ""。
-func Step1Kind(pf *domain.ProjectFile) string {
+func Step1Kind(pf *project.ProjectFile) string {
 	if pf == nil {
 		return ""
 	}
@@ -44,10 +44,10 @@ func Step1Kind(pf *domain.ProjectFile) string {
 }
 
 // IsReviewApplicable 判定 gate 是否适用于该项目。
-func IsReviewApplicable(pf *domain.ProjectFile) bool { return Step1Kind(pf) != "" }
+func IsReviewApplicable(pf *project.ProjectFile) bool { return Step1Kind(pf) != "" }
 
 // Step1Path 返回该集结构化 step1 中间态文件路径；不适用 gate 时 ok=false。
-func Step1Path(projectDir string, pf *domain.ProjectFile, episode int) (string, bool) {
+func Step1Path(projectDir string, pf *project.ProjectFile, episode int) (string, bool) {
 	kind := Step1Kind(pf)
 	if kind == "" {
 		return "", false
@@ -59,12 +59,8 @@ func Step1Path(projectDir string, pf *domain.ProjectFile, episode int) (string, 
 	return filepath.Join(service.EpisodeDraftsDir(projectDir, episode), filename), true
 }
 
-
-
-
-
 // Step2Generated 判定该集 step2 产物（生成的剧本 JSON）是否已存在——存量 grandfather 判据。
-func Step2Generated(projectDir string, pf *domain.ProjectFile, episode int) bool {
+func Step2Generated(projectDir string, pf *project.ProjectFile, episode int) bool {
 	scriptFile := ""
 	if entry := service.FindEpisodeEntry(pf, episode); entry != nil {
 		scriptFile = entry.ScriptFile
@@ -79,7 +75,7 @@ func Step2Generated(projectDir string, pf *domain.ProjectFile, episode int) bool
 }
 
 // ReviewStatus 派生该集审核状态。
-func ReviewStatus(projectDir string, pf *domain.ProjectFile, episode int) string {
+func ReviewStatus(projectDir string, pf *project.ProjectFile, episode int) string {
 	path, ok := Step1Path(projectDir, pf, episode)
 	if !ok {
 		return ReviewStatusNotApplicable
@@ -109,12 +105,12 @@ func ReviewStatus(projectDir string, pf *domain.ProjectFile, episode int) string
 }
 
 // GateBlocksStep2 判定 step2 是否应被 gate 阻塞——仅 pending_review 阻塞。
-func GateBlocksStep2(projectDir string, pf *domain.ProjectFile, episode int) bool {
+func GateBlocksStep2(projectDir string, pf *project.ProjectFile, episode int) bool {
 	return ReviewStatus(projectDir, pf, episode) == ReviewStatusPendingReview
 }
 
 // Step1QuarantinePath 返回该集 step1 隔离草稿路径（仅 reference_video 变体有隔离草稿）。
-func Step1QuarantinePath(projectDir string, pf *domain.ProjectFile, episode int) (string, bool) {
+func Step1QuarantinePath(projectDir string, pf *project.ProjectFile, episode int) (string, bool) {
 	if Step1Kind(pf) != step1KindReferenceVideo {
 		return "", false
 	}
@@ -122,10 +118,9 @@ func Step1QuarantinePath(projectDir string, pf *domain.ProjectFile, episode int)
 }
 
 // Step1Quarantined 判定该集 step1 是否有违约产物被隔离——gate 与 step2 的独立阻塞判据。
-func Step1Quarantined(projectDir string, pf *domain.ProjectFile, episode int) bool {
+func Step1Quarantined(projectDir string, pf *project.ProjectFile, episode int) bool {
 	if Step1Kind(pf) != step1KindReferenceVideo {
 		return false
 	}
 	return reference.QuarantineExists(projectDir, episode, reference.QuarantineKindStep1)
 }
-

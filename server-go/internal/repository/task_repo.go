@@ -13,7 +13,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/task"
 	"github.com/shotwise/shotwise/internal/infra/db"
 )
 
@@ -127,11 +127,11 @@ func taskToData(row *Task) TaskData {
 		_ = json.Unmarshal([]byte(*row.PayloadJSON), &payload)
 	}
 	var preview map[string]any
-	if v, ok := payload[domain.PromptPreviewPayloadKey]; ok {
+	if v, ok := payload[task.PromptPreviewPayloadKey]; ok {
 		if m, ok := v.(map[string]any); ok {
 			preview = m
 		}
-		delete(payload, domain.PromptPreviewPayloadKey)
+		delete(payload, task.PromptPreviewPayloadKey)
 	}
 	result := map[string]any{}
 	if row.ResultJSON != nil && *row.ResultJSON != "" {
@@ -261,7 +261,7 @@ func (r *TaskRepo) Enqueue(ctx context.Context, p EnqueueParams) (EnqueueResult,
 	for k, v := range p.Payload {
 		payload[k] = v
 	}
-	payload[domain.PromptPreviewPayloadKey] = domain.BuildEnqueuePromptPreview(
+	payload[task.PromptPreviewPayloadKey] = task.BuildEnqueuePromptPreview(
 		p.ProjectName, p.TaskType, p.MediaType, p.ResourceID, p.ScriptFile, p.ProviderID, payload)
 	payloadJSON := mustJSON(payload)
 
@@ -341,7 +341,7 @@ func (r *TaskRepo) EnqueueBatch(ctx context.Context, specs []EnqueueParams) ([]E
 		for k, v := range spec.Payload {
 			payload[k] = v
 		}
-		payload[domain.PromptPreviewPayloadKey] = domain.BuildEnqueuePromptPreview(
+		payload[task.PromptPreviewPayloadKey] = task.BuildEnqueuePromptPreview(
 			spec.ProjectName, spec.TaskType, spec.MediaType, spec.ResourceID, spec.ScriptFile, spec.ProviderID, payload)
 		payloadJSON := mustJSON(payload)
 		source := spec.Source
@@ -501,7 +501,7 @@ func (r *TaskRepo) MarkSucceeded(ctx context.Context, taskID string, result map[
 // error_message 先清洗（凭证/绝对路径）再裁剪；级联原因折叠后按预算裁剪，
 // 保证落库的始终是合法信封。
 func (r *TaskRepo) MarkFailed(ctx context.Context, taskID, errorMessage string) (int64, []TerminalEvent, error) {
-	sanitized := domain.SanitizeFailureReason(errorMessage)
+	sanitized := task.SanitizeFailureReason(errorMessage)
 	var events []TerminalEvent
 	var affected int64
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -534,7 +534,7 @@ func markFailedRunning(tx *gorm.DB, taskID, errorMessage string) (int64, error) 
 		Where("task_id = ? AND status = ?", taskID, TaskStatusRunning).
 		Updates(map[string]any{
 			"status":        TaskStatusFailed,
-			"error_message": domain.BoundReason(domain.SanitizeFailureReason(errorMessage), domain.MaxErrorMessageLen),
+			"error_message": task.BoundReason(task.SanitizeFailureReason(errorMessage), task.MaxErrorMessageLen),
 			"finished_at":   db.NewFlexibleTime(now),
 			"updated_at":    db.NewFlexibleTime(now),
 		})
@@ -547,7 +547,7 @@ func markFailedQueuedDep(tx *gorm.DB, taskID, errorMessage string) (int64, error
 		Where("task_id = ? AND status = ?", taskID, TaskStatusQueued).
 		Updates(map[string]any{
 			"status":        TaskStatusFailed,
-			"error_message": domain.BoundReason(domain.SanitizeFailureReason(errorMessage), domain.MaxErrorMessageLen),
+			"error_message": task.BoundReason(task.SanitizeFailureReason(errorMessage), task.MaxErrorMessageLen),
 			"finished_at":   db.NewFlexibleTime(now),
 			"updated_at":    db.NewFlexibleTime(now),
 		})
@@ -591,30 +591,30 @@ func cascadeFailedQueued(tx *gorm.DB, taskID, rootReason string) ([]TerminalEven
 // 逐层包裹近指数增长，先折叠到根本原因；re-encode 循环按实际超额收敛，
 // 避免转义（引号/反斜杠）导致一次估算砍不准。
 func encodeBoundedCascadeFailure(dependencyTaskID, reason string) string {
-	reason = domain.SanitizeFailureReason(reason)
-	reason = domain.CollapseCascadeReason(reason)
+	reason = task.SanitizeFailureReason(reason)
+	reason = task.CollapseCascadeReason(reason)
 	params := map[string]any{"dependency_task_id": dependencyTaskID, "reason": reason}
-	encoded, err := domain.EncodeFailure(domain.CascadeFailureCode, params)
+	encoded, err := task.EncodeFailure(task.CascadeFailureCode, params)
 	if err != nil {
 		return ""
 	}
-	if utf8.RuneCountInString(encoded) <= domain.MaxErrorMessageLen {
+	if utf8.RuneCountInString(encoded) <= task.MaxErrorMessageLen {
 		return encoded
 	}
-	overhead, _ := domain.EncodeFailure(domain.CascadeFailureCode,
+	overhead, _ := task.EncodeFailure(task.CascadeFailureCode,
 		map[string]any{"dependency_task_id": dependencyTaskID, "reason": ""})
-	budget := domain.MaxErrorMessageLen - utf8.RuneCountInString(overhead)
+	budget := task.MaxErrorMessageLen - utf8.RuneCountInString(overhead)
 	if budget < 0 {
 		budget = 0
 	}
 	for range 5 {
-		reason = domain.BoundReason(reason, budget)
+		reason = task.BoundReason(reason, budget)
 		params["reason"] = reason
-		encoded, err = domain.EncodeFailure(domain.CascadeFailureCode, params)
+		encoded, err = task.EncodeFailure(task.CascadeFailureCode, params)
 		if err != nil {
 			return ""
 		}
-		overflow := utf8.RuneCountInString(encoded) - domain.MaxErrorMessageLen
+		overflow := utf8.RuneCountInString(encoded) - task.MaxErrorMessageLen
 		if overflow <= 0 || budget <= 0 {
 			break
 		}

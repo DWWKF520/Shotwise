@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
@@ -23,11 +23,11 @@ type AssetDeps struct {
 
 // assetI18nKeys 是各类型的错误文案 key。scene 沿用历史前缀 project_scene_*，
 // 与 Python 侧 _I18N_KEYS 一致 —— 前端已按这些 key 出文案，不改名即是契约。
-var assetI18nKeys = map[domain.AssetKind][3]string{
-	domain.AssetCharacter: {"character_already_exists", "character_not_found", "character_deleted"},
-	domain.AssetScene:     {"project_scene_already_exists", "project_scene_not_found", "project_scene_deleted"},
-	domain.AssetProp:      {"prop_already_exists", "prop_not_found", "prop_deleted"},
-	domain.AssetProduct:   {"product_already_exists", "product_not_found", "product_deleted"},
+var assetI18nKeys = map[project.AssetKind][3]string{
+	project.AssetCharacter: {"character_already_exists", "character_not_found", "character_deleted"},
+	project.AssetScene:     {"project_scene_already_exists", "project_scene_not_found", "project_scene_deleted"},
+	project.AssetProp:      {"prop_already_exists", "prop_not_found", "prop_deleted"},
+	project.AssetProduct:   {"product_already_exists", "product_not_found", "product_deleted"},
 }
 
 // RegisterAssets 按 spec 注册四类资产的 CRUD 路由。
@@ -38,8 +38,8 @@ var assetI18nKeys = map[domain.AssetKind][3]string{
 // 路由树注意：/projects/:name/{subdir}/:entry 与 /projects/:name/{subdir}/:entry/rename
 // 的段数不同，不冲突；但同层不能再引入与 :entry 竞争静态段的路径。
 func RegisterAssets(group *gin.RouterGroup, d AssetDeps) {
-	for _, kind := range domain.AssetTypeOrder {
-		spec := domain.AssetSpecs[kind]
+	for _, kind := range project.AssetTypeOrder {
+		spec := project.AssetSpecs[kind]
 		base := "/projects/:name/" + spec.Subdir
 		group.POST(base, createAsset(d, kind))
 		group.PATCH(base+"/:entry", updateAsset(d, kind))
@@ -48,7 +48,7 @@ func RegisterAssets(group *gin.RouterGroup, d AssetDeps) {
 	}
 }
 
-func createAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
+func createAsset(d AssetDeps, kind project.AssetKind) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		body, ok := httpkit.DecodeBody(c)
 		if !ok {
@@ -78,7 +78,7 @@ func createAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
 	}
 }
 
-func updateAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
+func updateAsset(d AssetDeps, kind project.AssetKind) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		body, ok := httpkit.DecodeBody(c)
 		if !ok {
@@ -94,7 +94,7 @@ func updateAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
 	}
 }
 
-func renameAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
+func renameAsset(d AssetDeps, kind project.AssetKind) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		body, ok := httpkit.DecodeBody(c)
 		if !ok {
@@ -133,7 +133,7 @@ func renameAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
 	}
 }
 
-func deleteAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
+func deleteAsset(d AssetDeps, kind project.AssetKind) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		entryName := c.Param("entry")
 		if err := d.Assets.Delete(c.Param("name"), kind, entryName); err != nil {
@@ -149,7 +149,7 @@ func deleteAsset(d AssetDeps, kind domain.AssetKind) gin.HandlerFunc {
 }
 
 // abortAssetErr 把服务层错误映射成统一 {"detail": ...} 信封。
-func abortAssetErr(c *gin.Context, kind domain.AssetKind, err error, subject string) {
+func abortAssetErr(c *gin.Context, kind project.AssetKind, err error, subject string) {
 	keys := assetI18nKeys[kind]
 	var (
 		nameErr    *asset.AssetNameError

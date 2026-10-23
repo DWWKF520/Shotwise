@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // step1VisualFields 是条目的视觉层字段：判定「已编写」所依据的字段，不参与内容投影比对
@@ -217,7 +217,7 @@ func pendingAuthoringCompare(step1Items, scriptItems []map[string]any, spec pend
 //
 // step1 文件缺失 / 损坏、或官方剧本不存在时退化为空列表（ScriptPresent 如实反映剧本在不在场）。
 // episode 条目缺失时按默认剧本路径 scripts/episode_N.json 兜底，与 Step2Generated 同一口径。
-func PendingAuthoringReportFor(projectDir string, pf *domain.ProjectFile, episode int) PendingAuthoringReport {
+func PendingAuthoringReportFor(projectDir string, pf *project.ProjectFile, episode int) PendingAuthoringReport {
 	kind := Step1Kind(pf)
 	if kind == "" {
 		return pendingAuthoringNotApplicable()

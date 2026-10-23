@@ -13,12 +13,13 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/character"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // 角色关系分析（对应 server/services/character_relations.py 与 sdk_tools/character_relations.py）：
 // 读项目概述、角色描述与剧本证据，让文本模型推断角色间关系，校验后直接写入正式关系图谱。
-// 用户在图谱里的人工修改与删除会被保留（合并规则在 domain.MergeAIRelationships）。
+// 用户在图谱里的人工修改与删除会被保留（合并规则在 character.MergeAIRelationships）。
 
 const (
 	relationMaxCharacterDescription = 700
@@ -34,16 +35,15 @@ type RelationTextGenerator interface {
 }
 
 // RelationGeneratorFactory 按项目装配文本生成器。每轮分析现取，保证用当轮的文本后端配置。
-type RelationGeneratorFactory func(ctx context.Context, project *domain.ProjectFile) (RelationTextGenerator, error)
+type RelationGeneratorFactory func(ctx context.Context, project *domainproject.ProjectFile) (RelationTextGenerator, error)
 
 // RelationProjects 是关系分析的项目读写能力（*service.ProjectStore 满足）。
 type RelationProjects interface {
-	Get(name string) (*domain.ProjectFile, error)
+	Get(name string) (*domainproject.ProjectFile, error)
 	Dir(name string) (string, error)
-	Update(name string, mutate func(*domain.ProjectFile) error) error
+	Update(name string, mutate func(*domainproject.ProjectFile) error) error
 	ScriptFileNames(name string) ([]string, error)
 }
-
 
 type analyzeCharacterRelationsIn struct{}
 
@@ -89,10 +89,10 @@ func analyzeCharacterRelations(
 		return 0, err
 	}
 	bucket := relationBucket(characters)
-	fingerprint := domain.RelationshipSourceFingerprint(rawProject, scripts)
+	fingerprint := character.RelationshipSourceFingerprint(rawProject, scripts)
 	existing, _ := rawProject["character_relations"].(map[string]any)
 
-	started, err := domain.MarkAnalysisStarted(existing, bucket)
+	started, err := character.MarkAnalysisStarted(existing, bucket)
 	if err != nil {
 		return 0, err
 	}
@@ -102,8 +102,8 @@ func analyzeCharacterRelations(
 
 	edges, err := inferRelations(ctx, rawProject, characters, scripts, project, factory, projects)
 	if err == nil {
-		var merged domain.RelationsData
-		merged, err = domain.MergeAIRelationships(existing, bucket, edges, fingerprint)
+		var merged character.RelationsData
+		merged, err = character.MergeAIRelationships(existing, bucket, edges, fingerprint)
 		if err == nil {
 			if err = writeRelations(projects, project, merged); err == nil {
 				return len(merged.Edges), nil
@@ -111,7 +111,7 @@ func analyzeCharacterRelations(
 		}
 	}
 	// 失败也要落盘：UI 靠这个状态给出重试入口，旧图保持不变。
-	if failed, ferr := domain.MarkAnalysisFailed(existing, bucket, err.Error()); ferr == nil {
+	if failed, ferr := character.MarkAnalysisFailed(existing, bucket, err.Error()); ferr == nil {
 		_ = writeRelations(projects, project, failed)
 	}
 	return 0, err
@@ -121,7 +121,7 @@ func analyzeCharacterRelations(
 func inferRelations(
 	ctx context.Context, rawProject, characters map[string]any, scripts []map[string]any,
 	project string, factory RelationGeneratorFactory, projects RelationProjects,
-) ([]domain.RelationEdge, error) {
+) ([]character.RelationEdge, error) {
 	if len(characters) < 2 {
 		return nil, nil
 	}
@@ -163,22 +163,22 @@ func loadRelationScripts(project, dir string, projects RelationProjects) ([]map[
 }
 
 // writeRelations 在项目锁内写回关系图字段。
-func writeRelations(projects RelationProjects, project string, data domain.RelationsData) error {
-	payload := domain.RelationsPayload(data)
-	return projects.Update(project, func(pf *domain.ProjectFile) error {
+func writeRelations(projects RelationProjects, project string, data character.RelationsData) error {
+	payload := character.RelationsPayload(data)
+	return projects.Update(project, func(pf *domainproject.ProjectFile) error {
 		pf.CharacterRelations = payload
 		return nil
 	})
 }
 
 // relationBucket 把原始 characters 对象转成可做名称解析的资产桶。
-func relationBucket(characters map[string]any) domain.AssetBucket {
-	bucket := domain.AssetBucket{}
+func relationBucket(characters map[string]any) domainproject.AssetBucket {
+	bucket := domainproject.AssetBucket{}
 	for name, value := range characters {
 		if entry, ok := value.(map[string]any); ok {
-			bucket[name] = domain.WrapAssetEntry(entry)
+			bucket[name] = domainproject.WrapAssetEntry(entry)
 		} else {
-			bucket[name] = domain.NewAssetEntry()
+			bucket[name] = domainproject.NewAssetEntry()
 		}
 	}
 	return bucket
@@ -368,7 +368,7 @@ func sortedMapKeys(m map[string]any) []string {
 // --- 模型输出解析（对应 parse_relationship_analysis）---
 
 // parseRelationshipAnalysis 解析模型输出，兼容弱供应商的 ``` 围栏包裹。
-func parseRelationshipAnalysis(raw string) ([]domain.RelationEdge, error) {
+func parseRelationshipAnalysis(raw string) ([]character.RelationEdge, error) {
 	text := strings.TrimSpace(raw)
 	if strings.HasPrefix(text, "```") {
 		if i := strings.Index(text, "\n"); i >= 0 {
@@ -388,7 +388,7 @@ func parseRelationshipAnalysis(raw string) ([]domain.RelationEdge, error) {
 // validateRelationshipAnalysis 按 RelationshipAnalysisOutput 的约束校验顶层结构与条目。
 //
 // 顶层未知字段与条目未知字段一律拒绝（对应 pydantic extra="forbid"）；relations 上限 300。
-func validateRelationshipAnalysis(probe map[string]any) ([]domain.RelationEdge, error) {
+func validateRelationshipAnalysis(probe map[string]any) ([]character.RelationEdge, error) {
 	for key := range probe {
 		if key != "relations" {
 			return nil, fmt.Errorf("relationship analysis: 顶层未知字段 %q", key)
@@ -405,9 +405,9 @@ func validateRelationshipAnalysis(probe map[string]any) ([]domain.RelationEdge, 
 	if len(list) > 300 {
 		return nil, fmt.Errorf("relationship analysis: relations 最多 300 条")
 	}
-	edges := make([]domain.RelationEdge, 0, len(list))
+	edges := make([]character.RelationEdge, 0, len(list))
 	for i, raw := range list {
-		edge, err := domain.ParseRelationEdge(raw)
+		edge, err := character.ParseRelationEdge(raw)
 		if err != nil {
 			return nil, fmt.Errorf("relationship analysis: relations[%d]: %w", i, err)
 		}
@@ -458,8 +458,8 @@ func relationAnalysisSchema() map[string]any {
 }
 
 func relationTypeEnum() []any {
-	out := make([]any, 0, len(domain.RelationshipTypes))
-	for _, t := range domain.RelationshipTypes {
+	out := make([]any, 0, len(character.RelationshipTypes))
+	for _, t := range character.RelationshipTypes {
 		out = append(out, t)
 	}
 	return out

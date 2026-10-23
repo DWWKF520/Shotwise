@@ -8,12 +8,14 @@
 package script
 
 import (
-	"sort"
 	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
+	"sort"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -70,11 +72,11 @@ var legacyDuckTypeKinds = []string{"segments", "scenes", "shots"}
 
 // SelectKindAndItems 返回 (骨架种类, 条目数组)。
 //
-// 主路径按剧本级 content_mode 与项目级 generation_mode 走 domain.ResolveDeclaredKind；
+// 主路径按剧本级 content_mode 与项目级 generation_mode 走 domainscript.ResolveDeclaredKind；
 // 缺失/未知 content_mode 时保留历史容忍：参考路线按 video_units 短路，否则按主结构探测。
 func SelectKindAndItems(script map[string]any, generationMode string) (string, []any) {
 	contentMode, _ := script["content_mode"].(string)
-	kind, err := domain.ResolveDeclaredKind(contentMode, generationMode)
+	kind, err := domainscript.ResolveDeclaredKind(contentMode, generationMode)
 	if err != nil {
 		kind = ""
 	}
@@ -86,7 +88,7 @@ func SelectKindAndItems(script map[string]any, generationMode string) (string, [
 		if items, ok := mapItems(script[kind]); ok {
 			return kind, items
 		}
-	} else if generationMode == string(domain.GenerationReferenceVideo) {
+	} else if generationMode == string(domainproject.GenerationReferenceVideo) {
 		// 以 video_units 键在场为前提（与 ensure_route_skeleton 同判据）：ad 剧本恒为 shots
 		// 骨架却可能落在参考路线项目下，无条件短路会把它的计分抢成空 video_units。
 		if _, present := script["video_units"]; present {
@@ -133,7 +135,7 @@ func (c *StatusCalculator) CalculateEpisodeStats(script map[string]any, generati
 	if kind == "video_units" {
 		return referenceVideoStats(items)
 	}
-	if kind == "shots" && generationMode == string(domain.GenerationReferenceVideo) {
+	if kind == "shots" && generationMode == string(domainproject.GenerationReferenceVideo) {
 		return adReferenceStats(script, items)
 	}
 
@@ -143,7 +145,7 @@ func (c *StatusCalculator) CalculateEpisodeStats(script map[string]any, generati
 		if !ok {
 			continue
 		}
-		assets := domain.GeneratedAssets(m)
+		assets := media.GeneratedAssets(m)
 		if service.PyTruthy(assets["storyboard_image"]) {
 			storyboardDone++
 		}
@@ -164,7 +166,7 @@ func (c *StatusCalculator) CalculateEpisodeStats(script map[string]any, generati
 		Storyboards:     CountPair{Total: total, Completed: storyboardDone},
 		Videos:          CountPair{Total: total, Completed: videoDone},
 		ScenesCount:     total,
-		DurationSeconds: domain.ScriptDurationTotal(kind, items),
+		DurationSeconds: domainscript.ScriptDurationTotal(kind, items),
 	}
 }
 
@@ -197,7 +199,7 @@ func adReferenceStats(script map[string]any, shots []any) EpisodeStatus {
 
 	videoDone := 0
 	for _, item := range units {
-		if m, ok := item.(map[string]any); ok && service.PyTruthy(domain.GeneratedAssets(m)["video_clip"]) {
+		if m, ok := item.(map[string]any); ok && service.PyTruthy(media.GeneratedAssets(m)["video_clip"]) {
 			videoDone++
 		}
 	}
@@ -219,7 +221,7 @@ func adReferenceStats(script map[string]any, shots []any) EpisodeStatus {
 		Storyboards:     CountPair{Total: totalShots, Completed: 0},
 		Videos:          CountPair{Total: totalUnits, Completed: videoDone},
 		ScenesCount:     totalShots,
-		DurationSeconds: domain.ScriptDurationTotal("shots", shots),
+		DurationSeconds: domainscript.ScriptDurationTotal("shots", shots),
 		UnitsCount:      &unitCount,
 	}
 }
@@ -228,7 +230,7 @@ func adReferenceStats(script map[string]any, shots []any) EpisodeStatus {
 func referenceVideoStats(units []any) EpisodeStatus {
 	videoDone := 0
 	for _, item := range units {
-		if m, ok := item.(map[string]any); ok && service.PyTruthy(domain.GeneratedAssets(m)["video_clip"]) {
+		if m, ok := item.(map[string]any); ok && service.PyTruthy(media.GeneratedAssets(m)["video_clip"]) {
 			videoDone++
 		}
 	}
@@ -248,17 +250,17 @@ func referenceVideoStats(units []any) EpisodeStatus {
 		Storyboards:     CountPair{Total: total, Completed: 0},
 		Videos:          CountPair{Total: total, Completed: videoDone},
 		ScenesCount:     total,
-		DurationSeconds: domain.ScriptDurationTotal("video_units", units),
+		DurationSeconds: domainscript.ScriptDurationTotal("video_units", units),
 		UnitsCount:      &unitCount,
 	}
 }
 
 // DraftCandidates 返回该 (content_mode, generation_mode) 下「已分段」可探测的 step1 草稿文件名。
 func DraftCandidates(contentMode, generationMode string) []string {
-	if contentMode == string(domain.ContentAd) {
+	if contentMode == string(domainproject.ContentAd) {
 		return nil
 	}
-	if generationMode == string(domain.GenerationReferenceVideo) {
+	if generationMode == string(domainproject.GenerationReferenceVideo) {
 		return []string{service.ReferenceVideoStep1Filename, service.ReferenceVideoStep1QuarantineName}
 	}
 	primary, ok := Step1Filename(contentMode)
@@ -267,8 +269,8 @@ func DraftCandidates(contentMode, generationMode string) []string {
 	}
 	out := []string{primary}
 	// 旧版 .md 仅 narration 视为有效 step1（drama 的 .md 早于内容抽取前移）。
-	if contentMode == string(domain.ContentNarration) {
-		out = append(out, step1LegacyFilenames[string(domain.ContentNarration)]...)
+	if contentMode == string(domainproject.ContentNarration) {
+		out = append(out, step1LegacyFilenames[string(domainproject.ContentNarration)]...)
 	}
 	return out
 }
@@ -281,7 +283,7 @@ func (c *StatusCalculator) buildEpisodesStats(
 ) []EpisodeStatus {
 	contentMode, _ := project["content_mode"].(string)
 	if contentMode == "" {
-		contentMode = string(domain.ContentNarration)
+		contentMode = string(domainproject.ContentNarration)
 	}
 	generationMode, _ := project["generation_mode"].(string)
 	episodes, _ := project["episodes"].([]any)
@@ -293,7 +295,7 @@ func (c *StatusCalculator) buildEpisodesStats(
 			continue
 		}
 		// 账本标 stale 的集：读时状态回退为待预处理，驱动重做流程。
-		if ledgerStatus, _ := ep["ledger_status"].(string); ledgerStatus == domain.LedgerStatusStale {
+		if ledgerStatus, _ := ep["ledger_status"].(string); ledgerStatus == domainproject.LedgerStatusStale {
 			stats = append(stats, fallbackEpisodeStats("none"))
 			continue
 		}
@@ -446,7 +448,7 @@ func (c *StatusCalculator) EnrichProject(projectName string, project map[string]
 // 与 characters_in_episode / scenes_in_episode / props_in_episode（就地修改）。
 func (c *StatusCalculator) EnrichScript(script map[string]any, generationMode string) map[string]any {
 	kind, items := SelectKindAndItems(script, generationMode)
-	totalDuration := domain.ScriptDurationTotal(kind, items)
+	totalDuration := domainscript.ScriptDurationTotal(kind, items)
 
 	metadata, ok := script["metadata"].(map[string]any)
 	if !ok {
@@ -493,7 +495,7 @@ func (c *StatusCalculator) EnrichScript(script map[string]any, generationMode st
 			}
 		}
 	} else {
-		skeleton := domain.ScriptSkeletons[kind]
+		skeleton := domainscript.ScriptSkeletons[kind]
 		for _, item := range items {
 			m, ok := item.(map[string]any)
 			if !ok {
@@ -617,7 +619,6 @@ func bucketCounts(raw any, projectDir, sheetField string) (total, done int) {
 	}
 	return total, done
 }
-
 
 func anyList(raw any) []any {
 	items, ok := raw.([]any)

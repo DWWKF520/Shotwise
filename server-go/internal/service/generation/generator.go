@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/pricing"
@@ -82,7 +82,7 @@ func (t *VideoTarget) BackendModel() string {
 // api_call_id 持久化（worker 路径）；自定义供应商的 job_id 持久化注入随 resume 链路补齐，
 // api_call_id 由记账括号显式写回，不依赖该注入点。
 func (g *VideoGenerator) Resolve(
-	ctx context.Context, project *domain.ProjectFile, payload map[string]any,
+	ctx context.Context, project *project.ProjectFile, payload map[string]any,
 	bucket provider.VideoBucket, taskID string,
 ) (*VideoTarget, error) {
 	selected, err := g.resolver.ResolveVideoBackend(ctx, project, payload, &bucket)
@@ -98,7 +98,7 @@ func (g *VideoGenerator) Resolve(
 //
 // payload 无锁定键（存量任务）时退回不定桶骨架，与 Python resume 的 VideoLaneRequest 同口径。
 func (g *VideoGenerator) ResolvePinned(
-	ctx context.Context, project *domain.ProjectFile, payload map[string]any, taskID string,
+	ctx context.Context, project *project.ProjectFile, payload map[string]any, taskID string,
 ) (*VideoTarget, error) {
 	selected, err := g.resolver.ResolveVideoBackend(ctx, project, payload, nil)
 	if err != nil {
@@ -168,7 +168,7 @@ func (g *VideoGenerator) buildVideoTarget(
 // Resolution 解析该目标实际下发的分辨率档（对应 Python 侧 resolve_resolution(project, provider_id, backend.model)）。
 // 空串表示调用时不传分辨率参数，由 backend 按各自保底档处理。
 func (g *VideoGenerator) Resolution(
-	ctx context.Context, project *domain.ProjectFile, target *VideoTarget,
+	ctx context.Context, project *project.ProjectFile, target *VideoTarget,
 ) (string, error) {
 	if target == nil {
 		return "", fmt.Errorf("video target 未解析，先调 Resolve")
@@ -178,7 +178,7 @@ func (g *VideoGenerator) Resolution(
 
 // RequestedGenerateAudio 解析项目级「本集是否有声」开关（用户意图口径，与执行层结算读的
 // video_generate_audio 同源），供编排层判定是否组装参考音频 / 注入声音特征。
-func (g *VideoGenerator) RequestedGenerateAudio(ctx context.Context, project *domain.ProjectFile) (bool, error) {
+func (g *VideoGenerator) RequestedGenerateAudio(ctx context.Context, project *project.ProjectFile) (bool, error) {
 	return g.resolver.VideoGenerateAudioForProject(ctx, project)
 }
 
@@ -544,7 +544,7 @@ func NewAudioGenerator(db *gorm.DB, ledger *service.Ledger) *AudioGenerator {
 // AudioGenerateParams 是一次语音合成的入参。
 type AudioGenerateParams struct {
 	ProjectName string
-	Project     *domain.ProjectFile
+	Project     *project.ProjectFile
 	ProjectDir  string
 	UserID      string
 	// ResourceType / ResourceID：audio 通道的记账 segment_id 无条件透传 resource_id。
@@ -660,7 +660,7 @@ type AudioVoices struct {
 //
 // 解析失败（无全局默认且自动推断不到 ready 的 audio 供应商）视为「未配置」而不是错误：
 // 前端据此禁用入口，与角色卡「audio_backend 未配置该入口不可用」的口径一致。
-func (g *AudioGenerator) Voices(ctx context.Context, project *domain.ProjectFile) (AudioVoices, error) {
+func (g *AudioGenerator) Voices(ctx context.Context, project *project.ProjectFile) (AudioVoices, error) {
 	selected, err := g.resolver.ResolveAudioBackend(ctx, project, nil)
 	if err != nil {
 		return AudioVoices{}, nil

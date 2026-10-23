@@ -7,8 +7,8 @@
 package reference
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 

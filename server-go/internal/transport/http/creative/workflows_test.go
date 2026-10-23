@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/auth"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service/creative"
@@ -361,10 +361,10 @@ func TestWorkflowLegacyGraphMatchesPythonShape(t *testing.T) {
 	if len(edges) != len(creative.LegacyFlowNodeTypes)-1 {
 		t.Fatalf("edge count mismatch: %d", len(edges))
 	}
-	if domain.WorkflowMapFloat(nodes[0], "weight", 0) != 1.0 {
+	if creation.WorkflowMapFloat(nodes[0], "weight", 0) != 1.0 {
 		t.Fatalf("source_import weight must stay 1.0: %v", nodes[0])
 	}
-	if err := domain.WorkflowValidateGraph(nodes, edges); err != nil {
+	if err := creation.WorkflowValidateGraph(nodes, edges); err != nil {
 		t.Fatalf("legacy graph must validate: %v", err)
 	}
 }

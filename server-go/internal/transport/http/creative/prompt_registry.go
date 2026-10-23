@@ -12,12 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
 )
 
 // PromptRegistryDeps 是注册表 handler 的依赖。
 type PromptRegistryDeps struct {
-	// ProfileRoot 返回 profile 根目录；nil 时用 domain.AgentProfileRoot
+	// ProfileRoot 返回 profile 根目录；nil 时用 creation.AgentProfileRoot
 	// （SHOTWISE_PROFILE_DIR > 从 cwd 向上回溯 agent_runtime_profile）。
 	ProfileRoot func() string
 }
@@ -26,7 +26,7 @@ type PromptRegistryDeps struct {
 func RegisterPromptRegistry(group *gin.RouterGroup, d PromptRegistryDeps) {
 	root := d.ProfileRoot
 	if root == nil {
-		root = domain.AgentProfileRoot
+		root = creation.AgentProfileRoot
 	}
 	group.GET("/prompts/registry", listPromptTemplates(root))
 	// Python 侧是 {template_path:path}，可含多段；gin 的 *path 通配符同义。
@@ -36,9 +36,9 @@ func RegisterPromptRegistry(group *gin.RouterGroup, d PromptRegistryDeps) {
 // listPromptTemplates 列出注册表全部条目的元数据（不含正文），顺序即设置页展示顺序。
 func listPromptTemplates(profileRoot func() string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		entries := domain.BuildPromptRegistry(profileRoot())
+		entries := creation.BuildPromptRegistry(profileRoot())
 		if entries == nil {
-			entries = []domain.PromptTemplate{}
+			entries = []creation.PromptTemplate{}
 		}
 		c.JSON(http.StatusOK, gin.H{"templates": entries})
 	}
@@ -52,7 +52,7 @@ func getPromptTemplate(profileRoot func() string) gin.HandlerFunc {
 		if len(templatePath) > 0 && templatePath[0] == '/' {
 			templatePath = templatePath[1:]
 		}
-		detail := domain.FindPromptTemplate(profileRoot(), templatePath)
+		detail := creation.FindPromptTemplate(profileRoot(), templatePath)
 		if detail == nil {
 			apperr.Abort(c, apperr.NewText(http.StatusNotFound, "prompt_template_not_found", map[string]any{"path": templatePath}))
 			return

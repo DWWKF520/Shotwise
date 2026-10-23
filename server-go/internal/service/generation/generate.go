@@ -15,12 +15,14 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service/reference"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
 func generateNotFound(code string, params map[string]any) *service.GenerateError {
@@ -40,9 +42,9 @@ type GenerateQueue interface {
 // GenerateResolver 是生成路径需要的配置解析能力（*config.Resolver 满足）。
 type GenerateResolver interface {
 	service.VideoCapabilityResolver
-	ResolveAudioBackend(ctx context.Context, project *domain.ProjectFile, payload map[string]any) (config.ProviderModel, error)
+	ResolveAudioBackend(ctx context.Context, project *domainproject.ProjectFile, payload map[string]any) (config.ProviderModel, error)
 	ResolveImageBackend(
-		ctx context.Context, project *domain.ProjectFile, payload map[string]any, capability config.ImageCapability,
+		ctx context.Context, project *domainproject.ProjectFile, payload map[string]any, capability config.ImageCapability,
 	) (config.ProviderModel, error)
 }
 
@@ -62,11 +64,11 @@ func NewGenerateService(
 }
 
 // 资产类型 → 生成入口的 i18n key（scene 用历史前缀 project_scene_*）。
-var assetGenerateKeys = map[domain.AssetKind]struct{ NotFound, Submitted string }{
-	domain.AssetCharacter: {NotFound: "character_not_found", Submitted: "character_task_submitted"},
-	domain.AssetScene:     {NotFound: "project_scene_not_found", Submitted: "scene_task_submitted"},
-	domain.AssetProp:      {NotFound: "prop_not_found", Submitted: "prop_task_submitted"},
-	domain.AssetProduct:   {NotFound: "product_not_found", Submitted: "product_task_submitted"},
+var assetGenerateKeys = map[domainproject.AssetKind]struct{ NotFound, Submitted string }{
+	domainproject.AssetCharacter: {NotFound: "character_not_found", Submitted: "character_task_submitted"},
+	domainproject.AssetScene:     {NotFound: "project_scene_not_found", Submitted: "scene_task_submitted"},
+	domainproject.AssetProp:      {NotFound: "prop_not_found", Submitted: "prop_task_submitted"},
+	domainproject.AssetProduct:   {NotFound: "product_not_found", Submitted: "product_task_submitted"},
 }
 
 // GenerateStoryboard 提交分镜图生成任务。
@@ -85,8 +87,8 @@ func (s *GenerateService) GenerateStoryboard(
 	if err != nil {
 		return nil, err
 	}
-	items, idField, fields := domain.StoryboardItems(script)
-	item, _, ok := domain.FindStoryboardItem(items, idField, segmentID)
+	items, idField, fields := media.StoryboardItems(script)
+	item, _, ok := media.FindStoryboardItem(items, idField, segmentID)
 	if !ok {
 		return nil, generateNotFound("segment_not_found", map[string]any{"id": segmentID})
 	}
@@ -118,7 +120,7 @@ func (s *GenerateService) GenerateVideo(
 	if err != nil {
 		return nil, err
 	}
-	if project.GenerationMode == string(domain.GenerationReferenceVideo) {
+	if project.GenerationMode == string(domainproject.GenerationReferenceVideo) {
 		return nil, generateConflict("video_route_is_reference_video")
 	}
 	dir, err := s.store.Dir(projectName)
@@ -129,8 +131,8 @@ func (s *GenerateService) GenerateVideo(
 	if err != nil {
 		return nil, err
 	}
-	items, idField, fields := domain.StoryboardItems(script)
-	item, _, ok := domain.FindStoryboardItem(items, idField, segmentID)
+	items, idField, fields := media.StoryboardItems(script)
+	item, _, ok := media.FindStoryboardItem(items, idField, segmentID)
 	if !ok {
 		return nil, generateNotFound("segment_not_found", map[string]any{"id": segmentID})
 	}
@@ -139,7 +141,7 @@ func (s *GenerateService) GenerateVideo(
 	}
 
 	// 分镜图引用来自磁盘剧本 JSON，不可信任：脏类型 / 越界路径都在这里拦下。
-	storyboardRel := domain.GeneratedAssets(item)["storyboard_image"]
+	storyboardRel := media.GeneratedAssets(item)["storyboard_image"]
 	storyboardFile, err := service.ResolveStoryboardImageRef(dir, storyboardRel)
 	if err != nil {
 		return nil, service.GenerateBadRequest("invalid_storyboard_image_path", map[string]any{"segment_id": segmentID})
@@ -197,17 +199,17 @@ func (s *GenerateService) GenerateVideo(
 // 显式请求时长优先；分镜已锁时长或已有成片时返回 nil。规划是可选层：配置缺失、
 // 能力不可解析或畸形数据都返回 nil，把时长交还给既有路径。
 func (s *GenerateService) resolveEpisodeDurationRequest(
-	ctx context.Context, projectName string, project *domain.ProjectFile, script map[string]any,
+	ctx context.Context, projectName string, project *domainproject.ProjectFile, script map[string]any,
 	item map[string]any, resourceID string, explicit *int64,
 ) *int {
-	if explicit != nil || domain.IsItemDurationLocked(item) || domain.IsItemVideoGenerated(item) {
+	if explicit != nil || domainscript.IsItemDurationLocked(item) || domainscript.IsItemVideoGenerated(item) {
 		return nil
 	}
 	projectRaw, err := s.store.ReadProjectRaw(projectName)
 	if err != nil {
 		return nil
 	}
-	planConfig := domain.ReadEpisodeDurationPlan(projectRaw, script)
+	planConfig := domainscript.ReadEpisodeDurationPlan(projectRaw, script)
 	if planConfig == nil {
 		return nil
 	}
@@ -225,8 +227,8 @@ func (s *GenerateService) resolveEpisodeDurationRequest(
 	if len(supported) == 0 {
 		return nil
 	}
-	items, idField, _ := domain.StoryboardItems(script)
-	inputs := make([]domain.ShotDurationInput, 0, len(items))
+	items, idField, _ := media.StoryboardItems(script)
+	inputs := make([]domainscript.ShotDurationInput, 0, len(items))
 	for _, raw := range items {
 		candidate, ok := raw.(map[string]any)
 		if !ok {
@@ -245,16 +247,16 @@ func (s *GenerateService) resolveEpisodeDurationRequest(
 		if raw, ok := candidate["duration_weight"].(float64); ok && raw > 0 {
 			weight = raw
 		}
-		inputs = append(inputs, domain.ShotDurationInput{
+		inputs = append(inputs, domainscript.ShotDurationInput{
 			ShotID:             candidateID,
 			CurrentSeconds:     current,
 			SupportedDurations: supported,
-			Locked:             domain.IsItemDurationLocked(candidate),
-			Generated:          domain.IsItemVideoGenerated(candidate),
+			Locked:             domainscript.IsItemDurationLocked(candidate),
+			Generated:          domainscript.IsItemVideoGenerated(candidate),
 			Weight:             weight,
 		})
 	}
-	planner := domain.EpisodeDurationPlanner{}
+	planner := domainscript.EpisodeDurationPlanner{}
 	plan, err := planner.BuildPlan(
 		planConfig.TargetSeconds, inputs, planConfig.Strategy, planConfig.ManualAllocations, nil)
 	if err != nil {
@@ -275,8 +277,8 @@ func (s *GenerateService) GenerateTTS(
 	if err != nil {
 		return nil, err
 	}
-	items, idField, _ := domain.StoryboardItems(script)
-	item, _, ok := domain.FindStoryboardItem(items, idField, segmentID)
+	items, idField, _ := media.StoryboardItems(script)
+	item, _, ok := media.FindStoryboardItem(items, idField, segmentID)
 	if !ok {
 		return nil, generateNotFound("segment_not_found", map[string]any{"id": segmentID})
 	}
@@ -306,7 +308,7 @@ func (s *GenerateService) GenerateTTSBatch(
 	if err != nil {
 		return nil, err
 	}
-	items, idField, _ := domain.StoryboardItems(script)
+	items, idField, _ := media.StoryboardItems(script)
 	missing := make([]string, 0, len(items))
 	for _, raw := range items {
 		item, ok := raw.(map[string]any)
@@ -316,7 +318,7 @@ func (s *GenerateService) GenerateTTSBatch(
 		if narrationText(item) == "" {
 			continue
 		}
-		if service.PyTruthy(domain.GeneratedAssets(item)["narration_audio"]) {
+		if service.PyTruthy(media.GeneratedAssets(item)["narration_audio"]) {
 			continue
 		}
 		if id := strings.TrimSpace(fmt.Sprint(item[idField])); id != "" {
@@ -410,11 +412,11 @@ func (s *GenerateService) GenerateVoiceSample(
 	if err != nil {
 		return nil, err
 	}
-	charName, err := domain.ValidateAssetName(name)
+	charName, err := domainproject.ValidateAssetName(name)
 	if err != nil {
 		return nil, service.GenerateBadRequest("asset_invalid_name", map[string]any{"name": name})
 	}
-	bucket, ok := project.BucketRef(domain.AssetCharacter)
+	bucket, ok := project.BucketRef(domainproject.AssetCharacter)
 	if !ok || bucket == nil {
 		return nil, generateNotFound("character_not_found", map[string]any{"name": charName})
 	}
@@ -443,7 +445,7 @@ func (s *GenerateService) GenerateVoiceSample(
 func (s *GenerateService) ConfirmVoiceSample(
 	ctx context.Context, projectName, name, taskID string,
 ) (map[string]any, error) {
-	charName, err := domain.ValidateAssetName(name)
+	charName, err := domainproject.ValidateAssetName(name)
 	if err != nil {
 		return nil, service.GenerateBadRequest("asset_invalid_name", map[string]any{"name": name})
 	}
@@ -466,7 +468,7 @@ func (s *GenerateService) ConfirmVoiceSample(
 	if err != nil {
 		return nil, err
 	}
-	bucket, ok := project.BucketRef(domain.AssetCharacter)
+	bucket, ok := project.BucketRef(domainproject.AssetCharacter)
 	if !ok || bucket == nil {
 		return nil, generateNotFound("character_not_found", map[string]any{"name": charName})
 	}
@@ -502,8 +504,8 @@ func (s *GenerateService) ConfirmVoiceSample(
 	if err := os.WriteFile(targetPath, content, 0o644); err != nil {
 		return nil, err
 	}
-	if err := s.store.Update(projectName, func(pf *domain.ProjectFile) error {
-		update, ok := pf.BucketRef(domain.AssetCharacter)
+	if err := s.store.Update(projectName, func(pf *domainproject.ProjectFile) error {
+		update, ok := pf.BucketRef(domainproject.AssetCharacter)
 		if !ok || update == nil {
 			return service.ErrResourceMissingInScript
 		}
@@ -564,7 +566,7 @@ func discardStaleReferenceAudio(stalePath string) {
 
 // GenerateAsset 提交项目级资产（character / scene / prop / product）设计图生成任务。
 func (s *GenerateService) GenerateAsset(
-	ctx context.Context, kind domain.AssetKind, projectName, resourceName string, prompt string,
+	ctx context.Context, kind domainproject.AssetKind, projectName, resourceName string, prompt string,
 	regenerate bool, userID string,
 ) (map[string]any, error) {
 	keys, ok := assetGenerateKeys[kind]
@@ -583,7 +585,7 @@ func (s *GenerateService) GenerateAsset(
 	if !found {
 		return nil, generateNotFound(keys.NotFound, map[string]any{"name": resourceName})
 	}
-	assetSpec, specOK := domain.Spec(kind)
+	assetSpec, specOK := domainproject.Spec(kind)
 	if !specOK {
 		return nil, service.GenerateBadRequest("asset_invalid_type", map[string]any{"type": string(kind)})
 	}
@@ -664,7 +666,7 @@ func (s *GenerateService) EditImage(
 		if isStoryboard {
 			return nil, generateNotFound("segment_not_found", map[string]any{"id": resourceID})
 		}
-		keys := assetGenerateKeys[domain.AssetKind(resourceType)]
+		keys := assetGenerateKeys[domainproject.AssetKind(resourceType)]
 		return nil, generateNotFound(keys.NotFound, map[string]any{"name": resourceID})
 	}
 	if currentRel == "" || !fs.SafeExists(dir, filepath.FromSlash(currentRel)) {
@@ -704,7 +706,7 @@ func (s *GenerateService) EditImage(
 }
 
 // imageI2IProviderID 取 i2i 槽解析出的 provider_id（限流池路由按 i2i 槽精确记账）。
-func (s *GenerateService) imageI2IProviderID(ctx context.Context, project *domain.ProjectFile) string {
+func (s *GenerateService) imageI2IProviderID(ctx context.Context, project *domainproject.ProjectFile) string {
 	selected, err := s.resolver.ResolveImageBackend(ctx, project, nil, config.ImageCapI2I)
 	if err != nil {
 		return ""
@@ -766,7 +768,7 @@ func (s *GenerateService) enqueueTTSSegment(
 }
 
 // audioProviderID 解析 audio 供应商；解析失败视为未配置（400）。
-func (s *GenerateService) audioProviderID(ctx context.Context, project *domain.ProjectFile) (string, error) {
+func (s *GenerateService) audioProviderID(ctx context.Context, project *domainproject.ProjectFile) (string, error) {
 	selected, err := s.resolver.ResolveAudioBackend(ctx, project, nil)
 	if err != nil {
 		return "", service.GenerateBadRequest("audio_provider_not_configured", nil)

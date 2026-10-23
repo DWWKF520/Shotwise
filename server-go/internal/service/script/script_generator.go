@@ -8,11 +8,11 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
-	"github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,16 +20,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 )
 
 // ScriptGenStore 是剧本生成器对项目与剧本的读写依赖（*service.ProjectStore 满足）。
 type ScriptGenStore interface {
-	Get(name string) (*domain.ProjectFile, error)
+	Get(name string) (*project.ProjectFile, error)
 	Dir(name string) (string, error)
 	SaveScript(project, scriptFilename string, script map[string]any) error
 	// service.Update 供 step1 存量迁移在项目锁内平移 / 失效审阅确认记录（*service.ProjectStore 的同名方法）。
-	Update(name string, mutate func(*domain.ProjectFile) error) error
+	Update(name string, mutate func(*project.ProjectFile) error) error
 }
 
 // ScriptGenerator 是剧本生成器。
@@ -37,7 +38,7 @@ type ScriptGenerator struct {
 	store         ScriptGenStore
 	projectName   string
 	dir           string
-	pf            *domain.ProjectFile
+	pf            *project.ProjectFile
 	gen           TextCompletion
 	supportedDurs []int
 	// refCtx 是参考路径 step2 所需的运行时能力上下文（WithReferenceContext 注入）；非参考路径为 nil。
@@ -115,7 +116,7 @@ func (g *ScriptGenerator) BuildPrompt(episode int, instructions string) (string,
 		}
 		return AppendUserInstructions(prompt, instructions), nil
 	}
-	if genMode != string(domain.GenerationReferenceVideo) && contentMode != "narration" {
+	if genMode != string(project.GenerationReferenceVideo) && contentMode != "narration" {
 		content, err := g.loadDramaStep1(episode)
 		if err != nil {
 			return "", err
@@ -127,7 +128,7 @@ func (g *ScriptGenerator) BuildPrompt(episode int, instructions string) (string,
 		}
 		return AppendUserInstructions(prompt, instructions), nil
 	}
-	if genMode == string(domain.GenerationReferenceVideo) {
+	if genMode == string(project.GenerationReferenceVideo) {
 		rc, err := g.requireReferenceContext()
 		if err != nil {
 			return "", err
@@ -160,10 +161,10 @@ func (g *ScriptGenerator) Generate(ctx context.Context, episode int, instruction
 	if contentMode == "ad" {
 		return g.generateAD(ctx, episode, instructions)
 	}
-	if genMode != string(domain.GenerationReferenceVideo) && contentMode != "narration" {
+	if genMode != string(project.GenerationReferenceVideo) && contentMode != "narration" {
 		return g.generateDramaStep2(ctx, episode, instructions)
 	}
-	if genMode == string(domain.GenerationReferenceVideo) {
+	if genMode == string(project.GenerationReferenceVideo) {
 		return g.generateReferenceStep2(ctx, episode, instructions)
 	}
 	return g.generateNarrationStep2(ctx, episode, instructions)
@@ -293,11 +294,11 @@ func (g *ScriptGenerator) addMetadata(
 	script map[string]any, episode int, referenceUnitDurations map[string]int, rc *ScriptReferenceContext,
 ) error {
 	script["episode"] = episode
-	kind, err := domain.ResolveDeclaredKind(g.contentMode(), g.generationMode())
+	kind, err := domainscript.ResolveDeclaredKind(g.contentMode(), g.generationMode())
 	if err != nil {
 		return err
 	}
-	skeleton := domain.ScriptSkeletons[kind]
+	skeleton := domainscript.ScriptSkeletons[kind]
 	idField := skeleton.IDField
 
 	items, _ := script[kind].([]any)
@@ -360,7 +361,7 @@ func (g *ScriptGenerator) addMetadata(
 	metadata["generator"] = "shotwise-go"
 	items, _ = script[kind].([]any)
 	metadata[metadataCountKey(kind)] = len(items)
-	script["duration_seconds"] = domain.ScriptDurationTotal(kind, items)
+	script["duration_seconds"] = domainscript.ScriptDurationTotal(kind, items)
 	delete(script, "characters_in_episode")
 	delete(script, "clues_in_episode")
 	return nil
@@ -557,7 +558,7 @@ func metadataCountKey(kind string) string {
 }
 
 // targetLanguageOf 取项目输出语言：source_language 为唯一真相源，缺省回退中文。
-func targetLanguageOf(pf *domain.ProjectFile) string {
+func targetLanguageOf(pf *project.ProjectFile) string {
 	if pf != nil && strings.TrimSpace(pf.SourceLanguage) != "" {
 		return pf.SourceLanguage
 	}

@@ -10,15 +10,15 @@
 package asset
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"errors"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/infra/img"
 )
@@ -258,7 +258,7 @@ var errSkipWrite = errors.New("end frame rollback: skip script write")
 
 // findShot 定位分镜条目；不存在时是 404 segment_not_found。
 func findShot(script map[string]any, shotID string) (map[string]any, error) {
-	items, idField, _ := domain.StoryboardItems(script)
+	items, idField, _ := media.StoryboardItems(script)
 	for _, raw := range items {
 		item, ok := raw.(map[string]any)
 		if !ok {

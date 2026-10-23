@@ -168,11 +168,11 @@ func TestLoadDotenv(t *testing.T) {
 
 func TestUnquoteEnvValue(t *testing.T) {
 	cases := map[string]string{
-		`"a b"`: "a b",
-		`'a b'`: "a b",
-		`plain`:  "plain",
+		`"a b"`:       "a b",
+		`'a b'`:       "a b",
+		`plain`:       "plain",
 		`"unbalanced`: `"unbalanced`,
-		`""`:     "",
+		`""`:          "",
 	}
 	for in, want := range cases {
 		if got := unquoteEnvValue(in); got != want {

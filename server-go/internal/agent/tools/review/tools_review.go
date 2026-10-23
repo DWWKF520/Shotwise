@@ -71,19 +71,18 @@ func reviewFindingOf(code, severity string, unitIDs []string, title, reason, rec
 	}
 }
 
-
 // reviewedUnit 是单个视频单元的审阅结果。
 type reviewedUnit struct {
-	UnitID                 string          `json:"unit_id"`
-	PlannedDurationSeconds *float64        `json:"planned_duration_seconds"`
-	Shots                  []string        `json:"shots"`
-	References             []tools.ReviewRef     `json:"references"`
-	GeneratedStatus        any             `json:"generated_status"`
-	ReviewStatus           string          `json:"review_status"`
-	VideoPath              *string         `json:"video_path"`
-	MediaProbe             map[string]any  `json:"media_probe"`
-	Frames                 []reviewFrame   `json:"frames"`
-	DeterministicFindings  []reviewFinding `json:"deterministic_findings"`
+	UnitID                 string            `json:"unit_id"`
+	PlannedDurationSeconds *float64          `json:"planned_duration_seconds"`
+	Shots                  []string          `json:"shots"`
+	References             []tools.ReviewRef `json:"references"`
+	GeneratedStatus        any               `json:"generated_status"`
+	ReviewStatus           string            `json:"review_status"`
+	VideoPath              *string           `json:"video_path"`
+	MediaProbe             map[string]any    `json:"media_probe"`
+	Frames                 []reviewFrame     `json:"frames"`
+	DeterministicFindings  []reviewFinding   `json:"deterministic_findings"`
 }
 
 // reviewFrameData 是一张已抽取的帧图片（仅存在内存中，随结果返回）。
@@ -648,9 +647,3 @@ func sequenceFindings(ids []string) []reviewFinding {
 func formatReviewG(v float64) string {
 	return strconv.FormatFloat(v, 'g', 6, 64)
 }
-
-
-
-
-
-

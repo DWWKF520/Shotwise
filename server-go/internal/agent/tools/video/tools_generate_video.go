@@ -17,7 +17,9 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -255,7 +257,7 @@ func runGenerateVideoSelected(ctx context.Context, project string, deps Deps, in
 
 // loadVideoContext 读取项目、项目目录与剧本。
 func loadVideoContext(project string, deps Deps, scriptFilename string) (
-	*domain.ProjectFile, string, map[string]any, error,
+	*project.ProjectFile, string, map[string]any, error,
 ) {
 	pf, err := deps.Projects.Get(project)
 	if err != nil {
@@ -273,27 +275,27 @@ func loadVideoContext(project string, deps Deps, scriptFilename string) (
 }
 
 // contentModeOf 取剧本内容模式，缺失时回落到项目配置，最终默认 narration。
-func contentModeOf(script map[string]any, pf *domain.ProjectFile) string {
+func contentModeOf(script map[string]any, pf *project.ProjectFile) string {
 	if mode, ok := script["content_mode"].(string); ok && mode != "" {
 		return mode
 	}
 	if pf != nil && pf.ContentMode != "" {
 		return pf.ContentMode
 	}
-	return string(domain.ContentNarration)
+	return string(project.ContentNarration)
 }
 
 // resolveReferenceRoute 定生成路线并把守骨架闸门：参考路线返回子分支（"ad" / "episode"），
 // 分镜路线返回空串。剧本骨架与路线失配时返回错误（generation 被拒）。
-func resolveReferenceRoute(pf *domain.ProjectFile, script map[string]any) (string, error) {
+func resolveReferenceRoute(pf *project.ProjectFile, script map[string]any) (string, error) {
 	contentMode := contentModeOf(script, pf)
-	if _, err := domain.EnsureRouteSkeleton(script, contentMode, pf.GenerationMode); err != nil {
+	if _, err := domainscript.EnsureRouteSkeleton(script, contentMode, pf.GenerationMode); err != nil {
 		return "", err
 	}
 	if !pf.IsReferenceVideo() {
 		return "", nil
 	}
-	if contentMode == string(domain.ContentAd) {
+	if contentMode == string(project.ContentAd) {
 		return "ad", nil
 	}
 	return "episode", nil
@@ -302,7 +304,7 @@ func resolveReferenceRoute(pf *domain.ProjectFile, script map[string]any) (strin
 // ------------------------- 参考路线：narration / drama -------------------------
 
 func runReferenceEpisode(
-	ctx context.Context, project string, deps Deps, pf *domain.ProjectFile, projectDir string,
+	ctx context.Context, project string, deps Deps, pf *project.ProjectFile, projectDir string,
 	script map[string]any, scriptFilename string, resume, confirmDuration bool, log []string,
 ) (string, error) {
 	episode, err := service.ResolveEpisodeFromScript(script, scriptFilename)
@@ -361,7 +363,7 @@ func referenceUnitsOf(script map[string]any, key string, episode int, scriptFile
 // ------------------------------- 参考路线：ad -------------------------------
 
 func runAdReferenceEpisode(
-	ctx context.Context, project string, deps Deps, pf *domain.ProjectFile, projectDir string,
+	ctx context.Context, project string, deps Deps, pf *project.ProjectFile, projectDir string,
 	scriptFilename string, resume, confirmDuration bool, log []string,
 ) (string, error) {
 	maxUnitDuration := service.ResolveMaxUnitDuration(ctx, deps.Caps, pf)
@@ -374,7 +376,7 @@ func runAdReferenceEpisode(
 			return err
 		}
 		episode = ep
-		units = domain.SyncAdReferenceUnits(s, ep, maxUnitDuration)
+		units = media.SyncAdReferenceUnits(s, ep, maxUnitDuration)
 		script = s
 		return nil
 	})
@@ -385,7 +387,7 @@ func runAdReferenceEpisode(
 		return "", fmt.Errorf("剧本没有可分组的镜头：%s", scriptFilename)
 	}
 	log = append(log, fmt.Sprintf("已派生 %d 个 video_unit（连续镜头分组，索引已写入剧本）", len(units)))
-	staleIDs := domain.AdStaleUnitIDs(script, toAnyMaps(units))
+	staleIDs := media.AdStaleUnitIDs(script, toAnyMaps(units))
 	if len(staleIDs) > 0 {
 		log = append(log, fmt.Sprintf(
 			"⚠️  以下 unit 的剧本已变更但保留既有成片（stale）：%s。如需更新，用 generate_video_selected 点名这些 unit 重新生成。",
@@ -404,11 +406,11 @@ func runAdReferenceEpisode(
 		confirmDuration,
 		// 剧本编辑不作废产物：有成片指针的 unit（含 stale）一律按现有产物复用；指针为空的孤儿同名文件不可信。
 		func(u map[string]any) bool {
-			clip, _ := domain.GeneratedAssets(u)["video_clip"].(string)
+			clip, _ := media.GeneratedAssets(u)["video_clip"].(string)
 			return clip != ""
 		},
 		func(u map[string]any) ([]map[string]any, error) {
-			return domain.ResolveAdUnitShots(script, u)
+			return media.ResolveAdUnitShots(script, u)
 		},
 		script)
 	if err != nil {
@@ -423,7 +425,7 @@ func runAdReferenceEpisode(
 
 // runAdReferenceUnits 对点名的 unit 重新生成成片，不重新派生分组。点名即强制：已有成片一律覆盖。
 func runAdReferenceUnits(
-	ctx context.Context, project string, deps Deps, pf *domain.ProjectFile, projectDir string,
+	ctx context.Context, project string, deps Deps, pf *project.ProjectFile, projectDir string,
 	scriptFilename string, unitIDs []string, confirmDuration bool, log []string,
 ) (string, error) {
 	script, err := deps.Projects.ReadScriptJSON(project, scriptFilename)
@@ -464,7 +466,7 @@ func runAdReferenceUnits(
 		confirmDuration,
 		func(map[string]any) bool { return false },
 		func(u map[string]any) ([]map[string]any, error) {
-			return domain.ResolveAdUnitShots(script, u)
+			return media.ResolveAdUnitShots(script, u)
 		},
 		script)
 	if err != nil {
@@ -570,7 +572,7 @@ func reportResidualStaleness(project string, deps Deps, scriptFilename string, u
 			strings.Join(missing, "、")))
 		return
 	}
-	if residual := domain.AdStaleUnitIDs(fresh, units); len(residual) > 0 {
+	if residual := media.AdStaleUnitIDs(fresh, units); len(residual) > 0 {
 		*log = append(*log, fmt.Sprintf(
 			"⚠️  以下 unit 重新生成后仍偏离当前编排（stale），可能是生成期间剧本又被改动：%s", strings.Join(residual, ", ")))
 	}
@@ -640,7 +642,7 @@ func formatSeconds(value float64) string {
 // confirmDuration 为 false 且存在申请时长与剧本编排不一致的 unit 时，本次不产生任何任务，返回待确认清单。
 // checkpointPath 为空表示不落 checkpoint（点名重新生成一律强制覆盖，没有可续传语义）。
 func generateReferenceUnits(
-	ctx context.Context, project string, deps Deps, pf *domain.ProjectFile, projectDir string,
+	ctx context.Context, project string, deps Deps, pf *project.ProjectFile, projectDir string,
 	units []map[string]any, episode int, resume bool, log *[]string, checkpointPath string,
 	buildSpecs referenceSpecBuilder, specFor func(map[string]any) error, confirmDuration bool,
 	reuseExisting func(map[string]any) bool, adShotsFor func(map[string]any) ([]map[string]any, error),
@@ -729,7 +731,7 @@ func generateReferenceUnits(
 
 // assertAudioSwitchForUnits 是参考路线入队前的音频闸门，按本批真正要入队的 unit 所属能力桶逐桶检查。
 func assertAudioSwitchForUnits(
-	ctx context.Context, deps Deps, pf *domain.ProjectFile, units []map[string]any,
+	ctx context.Context, deps Deps, pf *project.ProjectFile, units []map[string]any,
 	skipIDs map[string]bool, specFor func(map[string]any) error,
 	adShotsFor func(map[string]any) ([]map[string]any, error),
 ) error {
@@ -746,7 +748,7 @@ func assertAudioSwitchForUnits(
 		if err != nil {
 			continue
 		}
-		bucket := domain.ReferenceUnitVideoBucket(unit, adShots)
+		bucket := media.ReferenceUnitVideoBucket(unit, adShots)
 		if checked[bucket] {
 			continue
 		}
@@ -760,7 +762,7 @@ func assertAudioSwitchForUnits(
 
 // pendingDurationConfirmations 收集本批将入队的 unit 中，申请时长与剧本编排不一致的清单。
 func pendingDurationConfirmations(
-	ctx context.Context, deps Deps, pf *domain.ProjectFile, units []map[string]any,
+	ctx context.Context, deps Deps, pf *project.ProjectFile, units []map[string]any,
 	skipIDs map[string]bool, specFor func(map[string]any) error,
 	adShotsFor func(map[string]any) ([]map[string]any, error),
 ) ([]durationPendingItem, error) {
@@ -778,7 +780,7 @@ func pendingDurationConfirmations(
 		if err != nil {
 			continue
 		}
-		bucket := domain.ReferenceUnitVideoBucket(unit, adShots)
+		bucket := media.ReferenceUnitVideoBucket(unit, adShots)
 		dctx, ok := ctxs[bucket]
 		if !ok {
 			dctx = service.ResolveProjectDurationContext(ctx, deps.Caps, pf, videoBucketOf(bucket))
@@ -870,7 +872,7 @@ func referenceUnitTask(unit map[string]any, scriptFilename string) (tools.Genera
 	if len(shots) == 0 {
 		return tools.GenerationTask{}, errors.New("没有 shots")
 	}
-	prompt := domain.AssembleShotsText(unit["shots"])
+	prompt := media.AssembleShotsText(unit["shots"])
 	if err := validateVideoTaskSpec(unitID, prompt); err != nil {
 		return tools.GenerationTask{}, err
 	}
@@ -880,12 +882,12 @@ func referenceUnitTask(unit map[string]any, scriptFilename string) (tools.Genera
 // adReferenceTask 是单 unit 的 ad 入队任务构造；成员镜头从 shots 水合后渲染 prompt。
 func adReferenceTask(script map[string]any, unit map[string]any, scriptFilename, style string) (tools.GenerationTask, error) {
 	unitID := strings.TrimSpace(stringOf(unit["unit_id"]))
-	shots, err := domain.ResolveAdUnitShots(script, unit)
+	shots, err := media.ResolveAdUnitShots(script, unit)
 	if err != nil {
 		return tools.GenerationTask{}, err
 	}
 	stylePtr := &style
-	prompt := domain.RenderAdUnitPrompt(shots, stylePtr)
+	prompt := media.RenderAdUnitPrompt(shots, stylePtr)
 	if err := validateVideoTaskSpec(unitID, prompt); err != nil {
 		return tools.GenerationTask{}, err
 	}
@@ -906,14 +908,14 @@ func validateVideoTaskSpec(resourceID, prompt string) error {
 // ------------------------------- 分镜路线 -------------------------------
 
 func runStoryboardEpisode(
-	ctx context.Context, project string, deps Deps, pf *domain.ProjectFile, projectDir string,
+	ctx context.Context, project string, deps Deps, pf *project.ProjectFile, projectDir string,
 	script map[string]any, scriptFilename string, resume bool, log []string,
 ) (string, error) {
 	episode, err := service.ResolveEpisodeFromScript(script, scriptFilename)
 	if err != nil {
 		return "", err
 	}
-	items, idField, fields := domain.StoryboardItems(script)
+	items, idField, fields := media.StoryboardItems(script)
 	contentMode := contentModeOf(script, pf)
 	if len(items) == 0 {
 		return "", fmt.Errorf("第 %d 集剧本为空：%s", episode, scriptFilename)
@@ -970,10 +972,10 @@ func runStoryboardEpisode(
 }
 
 func runStoryboardScene(
-	ctx context.Context, project string, deps Deps, pf *domain.ProjectFile, projectDir string,
+	ctx context.Context, project string, deps Deps, pf *project.ProjectFile, projectDir string,
 	script map[string]any, scriptFilename, sceneID string, log []string,
 ) (string, error) {
-	items, idField, fields := domain.StoryboardItems(script)
+	items, idField, fields := media.StoryboardItems(script)
 	item, _, ok := findStoryboardItemByAlias(items, idField, sceneID)
 	if !ok {
 		return "", fmt.Errorf("场景/片段 '%s' 不存在", sceneID)
@@ -1025,10 +1027,10 @@ func runStoryboardScene(
 }
 
 func runStoryboardAll(
-	ctx context.Context, project string, deps Deps, pf *domain.ProjectFile, projectDir string,
+	ctx context.Context, project string, deps Deps, pf *project.ProjectFile, projectDir string,
 	script map[string]any, scriptFilename string, log []string,
 ) (string, bool, error) {
-	items, idField, fields := domain.StoryboardItems(script)
+	items, idField, fields := media.StoryboardItems(script)
 	contentMode := contentModeOf(script, pf)
 	pending := pendingVideoItems(items)
 	if len(pending) == 0 {
@@ -1069,10 +1071,10 @@ func runStoryboardAll(
 }
 
 func runStoryboardSelected(
-	ctx context.Context, project string, deps Deps, pf *domain.ProjectFile, projectDir string,
+	ctx context.Context, project string, deps Deps, pf *project.ProjectFile, projectDir string,
 	script map[string]any, scriptFilename string, sceneIDs []string, resume bool, log []string,
 ) (string, error) {
-	items, idField, fields := domain.StoryboardItems(script)
+	items, idField, fields := media.StoryboardItems(script)
 	contentMode := contentModeOf(script, pf)
 
 	itemsByID := map[string]map[string]any{}
@@ -1173,10 +1175,10 @@ func runStoryboardSelected(
 // buildStoryboardVideoSpecs 为条目构造入队任务；缺分镜图或 video_prompt 无效的条目跳过并记日志。
 func buildStoryboardVideoSpecs(
 	items []any, idField, contentMode, scriptFilename, projectDir string, skipIDs []string,
-	log *[]string, voiceCharacters *domain.AssetBucket,
+	log *[]string, voiceCharacters *project.AssetBucket,
 ) ([]tools.GenerationTask, map[string]int) {
 	itemType := "片段"
-	if contentMode != string(domain.ContentNarration) {
+	if contentMode != string(project.ContentNarration) {
 		itemType = "场景"
 	}
 	skipSet := stringSet(skipIDs)
@@ -1191,7 +1193,7 @@ func buildStoryboardVideoSpecs(
 		if skipSet[itemID] {
 			continue
 		}
-		storyboardImage := domain.GeneratedAssets(item)["storyboard_image"]
+		storyboardImage := media.GeneratedAssets(item)["storyboard_image"]
 		storyboardPath, err := service.ResolveStoryboardImageRef(projectDir, storyboardImage)
 		if err != nil {
 			*log = append(*log, fmt.Sprintf("⚠️  %s %s 的分镜图引用无效，跳过: %v", itemType, itemID, err))
@@ -1223,14 +1225,14 @@ func buildStoryboardVideoSpecs(
 
 // videoPromptForItem 取条目的 video prompt：结构化 prompt 走 YAML 渲染（drama 注入台词与声线），
 // 纯字符串原样返回。
-func videoPromptForItem(item map[string]any, contentMode string, voiceCharacters *domain.AssetBucket) (string, error) {
+func videoPromptForItem(item map[string]any, contentMode string, voiceCharacters *project.AssetBucket) (string, error) {
 	prompt := item["video_prompt"]
 	if !promptPresent(prompt) {
 		return "", fmt.Errorf("片段/场景缺少 video_prompt 字段: %s", itemPromptID(item))
 	}
 	if service.IsStructuredVideoPrompt(prompt) {
 		m := service.StripVoiceProfiles(prompt.(map[string]any))
-		if contentMode == string(domain.ContentDrama) {
+		if contentMode == string(project.ContentDrama) {
 			if _, hasUtterances := item["utterances"]; hasUtterances {
 				m = service.BuildDramaVideoPrompt(m, item["utterances"], voiceCharacters)
 			} else {
@@ -1258,8 +1260,8 @@ func durationPayload(item map[string]any) map[string]any {
 
 // voiceContextFor 供 Voice_Profiles 注入的角色资产（nil 表示不注入）：非 drama 不注入；
 // drama 按无声判据排除。
-func voiceContextFor(ctx context.Context, deps Deps, pf *domain.ProjectFile, contentMode string) *domain.AssetBucket {
-	if contentMode != string(domain.ContentDrama) {
+func voiceContextFor(ctx context.Context, deps Deps, pf *project.ProjectFile, contentMode string) *project.AssetBucket {
+	if contentMode != string(project.ContentDrama) {
 		return nil
 	}
 	if service.ResolveProjectIsSilent(ctx, deps.Caps, pf) {
@@ -1269,13 +1271,13 @@ func voiceContextFor(ctx context.Context, deps Deps, pf *domain.ProjectFile, con
 }
 
 // videoBucketForRoute 按项目生成路线定桶（分镜路线恒 i2v）。
-func videoBucketForRoute(pf *domain.ProjectFile) provider.VideoBucket {
+func videoBucketForRoute(pf *project.ProjectFile) provider.VideoBucket {
 	return provider.VideoBucketForGenerationMode(pf.GenerationMode)
 }
 
 // preflightVideoItems 在入队前拒绝整批：任一待入队条目引用了无可用设计图的资产即阻断。
 func preflightVideoItems(
-	pf *domain.ProjectFile, projectDir string, items []any, fields domain.StoryboardItemFields,
+	pf *project.ProjectFile, projectDir string, items []any, fields media.StoryboardItemFields,
 	idField string, skipIDs map[string]bool,
 ) error {
 	var results []service.PreflightResult
@@ -1453,7 +1455,7 @@ func itemPromptID(item map[string]any) string {
 
 // storyboardPathFor 取条目的分镜图绝对路径（"" 表示未设置）。
 func storyboardPathFor(item map[string]any, projectDir string) (string, error) {
-	return service.ResolveStoryboardImageRef(projectDir, domain.GeneratedAssets(item)["storyboard_image"])
+	return service.ResolveStoryboardImageRef(projectDir, media.GeneratedAssets(item)["storyboard_image"])
 }
 
 // findStoryboardItemByAlias 按规范 id 或 scene_id 别名命中条目。
@@ -1481,7 +1483,7 @@ func pendingVideoItems(items []any) []any {
 		if !ok {
 			continue
 		}
-		if clip, _ := domain.GeneratedAssets(item)["video_clip"].(string); clip != "" {
+		if clip, _ := media.GeneratedAssets(item)["video_clip"].(string); clip != "" {
 			continue
 		}
 		out = append(out, item)

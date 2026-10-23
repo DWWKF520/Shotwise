@@ -9,9 +9,9 @@
 package main
 
 import (
-	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"errors"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,17 +26,17 @@ import (
 	"github.com/shotwise/shotwise/internal/app"
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/admin"
+	"github.com/shotwise/shotwise/internal/service/asset"
 	"github.com/shotwise/shotwise/internal/service/creative"
 	"github.com/shotwise/shotwise/internal/service/generation"
 	"github.com/shotwise/shotwise/internal/service/media"
-	"github.com/shotwise/shotwise/internal/service/asset"
-	"github.com/shotwise/shotwise/internal/service/admin"
 	"github.com/shotwise/shotwise/internal/textgen"
 	"github.com/shotwise/shotwise/migrations"
 	"golang.org/x/crypto/bcrypt"
@@ -208,15 +208,15 @@ func run(log *slog.Logger) error {
 		agent.WithModelResolver(agentModelResolver),
 		agent.WithProjectWriters(assets, store), agent.WithAssetProjects(store),
 		agent.WithVideoCapabilities(config.NewResolver(gdb)),
-		agent.WithRelationAnalysis(func(ctx context.Context, pf *domain.ProjectFile) (agent.RelationTextGenerator, error) {
+		agent.WithRelationAnalysis(func(ctx context.Context, pf *project.ProjectFile) (agent.RelationTextGenerator, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}, store),
 		agent.WithScriptEditing(store), agent.WithAssetRename(assets),
-		agent.WithTextGenerationTools(func(ctx context.Context, pf *domain.ProjectFile) (servicescript.TextCompletion, error) {
+		agent.WithTextGenerationTools(func(ctx context.Context, pf *project.ProjectFile) (servicescript.TextCompletion, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}, store),
 		agent.WithScriptReviewTools(store),
-		agent.WithReferenceTools(func(ctx context.Context, pf *domain.ProjectFile) (servicescript.TextCompletion, error) {
+		agent.WithReferenceTools(func(ctx context.Context, pf *project.ProjectFile) (servicescript.TextCompletion, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}, store, config.NewResolver(gdb)),
 		agent.WithTimelineTools(media.NewMediaAssemblyService(gdb)),
@@ -226,7 +226,7 @@ func run(log *slog.Logger) error {
 		agent.WithGenerationTools(q, store),
 		agent.WithImageEditTools(q, store, config.NewResolver(gdb)),
 		agent.WithGridTools(q, store, config.NewResolver(gdb), service.NewGridService(store)),
-		agent.WithEpisodePlanning(store, func(ctx context.Context, pf *domain.ProjectFile) (servicescript.TextCompletion, error) {
+		agent.WithEpisodePlanning(store, func(ctx context.Context, pf *project.ProjectFile) (servicescript.TextCompletion, error) {
 			return textgen.NewGenerator(ctx, gdb, pf, textgen.TaskScript)
 		}),
 		agent.WithVideoGeneration(q, store, config.NewResolver(gdb), store))

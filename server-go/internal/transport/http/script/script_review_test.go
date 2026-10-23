@@ -22,7 +22,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit/httpkittest"
@@ -38,7 +38,7 @@ type reviewCapsStub struct {
 }
 
 func (s *reviewCapsStub) VideoCapabilitiesForProjectBucket(
-	_ context.Context, _ *domain.ProjectFile, _ provider.VideoBucket,
+	_ context.Context, _ *project.ProjectFile, _ provider.VideoBucket,
 ) (config.VideoCapabilityView, error) {
 	if s.resolveErr != nil {
 		return config.VideoCapabilityView{}, s.resolveErr
@@ -46,11 +46,11 @@ func (s *reviewCapsStub) VideoCapabilitiesForProjectBucket(
 	return s.view, nil
 }
 
-func (s *reviewCapsStub) VideoGenerateAudioForProject(_ context.Context, _ *domain.ProjectFile) (bool, error) {
+func (s *reviewCapsStub) VideoGenerateAudioForProject(_ context.Context, _ *project.ProjectFile) (bool, error) {
 	return false, nil
 }
 
-func (s *reviewCapsStub) ResolveResolution(_ context.Context, _ *domain.ProjectFile, _, _ string) (string, error) {
+func (s *reviewCapsStub) ResolveResolution(_ context.Context, _ *project.ProjectFile, _, _ string) (string, error) {
 	return "", nil
 }
 
@@ -64,19 +64,19 @@ type reviewRouterEnv struct {
 // newReviewRouterEnv 建测试项目（drama 内容模式 + 指定生成路线）、登记第 1 集与角色阿离，
 // 注册审核 gate 路由。
 func newReviewRouterEnv(
-	t *testing.T, generationMode domain.GenerationMode, resolver service.VideoCapabilityResolver,
+	t *testing.T, generationMode project.GenerationMode, resolver service.VideoCapabilityResolver,
 ) *reviewRouterEnv {
 	t.Helper()
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("demo", "Demo", domain.ContentDrama, generationMode, "Anime"); err != nil {
+	if _, err := store.Create("demo", "Demo", project.ContentDrama, generationMode, "Anime"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
 		if pf.Characters == nil {
-			pf.Characters = domain.AssetBucket{}
+			pf.Characters = project.AssetBucket{}
 		}
-		pf.Characters["阿离"] = domain.WrapAssetEntry(map[string]any{"name": "阿离", "description": "少女"})
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{
+		pf.Characters["阿离"] = project.WrapAssetEntry(map[string]any{"name": "阿离", "description": "少女"})
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{
 			Episode: 1, Title: "第一集", ScriptFile: "scripts/episode_1.json",
 		})
 		return nil
@@ -327,7 +327,7 @@ func reviewRVShotText(t *testing.T, body map[string]any, unitIndex, shotIndex in
 // --- drama 路由 ---
 
 func TestScriptReviewRouterGateFlow(t *testing.T) {
-	env := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	base := "/api/v1/projects/demo/episodes/1/script-review"
 
 	// step1 未产出。
@@ -369,7 +369,7 @@ func TestScriptReviewRouterGateFlow(t *testing.T) {
 }
 
 func TestScriptReviewRouterEditContentRepends(t *testing.T) {
-	env := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	base := "/api/v1/projects/demo/episodes/1/script-review"
 	writeRouterStep1File(t, env.dir, "step1_normalized_script.json", routerDramaStep1())
 	reviewReq(t, env, http.MethodPost, base+"/confirm", nil, nil)
@@ -393,7 +393,7 @@ func TestScriptReviewRouterEditContentRepends(t *testing.T) {
 }
 
 func TestScriptReviewRouterPutInvalidContent422(t *testing.T) {
-	env := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	base := "/api/v1/projects/demo/episodes/1/script-review"
 	writeRouterStep1File(t, env.dir, "step1_normalized_script.json", routerDramaStep1())
 
@@ -408,7 +408,7 @@ func TestScriptReviewRouterPutInvalidContent422(t *testing.T) {
 }
 
 func TestScriptReviewRouterConfirmWithoutStep1Is409(t *testing.T) {
-	env := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	rec := reviewReq(
 		t, env, http.MethodPost, "/api/v1/projects/demo/episodes/1/script-review/confirm", nil, nil,
 	)
@@ -419,7 +419,7 @@ func TestScriptReviewRouterConfirmWithoutStep1Is409(t *testing.T) {
 
 func TestScriptReviewRouterUnregisteredEpisodeIs404(t *testing.T) {
 	// 未在 project.json 登记的分集 → 404，而非误报 no_step1 的 200。
-	env := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	rec := reviewReq(t, env, http.MethodGet, "/api/v1/projects/demo/episodes/99/script-review", nil, nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unregistered episode = %d body=%s", rec.Code, rec.Body.String())
@@ -430,7 +430,7 @@ func TestScriptReviewRouterUnregisteredEpisodeIs404(t *testing.T) {
 
 func TestScriptReviewRVRouterGateFlow(t *testing.T) {
 	// rv 走同一 HTTP gate：结构化 units 可读、可编辑、web 确认放行 step2。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	base := "/api/v1/projects/demo/episodes/1/script-review"
 
 	rec := reviewReq(t, env, http.MethodGet, base, nil, nil)
@@ -479,7 +479,7 @@ func TestScriptReviewRVRouterGateFlow(t *testing.T) {
 func TestScriptReviewRVQuarantineSurfacedWithRecomputedViolations(t *testing.T) {
 	// 隔离草稿在场时 GET 附带 quarantine 字段：违约按产出时那套校验器读时重算，
 	// 不信任草稿里上一轮的快照（快照消息故意写成 "stale"）。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{
 		view: config.VideoCapabilityView{
 			ProviderID: "custom-acme", ModelID: "acme-video", SupportedDurations: []int{4, 6, 8},
 		},
@@ -533,7 +533,7 @@ func TestScriptReviewRVQuarantineSurfacedWithRecomputedViolations(t *testing.T) 
 
 func TestScriptReviewRVQuarantineSchemaInvalidKeepsRawContent(t *testing.T) {
 	// 草稿 units 被改成非数组：违约报 schema_invalid，content 原样回传（不做收编）。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{
 		view: config.VideoCapabilityView{
 			ProviderID: "custom-acme", ModelID: "acme-video", SupportedDurations: []int{4, 6, 8},
 		},
@@ -567,7 +567,7 @@ func TestScriptReviewRVQuarantineSchemaInvalidKeepsRawContent(t *testing.T) {
 
 func TestScriptReviewRVQuarantineMetaBrokenReportsRecomputeFailure(t *testing.T) {
 	// meta.source 缺失 → 无从重算：报「无法重算」本身，而不是退回草稿里那份上一轮快照。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	if _, err := servicereference.WriteQuarantine(env.dir, 1, servicereference.QuarantineKindStep1,
 		map[string]any{"units": []any{map[string]any{
 			"duration_seconds": float64(4), "source_text": "原文", "text": "镜头1：门开了",
@@ -596,7 +596,7 @@ func TestScriptReviewRVQuarantineMetaBrokenReportsRecomputeFailure(t *testing.T)
 
 func TestScriptReviewRVSupportedDurationsExposedForReferenceVideoOnly(t *testing.T) {
 	// rv 变体的 GET 带出档位表供 web 渲染时长选择；drama 变体下为 null。
-	rvEnv := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	rvEnv := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	writeRouterStep1File(t, rvEnv.dir, service.ReferenceVideoStep1Filename, routerRVStep1())
 	rec := reviewReq(t, rvEnv, http.MethodGet, "/api/v1/projects/demo/episodes/1/script-review", nil, nil)
 	body := decodeReviewJSON(t, rec)
@@ -609,7 +609,7 @@ func TestScriptReviewRVSupportedDurationsExposedForReferenceVideoOnly(t *testing
 		t.Fatal("rv GET 响应缺 duration_tiers 字段")
 	}
 
-	dramaEnv := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	dramaEnv := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	writeRouterStep1File(t, dramaEnv.dir, "step1_normalized_script.json", routerDramaStep1())
 	rec = reviewReq(t, dramaEnv, http.MethodGet, "/api/v1/projects/demo/episodes/1/script-review", nil, nil)
 	body = decodeReviewJSON(t, rec)
@@ -624,7 +624,7 @@ func TestScriptReviewRVSupportedDurationsExposedForReferenceVideoOnly(t *testing
 func TestScriptReviewRVQuarantineCorruptedEnvelopeReported(t *testing.T) {
 	// 隔离草稿文件存在但信封本身损坏（非法 JSON）：GET 不能把这等同于「无隔离草稿」——
 	// 那会让面板显示干净态、放行确认，而 confirm 仍会按文件存在性 409。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	writeRouterStep1File(t, env.dir, service.ReferenceVideoStep1Filename, routerRVStep1())
 	if err := os.WriteFile(env.reviewQuarantinePath(t), []byte("{ 这不是合法 JSON"), 0o644); err != nil {
 		t.Fatal(err)
@@ -653,7 +653,7 @@ func TestScriptReviewRVQuarantineCorruptedEnvelopeReported(t *testing.T) {
 
 func TestScriptReviewRVFutureQuarantineSchemaReported(t *testing.T) {
 	// 未来版本的隔离草稿应显示可操作诊断，而不是让审阅接口返回 500。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	writeRouterStep1File(t, env.dir, service.ReferenceVideoStep1Filename, routerRVStep1())
 	envelope := map[string]any{
 		"schema_version": servicereference.QuarantineSchemaVersion + 1,
@@ -702,7 +702,7 @@ func TestScriptReviewRVFutureQuarantineSchemaReported(t *testing.T) {
 func TestScriptReviewRVQuarantineUnreadableMessageLocalizedByAcceptLanguage(t *testing.T) {
 	// quarantine_unreadable 违约的 message 走 i18n 按 Accept-Language 本地化；其它违约 code 的
 	// message 是产出时渲染好插值的中文模板，不做本地化。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	writeRouterStep1File(t, env.dir, service.ReferenceVideoStep1Filename, routerRVStep1())
 	if err := os.WriteFile(env.reviewQuarantinePath(t), []byte("{ not valid json"), 0o644); err != nil {
 		t.Fatal(err)
@@ -726,7 +726,7 @@ func TestScriptReviewRVQuarantineUnreadableMessageLocalizedByAcceptLanguage(t *t
 func TestScriptReviewRVDurationTiersSurviveSaveAndConfirmResponses(t *testing.T) {
 	// PUT / confirm 的响应同样带 duration_tiers：前端 adopt() 用保存后的响应覆盖 GET 读到的
 	// 收窄结果，不带的话会退回未收窄的 supported_durations。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	writeRouterStep1File(t, env.dir, service.ReferenceVideoStep1Filename, routerRVStep1())
 	base := "/api/v1/projects/demo/episodes/1/script-review"
 
@@ -747,7 +747,7 @@ func TestScriptReviewRVDurationTiersSurviveSaveAndConfirmResponses(t *testing.T)
 func TestScriptReviewRVDurationTiersResolvedForCustomProvider(t *testing.T) {
 	// 自定义供应商不在 registry：caps 是它唯一的档位来源；supported_durations（未收窄全集）
 	// 与 duration_tiers（收窄后的逐 unit 可选项）都要经 caps 解析出真实档位。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{
 		view: config.VideoCapabilityView{
 			ProviderID: "custom-acme", ModelID: "acme-video", SupportedDurations: []int{5, 10},
 		},
@@ -773,7 +773,7 @@ func TestScriptReviewRVDurationTiersResolvedForCustomProvider(t *testing.T) {
 
 func TestScriptReviewRVQuarantineNonStringMetaSourceDegrades(t *testing.T) {
 	// meta.source 被改成非字符串：重算链路按「无法重算」降级，不让类型错误冒穿成 500。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	if _, err := servicereference.WriteQuarantine(env.dir, 1, servicereference.QuarantineKindStep1,
 		map[string]any{"units": []any{map[string]any{
 			"duration_seconds": float64(4), "source_text": "x", "text": "镜头1：门开了",
@@ -797,7 +797,7 @@ func TestScriptReviewRVQuarantineNonStringMetaSourceDegrades(t *testing.T) {
 func TestScriptReviewRVQuarantineDirectoryMetaSourceDegrades(t *testing.T) {
 	// meta.source 是字符串但指向一个目录：同样降级成 quarantine_unreadable，不让读目录的
 	// OSError 子类冒穿成 500。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	if err := os.MkdirAll(filepath.Join(env.dir, "source"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -824,7 +824,7 @@ func TestScriptReviewRVQuarantineDirectoryMetaSourceDegrades(t *testing.T) {
 func TestScriptReviewRVPutResponseIncludesQuarantine(t *testing.T) {
 	// 保存作用于正式草稿，隔离草稿是另一份文件：PUT 响应缺 quarantine 字段的话，面板 adopt()
 	// 会把它当成「无隔离草稿」而放行确认（用「保存时隔离草稿已存在」模拟保存在途产出的时序）。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{
 		view: config.VideoCapabilityView{
 			ProviderID: "custom-acme", ModelID: "acme-video", SupportedDurations: []int{4, 6, 8},
 		},
@@ -864,7 +864,7 @@ func TestScriptReviewRVPutResponseIncludesQuarantine(t *testing.T) {
 func TestScriptReviewRVPutStaleBaseFingerprintConflicts(t *testing.T) {
 	// PUT 携带的 base_fingerprint 与盘上现值不一致（编辑期间另一方已保存）→ 409、不落盘；
 	// 拿最新指纹重试放行。缺省不带指纹的调用维持原语义（不比对）。
-	env := newReviewRouterEnv(t, domain.GenerationReferenceVideo, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationReferenceVideo, &reviewCapsStub{})
 	writeRouterStep1File(t, env.dir, service.ReferenceVideoStep1Filename, routerRVStep1())
 	base := "/api/v1/projects/demo/episodes/1/script-review"
 
@@ -900,7 +900,7 @@ func TestScriptReviewRVPutStaleBaseFingerprintConflicts(t *testing.T) {
 // --- pending-authoring 路由 ---
 
 func TestPendingAuthoringRouterReportsStaleItems(t *testing.T) {
-	env := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	writeRouterStep1File(t, env.dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{routerPendingDramaStep1Scene("E1S01", "改了")},
 	})
@@ -926,7 +926,7 @@ func TestPendingAuthoringRouterReportsStaleItems(t *testing.T) {
 }
 
 func TestPendingAuthoringRouterCleanEpisodeReportsNoItems(t *testing.T) {
-	env := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	writeRouterStep1File(t, env.dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{routerPendingDramaStep1Scene("E1S01", "你终于回来了。")},
 	})
@@ -948,7 +948,7 @@ func TestPendingAuthoringRouterCleanEpisodeReportsNoItems(t *testing.T) {
 }
 
 func TestPendingAuthoringRouterUnknownProjectIs404(t *testing.T) {
-	env := newReviewRouterEnv(t, domain.GenerationStoryboard, &reviewCapsStub{})
+	env := newReviewRouterEnv(t, project.GenerationStoryboard, &reviewCapsStub{})
 	rec := reviewReq(
 		t, env, http.MethodGet, "/api/v1/projects/missing/episodes/1/pending-authoring", nil, nil,
 	)

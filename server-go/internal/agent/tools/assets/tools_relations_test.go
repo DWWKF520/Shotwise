@@ -9,22 +9,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/character"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
 // fakeRelationProjects 是内存版项目读写：读原文件、记录每次写回的关系图。
 type fakeRelationProjects struct {
 	dir     string
-	pf      *domain.ProjectFile
+	pf      *project.ProjectFile
 	scripts map[string]map[string]any
 	writes  []map[string]any
 }
 
-func (f *fakeRelationProjects) Get(string) (*domain.ProjectFile, error) { return f.pf, nil }
-func (f *fakeRelationProjects) Dir(string) (string, error)              { return f.dir, nil }
+func (f *fakeRelationProjects) Get(string) (*project.ProjectFile, error) { return f.pf, nil }
+func (f *fakeRelationProjects) Dir(string) (string, error)               { return f.dir, nil }
 
-func (f *fakeRelationProjects) Update(_ string, mutate func(*domain.ProjectFile) error) error {
+func (f *fakeRelationProjects) Update(_ string, mutate func(*project.ProjectFile) error) error {
 	if err := mutate(f.pf); err != nil {
 		return err
 	}
@@ -86,7 +87,7 @@ func newRelationFixture(t *testing.T, characters map[string]any, relations map[s
 	if err := fs.WriteJSONAtomic(filepath.Join(dir, "scripts", "episode_1.json"), script); err != nil {
 		t.Fatal(err)
 	}
-	pf, err := domain.NewProjectFile("测试", domain.ContentDrama, domain.GenerationStoryboard), error(nil)
+	pf, err := project.NewProjectFile("测试", project.ContentDrama, project.GenerationStoryboard), error(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +109,7 @@ func twoCharacters() map[string]any {
 func TestAnalyzeCharacterRelationsSkipsModelForSingleCharacter(t *testing.T) {
 	projects, _ := newRelationFixture(t, map[string]any{"阿明": map[string]any{"description": "少年"}}, nil)
 	gen := &fakeRelationGenerator{text: `{"relations":[]}`}
-	tl, err := NewAnalyzeCharacterRelationsTool("proj", func(context.Context, *domain.ProjectFile) (RelationTextGenerator, error) {
+	tl, err := NewAnalyzeCharacterRelationsTool("proj", func(context.Context, *project.ProjectFile) (RelationTextGenerator, error) {
 		return gen, nil
 	}, projects)
 	if err != nil {
@@ -147,7 +148,7 @@ func TestAnalyzeCharacterRelationsMergesModelOutputAndPreservesManualEdges(t *te
 		 "description":"常去茶馆","confidence":0.9,
 		 "evidence":[{"episode":1,"script_file":"episode_1.json","scene_id":"s1","excerpt":"桥上相遇"}]}
 	]}` + "\n```"}
-	tl, err := NewAnalyzeCharacterRelationsTool("proj", func(context.Context, *domain.ProjectFile) (RelationTextGenerator, error) {
+	tl, err := NewAnalyzeCharacterRelationsTool("proj", func(context.Context, *project.ProjectFile) (RelationTextGenerator, error) {
 		return gen, nil
 	}, projects)
 	if err != nil {
@@ -177,7 +178,7 @@ func TestAnalyzeCharacterRelationsMergesModelOutputAndPreservesManualEdges(t *te
 	if len(edges) != 2 {
 		t.Fatalf("edges = %+v", edges)
 	}
-	if written["analysis_status"] != domain.RelationStatusReady {
+	if written["analysis_status"] != character.RelationStatusReady {
 		t.Fatalf("status = %v", written["analysis_status"])
 	}
 	if written["source_fingerprint"] == nil || written["source_fingerprint"] == "" {
@@ -186,10 +187,10 @@ func TestAnalyzeCharacterRelationsMergesModelOutputAndPreservesManualEdges(t *te
 	// 人工边原样保留，AI 边带新 id 与 origin=ai。
 	first := edges[0].(map[string]any)
 	second := edges[1].(map[string]any)
-	if first["id"] != "m1" || first["origin"] != domain.RelationOriginManual {
+	if first["id"] != "m1" || first["origin"] != character.RelationOriginManual {
 		t.Fatalf("人工边被改写: %+v", first)
 	}
-	if second["origin"] != domain.RelationOriginAI || second["type"] != "ally" {
+	if second["origin"] != character.RelationOriginAI || second["type"] != "ally" {
 		t.Fatalf("AI 边不符: %+v", second)
 	}
 	if second["id"] == "" || second["id"] == "m1" {
@@ -228,7 +229,7 @@ func TestAnalyzeCharacterRelationsMarksFailureAndKeepsOldGraph(t *testing.T) {
 	for name, c := range cases {
 		projects, _ := newRelationFixture(t, twoCharacters(), existing)
 		gen := &fakeRelationGenerator{text: c.text, err: c.err}
-		tl, err := NewAnalyzeCharacterRelationsTool("proj", func(context.Context, *domain.ProjectFile) (RelationTextGenerator, error) {
+		tl, err := NewAnalyzeCharacterRelationsTool("proj", func(context.Context, *project.ProjectFile) (RelationTextGenerator, error) {
 			return gen, nil
 		}, projects)
 		if err != nil {
@@ -242,7 +243,7 @@ func TestAnalyzeCharacterRelationsMarksFailureAndKeepsOldGraph(t *testing.T) {
 			t.Errorf("%s: out = %s", name, out)
 		}
 		written := projects.writes[len(projects.writes)-1]
-		if written["analysis_status"] != domain.RelationStatusFailed {
+		if written["analysis_status"] != character.RelationStatusFailed {
 			t.Errorf("%s: 失败需落盘 failed，得到 %v", name, written["analysis_status"])
 		}
 		edges, _ := written["edges"].([]any)
@@ -265,7 +266,7 @@ func TestAnalyzeCharacterRelationsExpiredListingAndConfigGates(t *testing.T) {
 	}
 
 	glitched := &fakeRelationProjects{dir: filepath.Join(projects.dir, "已删除"), pf: projects.pf}
-	tl, _ = NewAnalyzeCharacterRelationsTool("proj", func(context.Context, *domain.ProjectFile) (RelationTextGenerator, error) {
+	tl, _ = NewAnalyzeCharacterRelationsTool("proj", func(context.Context, *project.ProjectFile) (RelationTextGenerator, error) {
 		return &fakeRelationGenerator{text: `{"relations":[]}`}, nil
 	}, glitched)
 	// 项目目录不存在时按「项目未找到」回灌信封，而不是 panic。
@@ -288,8 +289,8 @@ func TestRelationAnalysisSchemaIsInlineAndWithinGeminiSubset(t *testing.T) {
 	items, _ := relations["items"].(map[string]any)
 	inner, _ := items["properties"].(map[string]any)
 	enum, _ := inner["type"].(map[string]any)["enum"].([]any)
-	if len(enum) != len(domain.RelationshipTypes) {
-		t.Fatalf("type 枚举应与 domain.RelationshipTypes 对齐: %v", enum)
+	if len(enum) != len(character.RelationshipTypes) {
+		t.Fatalf("type 枚举应与 character.RelationshipTypes 对齐: %v", enum)
 	}
 	if _, present := items["additionalProperties"]; present {
 		t.Fatal("wire schema 不声明 additionalProperties（Go 侧解析已做同等约束）")

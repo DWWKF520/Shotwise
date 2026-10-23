@@ -9,16 +9,17 @@ import (
 	"log/slog"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // ImageCapabilityResolver 是图片身份 + 分辨率档的解析能力（*config.Resolver 满足）。
 type ImageCapabilityResolver interface {
 	ResolveImageBackend(
-		ctx context.Context, project *domain.ProjectFile, payload map[string]any, capability config.ImageCapability,
+		ctx context.Context, project *project.ProjectFile, payload map[string]any, capability config.ImageCapability,
 	) (config.ProviderModel, error)
 	ResolveResolution(
-		ctx context.Context, project *domain.ProjectFile, providerID, modelID string,
+		ctx context.Context, project *project.ProjectFile, providerID, modelID string,
 	) (string, error)
 }
 
@@ -29,13 +30,13 @@ type ImageCapabilityResolver interface {
 // 取到不同档位——门控须在入队时就定档，那时还没有参考图收集结果，取正交能力槽中代表宫格主
 // 路径的 T2I。解析失败（未配置图像供应商等）按未配置处理：门控是收紧方向，取不到档位即不放
 // 行大宫格。
-func ResolveImageResolution(ctx context.Context, resolver ImageCapabilityResolver, pf *domain.ProjectFile) string {
+func ResolveImageResolution(ctx context.Context, resolver ImageCapabilityResolver, pf *project.ProjectFile) string {
 	return ResolveImageResolutionFor(ctx, resolver, pf, nil, config.ImageCapT2I)
 }
 
 // ResolveImageResolutionFor 按给定能力槽与载荷解析生效分辨率档（执行侧按实际槽取档）。
 func ResolveImageResolutionFor(
-	ctx context.Context, resolver ImageCapabilityResolver, pf *domain.ProjectFile,
+	ctx context.Context, resolver ImageCapabilityResolver, pf *project.ProjectFile,
 	payload map[string]any, capability config.ImageCapability,
 ) string {
 	selected, err := resolver.ResolveImageBackend(ctx, pf, payload, capability)
@@ -53,6 +54,6 @@ func ResolveImageResolutionFor(
 }
 
 // ResolveLargeGridAllowed 判定大宫格（4×4 / 5×5）是否放行。
-func ResolveLargeGridAllowed(ctx context.Context, resolver ImageCapabilityResolver, pf *domain.ProjectFile) bool {
-	return domain.LargeGridAllowed(ResolveImageResolution(ctx, resolver, pf))
+func ResolveLargeGridAllowed(ctx context.Context, resolver ImageCapabilityResolver, pf *project.ProjectFile) bool {
+	return grid.LargeGridAllowed(ResolveImageResolution(ctx, resolver, pf))
 }

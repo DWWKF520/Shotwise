@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/creative"
@@ -42,7 +42,7 @@ func newCreativeContextHandlerEnv(t *testing.T) (*gin.Engine, string) {
 	t.Helper()
 	gdb := httpkittest.NewJianyingHTTPTestDB(t)
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "Project One", domain.ContentDrama, domain.GenerationStoryboard, ""); err != nil {
+	if _, err := store.Create("p1", "Project One", project.ContentDrama, project.GenerationStoryboard, ""); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	ctx := context.Background()

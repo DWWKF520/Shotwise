@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
 )
@@ -223,7 +223,7 @@ func (b *agnesImageBackend) resolveSize(req provider.ImageGenerationRequest) (st
 
 // agnesCanonicalRatio 把比例规范化成约简的 "w:h"。
 func agnesCanonicalRatio(aspectRatio string) string {
-	aw, ah := domain.ParseAspectRatio(aspectRatio)
+	aw, ah := project.ParseAspectRatio(aspectRatio)
 	return fmt.Sprintf("%d:%d", aw, ah)
 }
 
@@ -232,9 +232,9 @@ func agnesCanonicalRatio(aspectRatio string) string {
 // 自定义 image_size 会剥离其自带比例（取短边），比例由 aspect_ratio 决定；结果被 8 整除、
 // 长边受 2048 收口。
 func (b *agnesImageBackend) resolveDimensions(req provider.ImageGenerationRequest) (int, int) {
-	short := domain.ResolutionToShortEdge(req.ImageSize, domain.ImageTierShortEdge, agnesImageDefaultShort)
+	short := project.ResolutionToShortEdge(req.ImageSize, project.ImageTierShortEdge, agnesImageDefaultShort)
 	maxLong := agnesImageMaxLongEdge
-	return domain.AspectSize(req.AspectRatio, short, domain.AspectSizeOptions{
+	return project.AspectSize(req.AspectRatio, short, project.AspectSizeOptions{
 		RoundTo:     agnesImageRoundTo,
 		MaxLongEdge: &maxLong,
 	})

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/migrations"
@@ -192,7 +192,7 @@ func TestMediaAssemblyCreatePlanRejectsInvalidDocument(t *testing.T) {
 		SourceManifest: assemblyTestManifest(),
 		Timeline:       nil,
 	})
-	var validationErr *domain.AssemblyPlanValidationError
+	var validationErr *media.AssemblyPlanValidationError
 	if !errors.As(err, &validationErr) || len(validationErr.Errors) == 0 {
 		t.Fatalf("empty timeline must fail validation, got %v", err)
 	}

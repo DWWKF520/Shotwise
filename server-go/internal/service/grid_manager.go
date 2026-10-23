@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/grid"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -28,7 +28,7 @@ func NewGridManager(projectDir string) (*GridManager, error) {
 
 // path 取 grids 下的记录/图片路径。gridID 来自 URL 路径参数，先卡格式白名单再过越界校验。
 func (m *GridManager) path(gridID, suffix string) (string, error) {
-	if !domain.ValidGridID(gridID) {
+	if !grid.ValidGridID(gridID) {
 		return "", fmt.Errorf("非法宫格 ID: %q", gridID)
 	}
 	resolved, err := fs.SafeJoin(m.dir, false, gridID+suffix)
@@ -44,7 +44,7 @@ func (m *GridManager) ImagePath(gridID string) (string, error) {
 }
 
 // Save 写入记录 JSON。
-func (m *GridManager) Save(grid *domain.GridGeneration) error {
+func (m *GridManager) Save(grid *grid.GridGeneration) error {
 	path, err := m.path(grid.ID, ".json")
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func (m *GridManager) Save(grid *domain.GridGeneration) error {
 }
 
 // Get 读一条记录；不存在返回 ok=false。
-func (m *GridManager) Get(gridID string) (*domain.GridGeneration, bool, error) {
+func (m *GridManager) Get(gridID string) (*grid.GridGeneration, bool, error) {
 	path, err := m.path(gridID, ".json")
 	if err != nil {
 		return nil, false, err
@@ -65,7 +65,7 @@ func (m *GridManager) Get(gridID string) (*domain.GridGeneration, bool, error) {
 		}
 		return nil, false, err
 	}
-	grid, err := domain.GridGenerationFromJSON(raw)
+	grid, err := grid.GridGenerationFromJSON(raw)
 	if err != nil {
 		return nil, false, err
 	}
@@ -96,7 +96,7 @@ func (m *GridManager) Delete(gridID string) (bool, error) {
 }
 
 // ListAll 返回全部记录，按 created_at 升序；损坏记录跳过（与 Python 侧告警后跳过同语义）。
-func (m *GridManager) ListAll() ([]*domain.GridGeneration, error) {
+func (m *GridManager) ListAll() ([]*grid.GridGeneration, error) {
 	entries, err := os.ReadDir(m.dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -104,7 +104,7 @@ func (m *GridManager) ListAll() ([]*domain.GridGeneration, error) {
 		}
 		return nil, err
 	}
-	var grids []*domain.GridGeneration
+	var grids []*grid.GridGeneration
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -117,7 +117,7 @@ func (m *GridManager) ListAll() ([]*domain.GridGeneration, error) {
 		if err != nil {
 			continue
 		}
-		grid, err := domain.GridGenerationFromJSON(raw)
+		grid, err := grid.GridGenerationFromJSON(raw)
 		if err != nil {
 			continue
 		}

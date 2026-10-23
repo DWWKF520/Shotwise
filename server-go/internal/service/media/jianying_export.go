@@ -22,7 +22,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
@@ -370,11 +370,11 @@ func (s *JianyingExportService) buildExport(
 			Code: "subtitle_invalid", Message: "subtitle cues must be a list", Status: 422,
 		}
 	}
-	srt, err := domain.GenerateSRT(cues)
+	srt, err := media.GenerateSRT(cues)
 	if err != nil {
 		return nil, &JianyingExportError{Code: "subtitle_invalid", Message: err.Error(), Status: 422}
 	}
-	vtt, err := domain.GenerateVTT(cues)
+	vtt, err := media.GenerateVTT(cues)
 	if err != nil {
 		return nil, &JianyingExportError{Code: "subtitle_invalid", Message: err.Error(), Status: 422}
 	}

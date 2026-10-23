@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -21,7 +21,7 @@ type VideoCapabilityView struct {
 
 // VideoCapabilitiesForProject 按项目生成路线定桶，解析执行时会使用的视频身份并返回其能力。
 // 身份缺该桶所需能力时返回 *VideoBucketCapabilityError，与执行链一致，不静默换模型。
-func (r *Resolver) VideoCapabilitiesForProject(ctx context.Context, project *domain.ProjectFile) (VideoCapabilityView, error) {
+func (r *Resolver) VideoCapabilitiesForProject(ctx context.Context, project *project.ProjectFile) (VideoCapabilityView, error) {
 	return r.VideoCapabilitiesForProjectBucket(ctx, project, provider.VideoBucketForGenerationMode(project.GenerationMode))
 }
 
@@ -30,7 +30,7 @@ func (r *Resolver) VideoCapabilitiesForProject(ctx context.Context, project *dom
 // bucket 给定时按该桶解析——参考路线内无参考图退化镜头按 i2v 桶模型取档（读侧近似，见
 // reference_unit_video_bucket）；未指定时调用方走按路线定桶的 VideoCapabilitiesForProject。
 func (r *Resolver) VideoCapabilitiesForProjectBucket(
-	ctx context.Context, project *domain.ProjectFile, bucket provider.VideoBucket,
+	ctx context.Context, project *project.ProjectFile, bucket provider.VideoBucket,
 ) (VideoCapabilityView, error) {
 	selected, err := r.ResolveVideoBackend(ctx, project, nil, &bucket)
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *Resolver) VideoCapabilitiesForProjectBucket(
 // VideoGenerateAudioForProject 解析项目级 generate-audio 开关：admin 设置（缺省 true）叠项目覆盖。
 //
 // 与视频能力解析相互独立：能力解析失败不连带丢失用户无声意图。
-func (r *Resolver) VideoGenerateAudioForProject(ctx context.Context, project *domain.ProjectFile) (bool, error) {
+func (r *Resolver) VideoGenerateAudioForProject(ctx context.Context, project *project.ProjectFile) (bool, error) {
 	raw, err := r.svc.GetSetting(ctx, "video_generate_audio", "")
 	if err != nil {
 		return false, err

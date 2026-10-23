@@ -6,12 +6,12 @@
 package reference
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"sort"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // 参考文稿派生的降级可见性 warning 键（与 script_preview.py 同源）。
@@ -61,7 +61,7 @@ func (s VoiceRenderSettings) isSilent() bool {
 }
 
 // VoiceRenderSettingsFromCaps 从项目视频能力派生声音输入档，与解析预览 / 执行层同源。
-func VoiceRenderSettingsFromCaps(caps service.ProjectVideoCaps, project *domain.ProjectFile) VoiceRenderSettings {
+func VoiceRenderSettingsFromCaps(caps service.ProjectVideoCaps, project *domainproject.ProjectFile) VoiceRenderSettings {
 	settings := VoiceRenderSettings{
 		VoiceConsistency:       "soft",
 		RequestedGenerateAudio: caps.RequestedGenerateAudio,
@@ -130,18 +130,18 @@ type voiceBindings struct {
 // deriveVoiceBindings 从 utterances 机械派生声音绑定：说话人顺序、参考音频编号与降级 warning。
 func deriveVoiceBindings(
 	utterances []shotUtterance,
-	characters domain.AssetBucket,
+	characters domainproject.AssetBucket,
 	settings VoiceRenderSettings,
 	speakersWithReferenceImage map[string]bool,
 ) voiceBindings {
 	var warnings []voiceWarning
 	if characters == nil {
-		characters = domain.AssetBucket{}
+		characters = domainproject.AssetBucket{}
 	}
 
 	var seen []string
 	for _, entry := range utterances {
-		speaker := domain.NormalizeAssetName(entry.speaker)
+		speaker := domainproject.NormalizeAssetName(entry.speaker)
 		if speaker != "" && !service.ContainsString(seen, speaker) {
 			seen = append(seen, speaker)
 		}
@@ -210,7 +210,7 @@ func deriveVoiceBindings(
 }
 
 // resolveEntry 按比对坐标系取角色条目。
-func resolveEntry(bucket domain.AssetBucket, name string) *domain.AssetEntry {
+func resolveEntry(bucket domainproject.AssetBucket, name string) *domainproject.AssetEntry {
 	if bucket == nil {
 		return nil
 	}
@@ -220,14 +220,13 @@ func resolveEntry(bucket domain.AssetBucket, name string) *domain.AssetEntry {
 	return nil
 }
 
-
 // referenceVoiceWarningLines 逐 unit 派生声音绑定，取容忍类 warning 的渲染文本（去重、保持首现顺序）。
 //
 // 逐 unit 而非把全集正文拼起来判：unit 就是一次生成调用，参考音频段数上限按调用计。音频编号
 // 在本处一律按角色资产的 reference_audio 字段非空判定（预览口径不碰文件系统），与编辑器预览
 // 同源。
-func ReferenceVoiceWarningLines(unitTexts []string, project *domain.ProjectFile, voice VoiceRenderSettings) []string {
-	var characters domain.AssetBucket
+func ReferenceVoiceWarningLines(unitTexts []string, project *domainproject.ProjectFile, voice VoiceRenderSettings) []string {
+	var characters domainproject.AssetBucket
 	if project != nil {
 		characters = project.Characters
 	}

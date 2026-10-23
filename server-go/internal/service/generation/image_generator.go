@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/provider"
 	// 图片 backend 在装载期（init）把自己注册进 provider 的 backend registry，本文件
@@ -43,7 +43,7 @@ type ImageGenerateParams struct {
 	// ProjectName 记账归属项目；空串表示无项目上下文（不发用量变更事件）。
 	ProjectName string
 	// Project 已加载的 project.json（nil 表示只按全局配置解析）。
-	Project *domain.ProjectFile
+	Project *project.ProjectFile
 	// Capability 决定走 t2i 还是 i2i 覆盖槽。
 	Capability config.ImageCapability
 	// Request 生成请求（prompt / output_path / aspect_ratio 等）。

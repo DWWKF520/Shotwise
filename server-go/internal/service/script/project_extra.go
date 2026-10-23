@@ -12,31 +12,32 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
 
+	"github.com/shotwise/shotwise/internal/service"
+
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service/reference"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
 // SegmentPatchInput 是 narration 分镜段的字段级补丁（nil 表示未提供）。
 type SegmentPatchInput struct {
-	DurationSeconds *int
-	SegmentBreak    *bool
-	ImagePrompt     *any
-	VideoPrompt     *any
-	TransitionToNext *string
-	Note            *string
-	NoteSet         bool
+	DurationSeconds     *int
+	SegmentBreak        *bool
+	ImagePrompt         *any
+	VideoPrompt         *any
+	TransitionToNext    *string
+	Note                *string
+	NoteSet             bool
 	CharactersInSegment []string
-	Scenes          []string
-	Props           []string
+	Scenes              []string
+	Props               []string
 }
 
 // OverviewInput 是项目概述的字段级补丁（nil 表示未提供）。
@@ -209,7 +210,7 @@ func (s *ProjectExtraService) ReorderScriptShots(
 // 非法形状 fail loud：静默降级为空列表会让 reorder 在空 shot_ids 时把损坏的 shots
 // 覆盖成 []，直接丢数据。shot_id 是单镜头身份键，重复值会让 PATCH 静默更新首个命中项。
 func requireADScript(script map[string]any) ([]map[string]any, error) {
-	if mode, _ := script["content_mode"].(string); mode != string(domain.ContentAd) {
+	if mode, _ := script["content_mode"].(string); mode != string(domainproject.ContentAd) {
 		return nil, &service.ValueError{Msg: "ad_mode_required"}
 	}
 	if _, present := script["shots"]; !present {
@@ -248,7 +249,7 @@ func (s *ProjectExtraService) UpdateScriptSegment(
 	var matched map[string]any
 	err := s.store.UpdateScript(projectName, scriptFile, func(script map[string]any) error {
 		// 模式守卫：仅 narration 且含 segments 才放行；drama 即使残留 segments 也拒绝。
-		if mode, _ := script["content_mode"].(string); mode != string(domain.ContentNarration) {
+		if mode, _ := script["content_mode"].(string); mode != string(domainproject.ContentNarration) {
 			return &service.ValueError{Msg: "narration_mode_required"}
 		}
 		if _, present := script["segments"]; !present {
@@ -340,8 +341,8 @@ func (s *ProjectExtraService) DeleteEpisode(
 			}
 		}
 	}
-	err = s.store.Update(projectName, func(project *domain.ProjectFile) error {
-		remaining := make([]domain.EpisodeMeta, 0, len(project.Episodes))
+	err = s.store.Update(projectName, func(project *domainproject.ProjectFile) error {
+		remaining := make([]domainproject.EpisodeMeta, 0, len(project.Episodes))
 		found := false
 		for _, meta := range project.Episodes {
 			if meta.Episode == episode {
@@ -394,7 +395,7 @@ func (s *ProjectExtraService) DeleteEpisode(
 var ErrEpisodeNotFound = fmt.Errorf("episode not found")
 
 // episodeDisplayKey 是分集排序键（display_episode 优先，缺失回退 episode）。
-func episodeDisplayKey(meta domain.EpisodeMeta) int {
+func episodeDisplayKey(meta domainproject.EpisodeMeta) int {
 	if meta.DisplayEpisode != nil {
 		return *meta.DisplayEpisode
 	}
@@ -405,8 +406,8 @@ func episodeDisplayKey(meta domain.EpisodeMeta) int {
 func (s *ProjectExtraService) UpdateEpisodeDisplayNumber(
 	projectName string, episode, displayEpisode int,
 ) error {
-	return s.store.Update(projectName, func(project *domain.ProjectFile) error {
-		ordered := append([]domain.EpisodeMeta(nil), project.Episodes...)
+	return s.store.Update(projectName, func(project *domainproject.ProjectFile) error {
+		ordered := append([]domainproject.EpisodeMeta(nil), project.Episodes...)
 		sort.Slice(ordered, func(i, j int) bool {
 			return episodeDisplayKey(ordered[i]) < episodeDisplayKey(ordered[j])
 		})
@@ -430,7 +431,7 @@ func (s *ProjectExtraService) UpdateEpisodeDisplayNumber(
 		if insertAt > len(ordered) {
 			insertAt = len(ordered)
 		}
-		ordered = append(ordered[:insertAt], append([]domain.EpisodeMeta{target}, ordered[insertAt:]...)...)
+		ordered = append(ordered[:insertAt], append([]domainproject.EpisodeMeta{target}, ordered[insertAt:]...)...)
 		for i := range ordered {
 			value := i + 1
 			ordered[i].DisplayEpisode = &value
@@ -443,7 +444,7 @@ func (s *ProjectExtraService) UpdateEpisodeDisplayNumber(
 // UpdateOverview 手动编辑项目概述（字段级覆盖，未提供的字段不动）。
 func (s *ProjectExtraService) UpdateOverview(projectName string, in OverviewInput) (map[string]any, error) {
 	var overview map[string]any
-	err := s.store.Update(projectName, func(project *domain.ProjectFile) error {
+	err := s.store.Update(projectName, func(project *domainproject.ProjectFile) error {
 		current := map[string]any{}
 		if project.Overview != nil {
 			if raw, err := json.Marshal(project.Overview); err == nil {
@@ -463,7 +464,7 @@ func (s *ProjectExtraService) UpdateOverview(projectName string, in OverviewInpu
 			current["world_setting"] = *in.WorldSetting
 		}
 		overview = current
-		project.Overview = &domain.Overview{}
+		project.Overview = &domainproject.Overview{}
 		if raw, err := json.Marshal(current); err == nil {
 			_ = json.Unmarshal(raw, project.Overview)
 		}
@@ -477,22 +478,22 @@ func (s *ProjectExtraService) UpdateOverview(projectName string, in OverviewInpu
 
 // VideoCapabilitySummary 是项目视频能力端点的响应体（对齐 Python 字段）。
 type VideoCapabilitySummary struct {
-	ProviderID              string   `json:"provider_id"`
-	Model                   string   `json:"model"`
-	SupportedDurations      []int    `json:"supported_durations"`
-	MaxDuration             int      `json:"max_duration"`
-	MaxReferenceImages      int      `json:"max_reference_images"`
-	FirstFrame              bool     `json:"first_frame"`
-	LastFrame               bool     `json:"last_frame"`
-	GenerateAudio           bool     `json:"generate_audio"`
-	RequestedGenerateAudio  bool     `json:"requested_generate_audio"`
-	MaxReferenceAudioCount  int      `json:"max_reference_audio_count"`
-	ReferenceAudioPerImage  bool     `json:"reference_audio_per_image"`
-	Source                  string   `json:"source"`
-	DefaultDuration         any      `json:"default_duration"`
-	ContentMode             any      `json:"content_mode"`
-	GenerationMode          any      `json:"generation_mode"`
-	VoiceConsistency        string   `json:"voice_consistency"`
+	ProviderID             string `json:"provider_id"`
+	Model                  string `json:"model"`
+	SupportedDurations     []int  `json:"supported_durations"`
+	MaxDuration            int    `json:"max_duration"`
+	MaxReferenceImages     int    `json:"max_reference_images"`
+	FirstFrame             bool   `json:"first_frame"`
+	LastFrame              bool   `json:"last_frame"`
+	GenerateAudio          bool   `json:"generate_audio"`
+	RequestedGenerateAudio bool   `json:"requested_generate_audio"`
+	MaxReferenceAudioCount int    `json:"max_reference_audio_count"`
+	ReferenceAudioPerImage bool   `json:"reference_audio_per_image"`
+	Source                 string `json:"source"`
+	DefaultDuration        any    `json:"default_duration"`
+	ContentMode            any    `json:"content_mode"`
+	GenerationMode         any    `json:"generation_mode"`
+	VoiceConsistency       string `json:"voice_consistency"`
 }
 
 // VideoCapabilities 解析当前项目视频模型能力 + 用户偏好。

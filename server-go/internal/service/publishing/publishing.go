@@ -2,11 +2,11 @@
 package publishing
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/shotwise/shotwise/internal/service"
 	"sort"
 	"strconv"
 	"strings"

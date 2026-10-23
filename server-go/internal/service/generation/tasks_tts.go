@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/repository"
 )
 
@@ -94,7 +94,7 @@ func (d *TaskDispatcher) segmentNarrationText(project, scriptFile, resourceID st
 	if err != nil {
 		return "", err
 	}
-	items, idField, _, err := domain.ResolveScriptItems(script)
+	items, idField, _, err := domainscript.ResolveScriptItems(script)
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +115,7 @@ func (d *TaskDispatcher) segmentNarrationText(project, scriptFile, resourceID st
 // writeScriptGeneratedAsset 把产物路径回写进指定分镜的 generated_assets（对应 Python update_scene_asset）。
 func (d *TaskDispatcher) writeScriptGeneratedAsset(project, scriptFile, itemID, assetType, assetPath string) error {
 	return d.store.UpdateScript(project, scriptFile, func(script map[string]any) error {
-		items, idField, _, err := domain.ResolveScriptItems(script)
+		items, idField, _, err := domainscript.ResolveScriptItems(script)
 		if err != nil {
 			return err
 		}

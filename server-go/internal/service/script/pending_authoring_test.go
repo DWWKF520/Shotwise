@@ -6,25 +6,25 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"encoding/json"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // makePendingProject 建测试项目并登记第 1 集（剧本路径 scripts/episode_1.json）。
-func makePendingProject(t *testing.T, mode domain.ContentMode, generationMode domain.GenerationMode) (*service.ProjectStore, string) {
+func makePendingProject(t *testing.T, mode project.ContentMode, generationMode project.GenerationMode) (*service.ProjectStore, string) {
 	t.Helper()
 	store := service.NewProjectStore(t.TempDir())
 	if _, err := store.Create("demo", "Demo", mode, generationMode, "Anime"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Update("demo", func(pf *domain.ProjectFile) error {
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{
+	if err := store.Update("demo", func(pf *project.ProjectFile) error {
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{
 			Episode: 1, Title: "第一集", ScriptFile: "scripts/episode_1.json",
 		})
 		return nil
@@ -154,7 +154,7 @@ func pendingRVUnit(unitID string, duration int) map[string]any {
 // --- 适用范围 ---
 
 func TestPendingAuthoringAdModeNotApplicable(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentAd, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentAd, project.GenerationStoryboard)
 	report := pendingReport(t, store, dir)
 	if report.Applicable {
 		t.Fatal("ad 模式不适用待编写推导")
@@ -169,7 +169,7 @@ func TestPendingAuthoringAdModeNotApplicable(t *testing.T) {
 
 func TestPendingAuthoringScriptAbsentReportsNothingPending(t *testing.T) {
 	// 「还没生成过剧本」不等于「整集待编写」，不把未产出报成待编写。
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{pendingDramaStep1Scene("E1S01", "你终于回来了。")},
 	})
@@ -186,7 +186,7 @@ func TestPendingAuthoringScriptAbsentReportsNothingPending(t *testing.T) {
 }
 
 func TestPendingAuthoringStep1AbsentReportsNothingPending(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingScript(t, dir, map[string]any{
 		"title": "第一集", "scenes": []any{pendingDramaScene("E1S01", "你终于回来了。")},
 	})
@@ -202,7 +202,7 @@ func TestPendingAuthoringStep1AbsentReportsNothingPending(t *testing.T) {
 // --- drama 投影 ---
 
 func TestPendingAuthoringDramaMatchingContentIsClean(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{pendingDramaStep1Scene("E1S01", "你终于回来了。")},
 	})
@@ -215,7 +215,7 @@ func TestPendingAuthoringDramaMatchingContentIsClean(t *testing.T) {
 }
 
 func TestPendingAuthoringDramaContentChangeMarksStaleVisual(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{pendingDramaStep1Scene("E1S01", "我回来了。")},
 	})
@@ -233,7 +233,7 @@ func TestPendingAuthoringDramaContentChangeMarksStaleVisual(t *testing.T) {
 
 func TestPendingAuthoringDramaSceneDescriptionIgnored(t *testing.T) {
 	// scene_description 是 step1-only、合并时被剔除，两侧取值不同不构成待编写。
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	step1 := pendingDramaStep1Scene("E1S01", "你终于回来了。")
 	step1["scene_description"] = "完全不同的视觉改编描述"
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
@@ -249,7 +249,7 @@ func TestPendingAuthoringDramaSceneDescriptionIgnored(t *testing.T) {
 
 func TestPendingAuthoringDramaScriptOnlyFieldsIgnored(t *testing.T) {
 	// note / transition_to_next / generated_assets 是剧本侧 UI / 运行时字段，不参与判定。
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{pendingDramaStep1Scene("E1S01", "你终于回来了。")},
 	})
@@ -264,7 +264,7 @@ func TestPendingAuthoringDramaScriptOnlyFieldsIgnored(t *testing.T) {
 }
 
 func TestPendingAuthoringDramaMissingAndOrphanItems(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集",
 		"scenes": []any{
@@ -292,7 +292,7 @@ func TestPendingAuthoringDramaMissingAndOrphanItems(t *testing.T) {
 
 func TestPendingAuthoringDramaMissingContentFieldIsStale(t *testing.T) {
 	// 剧本缺一个 step1 声明过的字段时判为不一致，不把缺失静默当成通过。
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{pendingDramaStep1Scene("E1S01", "你终于回来了。")},
 	})
@@ -306,7 +306,7 @@ func TestPendingAuthoringDramaMissingContentFieldIsStale(t *testing.T) {
 }
 
 func TestPendingAuthoringDramaMalformedScriptListsDegradeToEmpty(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{pendingDramaStep1Scene("E1S01", "你终于回来了。")},
 	})
@@ -321,7 +321,7 @@ func TestPendingAuthoringDramaMalformedScriptListsDegradeToEmpty(t *testing.T) {
 }
 
 func TestPendingAuthoringDramaReportToDictShape(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentDrama, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentDrama, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_normalized_script.json", map[string]any{
 		"title": "第一集", "scenes": []any{pendingDramaStep1Scene("E1S01", "改了")},
 	})
@@ -346,7 +346,7 @@ func TestPendingAuthoringDramaReportToDictShape(t *testing.T) {
 // --- narration 投影 ---
 
 func TestPendingAuthoringNarrationCleanWhenNovelTextMatches(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentNarration, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_segments.json", map[string]any{
 		"segments": []any{pendingNarrationStep1Segment("E1S01", "三年后。")},
 	})
@@ -363,7 +363,7 @@ func TestPendingAuthoringNarrationCleanWhenNovelTextMatches(t *testing.T) {
 }
 
 func TestPendingAuthoringNarrationNovelTextChangeMarksStale(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationStoryboard)
+	store, dir := makePendingProject(t, project.ContentNarration, project.GenerationStoryboard)
 	writePendingStep1(t, dir, "step1_segments.json", map[string]any{
 		"segments": []any{pendingNarrationStep1Segment("E1S01", "三年后，他回来了。")},
 	})
@@ -380,7 +380,7 @@ func TestPendingAuthoringNarrationNovelTextChangeMarksStale(t *testing.T) {
 
 func TestPendingAuthoringRVShotsTextExpansionIsNotStale(t *testing.T) {
 	// shots 正文由 step2 视觉展开改写，两侧必然不同，不构成待编写。
-	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	store, dir := makePendingProject(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writePendingStep1(t, dir, service.ReferenceVideoStep1Filename, map[string]any{
 		"units": []any{pendingRVStep1Unit("E1U01", 4)},
 	})
@@ -397,7 +397,7 @@ func TestPendingAuthoringRVShotsTextExpansionIsNotStale(t *testing.T) {
 }
 
 func TestPendingAuthoringRVDurationChangeMarksStale(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	store, dir := makePendingProject(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writePendingStep1(t, dir, service.ReferenceVideoStep1Filename, map[string]any{
 		"units": []any{pendingRVStep1Unit("E1U01", 8)},
 	})
@@ -411,7 +411,7 @@ func TestPendingAuthoringRVDurationChangeMarksStale(t *testing.T) {
 }
 
 func TestPendingAuthoringRVReferenceChangeMarksStale(t *testing.T) {
-	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	store, dir := makePendingProject(t, project.ContentNarration, project.GenerationReferenceVideo)
 	unit := pendingRVStep1Unit("E1U01", 4)
 	unit["references"] = []any{
 		map[string]any{"type": "character", "name": "阿离"},
@@ -429,7 +429,7 @@ func TestPendingAuthoringRVReferenceChangeMarksStale(t *testing.T) {
 
 func TestPendingAuthoringRVSourceTextIgnored(t *testing.T) {
 	// source_text 是 step1-only，落地时被剔除，两侧取值不同不构成待编写。
-	store, dir := makePendingProject(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	store, dir := makePendingProject(t, project.ContentNarration, project.GenerationReferenceVideo)
 	unit := pendingRVStep1Unit("E1U01", 4)
 	unit["source_text"] = "完全不同的原文摘录"
 	writePendingStep1(t, dir, service.ReferenceVideoStep1Filename, map[string]any{"units": []any{unit}})

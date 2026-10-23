@@ -12,20 +12,17 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/repository"
 )
 
-
-
-
 // assetTypeOrder 是 type 省略时的处理顺序（与 Python ALL_TYPES 一致）。
-var assetTypeOrder = []domain.AssetKind{domain.AssetCharacter, domain.AssetScene, domain.AssetProp, domain.AssetProduct}
+var assetTypeOrder = []domainproject.AssetKind{domainproject.AssetCharacter, domainproject.AssetScene, domainproject.AssetProp, domainproject.AssetProduct}
 
 // assetLabels 是面向模型的中文类型名（agent 侧字符串，不走 i18n）。
-var assetLabels = map[domain.AssetKind]string{
-	domain.AssetCharacter: "角色", domain.AssetScene: "场景", domain.AssetProp: "道具", domain.AssetProduct: "产品",
+var assetLabels = map[domainproject.AssetKind]string{
+	domainproject.AssetCharacter: "角色", domainproject.AssetScene: "场景", domainproject.AssetProp: "道具", domainproject.AssetProduct: "产品",
 }
 
 type generateAssetsIn struct {
@@ -54,11 +51,11 @@ func NewGenerateAssetsTool(project string, q tools.AssetQueue, projects tools.As
 			}
 			kinds := assetTypeOrder
 			if in.Type != "" {
-				kind := domain.AssetKind(in.Type)
+				kind := domainproject.AssetKind(in.Type)
 				if _, ok := assetLabels[kind]; !ok {
 					return tools.DenyEnvelope(fmt.Sprintf("type 必须是 character/scene/prop/product 之一，收到 %q", in.Type)), nil
 				}
-				kinds = []domain.AssetKind{kind}
+				kinds = []domainproject.AssetKind{kind}
 			}
 			if q == nil || projects == nil {
 				return tools.DenyEnvelope("asset generation not configured"), nil
@@ -77,7 +74,7 @@ func NewGenerateAssetsTool(project string, q tools.AssetQueue, projects tools.As
 
 // runGenerateAssets 对每个类型：构造待入队 spec → 全部入队 → 逐个等待终态 → 汇总。
 // 返回汇总文本与失败数量。
-func runGenerateAssets(ctx context.Context, project string, kinds []domain.AssetKind, names []string,
+func runGenerateAssets(ctx context.Context, project string, kinds []domainproject.AssetKind, names []string,
 	regenerate bool, q tools.AssetQueue, projects tools.AssetProjects) (string, int, error) {
 	pf, err := projects.Get(project)
 	if err != nil {
@@ -154,9 +151,9 @@ func runGenerateAssets(ctx context.Context, project string, kinds []domain.Asset
 
 // buildAssetSpecs 复刻 Python _build_specs：names 模式按名解析并校验描述、跳过已有设计图；
 // 无 names 时取全部待生成（无 sheet 或 sheet 文件缺失）。
-func buildAssetSpecs(pf *domain.ProjectFile, dir string, kind domain.AssetKind, names []string,
+func buildAssetSpecs(pf *domainproject.ProjectFile, dir string, kind domainproject.AssetKind, names []string,
 	regenerate bool, warnings *[]string) []assetSpec {
-	spec, ok := domain.Spec(kind)
+	spec, ok := domainproject.Spec(kind)
 	if !ok {
 		return nil
 	}
@@ -218,7 +215,7 @@ func buildAssetSpecs(pf *domain.ProjectFile, dir string, kind domain.AssetKind, 
 }
 
 // hasAvailableSheet 判定条目是否已有可用设计图（字段非空且文件存在于项目内）。
-func hasAvailableSheet(dir string, entry *domain.AssetEntry, sheetKey string) bool {
+func hasAvailableSheet(dir string, entry *domainproject.AssetEntry, sheetKey string) bool {
 	if entry == nil {
 		return false
 	}
@@ -234,11 +231,9 @@ func hasAvailableSheet(dir string, entry *domain.AssetEntry, sheetKey string) bo
 	return statErr == nil
 }
 
-
-
 // assetEmoji 是 list_pending_assets 输出中的类型图标（与 Python 侧 _EMOJI 一致）。
-var assetEmoji = map[domain.AssetKind]string{
-	domain.AssetCharacter: "🧑", domain.AssetScene: "🏠", domain.AssetProp: "📦", domain.AssetProduct: "🛍️",
+var assetEmoji = map[domainproject.AssetKind]string{
+	domainproject.AssetCharacter: "🧑", domainproject.AssetScene: "🏠", domainproject.AssetProp: "📦", domainproject.AssetProduct: "🛍️",
 }
 
 type listPendingAssetsIn struct {
@@ -252,11 +247,11 @@ func NewListPendingAssetsTool(project string, projects tools.AssetProjects) (too
 		func(ctx context.Context, in listPendingAssetsIn) (string, error) {
 			kinds := assetTypeOrder
 			if in.Type != "" {
-				kind := domain.AssetKind(in.Type)
+				kind := domainproject.AssetKind(in.Type)
 				if _, ok := assetLabels[kind]; !ok {
 					return tools.DenyEnvelope(fmt.Sprintf("type 必须是 character/scene/prop/product 之一，收到 %q", in.Type)), nil
 				}
-				kinds = []domain.AssetKind{kind}
+				kinds = []domainproject.AssetKind{kind}
 			}
 			if projects == nil {
 				return tools.DenyEnvelope("asset projects not configured"), nil
@@ -273,7 +268,7 @@ func NewListPendingAssetsTool(project string, projects tools.AssetProjects) (too
 		})
 }
 
-func renderPendingAssets(project string, kinds []domain.AssetKind, pf *domain.ProjectFile, dir string) string {
+func renderPendingAssets(project string, kinds []domainproject.AssetKind, pf *domainproject.ProjectFile, dir string) string {
 	var lines []string
 	total := 0
 	for _, kind := range kinds {
@@ -301,8 +296,8 @@ type pendingAsset struct {
 }
 
 // pendingAssetNames 返回指定类型中无可用设计图的条目（按名称排序）。
-func pendingAssetNames(pf *domain.ProjectFile, dir string, kind domain.AssetKind) []pendingAsset {
-	spec, ok := domain.Spec(kind)
+func pendingAssetNames(pf *domainproject.ProjectFile, dir string, kind domainproject.AssetKind) []pendingAsset {
+	spec, ok := domainproject.Spec(kind)
 	if !ok {
 		return nil
 	}

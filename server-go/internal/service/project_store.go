@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -52,8 +52,8 @@ func (s *ProjectStore) Dir(name string) (string, error) {
 var ErrProjectExists = errors.New("project already exists")
 
 // Create 创建项目：建目录骨架 + 写 project.json。
-func (s *ProjectStore) Create(name, title string, mode domain.ContentMode, genMode domain.GenerationMode, style string) (*domain.ProjectFile, error) {
-	normalized, err := domain.ValidateProjectName(name)
+func (s *ProjectStore) Create(name, title string, mode project.ContentMode, genMode project.GenerationMode, style string) (*project.ProjectFile, error) {
+	normalized, err := project.ValidateProjectName(name)
 	if err != nil {
 		return nil, err
 	}
@@ -65,14 +65,14 @@ func (s *ProjectStore) Create(name, title string, mode domain.ContentMode, genMo
 		return nil, ErrProjectExists
 	}
 
-	pf := domain.NewProjectFile(title, mode, genMode)
+	pf := project.NewProjectFile(title, mode, genMode)
 	pf.Style = style
 	if style == "" {
 		pf.Style = "写实"
 	}
 
 	s.locks.WithLock(normalized, func() {
-		for _, sub := range domain.ProjectSubdirs {
+		for _, sub := range project.ProjectSubdirs {
 			err = os.MkdirAll(filepath.Join(dir, sub), 0o755)
 			if err != nil {
 				return
@@ -100,7 +100,7 @@ func (s *ProjectStore) Exists(name string) bool {
 }
 
 // Get 读取 project.json。
-func (s *ProjectStore) Get(name string) (*domain.ProjectFile, error) {
+func (s *ProjectStore) Get(name string) (*project.ProjectFile, error) {
 	dir, err := s.Dir(name)
 	if err != nil {
 		return nil, err
@@ -136,7 +136,7 @@ func (s *ProjectStore) WithProjectLock(name string, fn func() error) error {
 }
 
 // Update 在项目锁内做「读 → 改 → 不更坏校验 → 原子写」，对应 Python 的 update_project。
-func (s *ProjectStore) Update(name string, mutate func(*domain.ProjectFile) error) error {
+func (s *ProjectStore) Update(name string, mutate func(*project.ProjectFile) error) error {
 	return s.WithProjectLock(name, func() error {
 		dir, err := s.Dir(name)
 		if err != nil {
@@ -163,7 +163,7 @@ type ProjectInvalidError struct{ Errors []string }
 func (e *ProjectInvalidError) Error() string { return strings.Join(e.Errors, "; ") }
 
 // Save 原子写回 project.json，并刷新 updated_at。新建路径专用（严格校验）。
-func (s *ProjectStore) Save(name string, pf *domain.ProjectFile) error {
+func (s *ProjectStore) Save(name string, pf *project.ProjectFile) error {
 	dir, err := s.Dir(name)
 	if err != nil {
 		return err
@@ -177,21 +177,21 @@ func (s *ProjectStore) Save(name string, pf *domain.ProjectFile) error {
 }
 
 // persistUnlocked 供已持项目锁的跨文件级联（资产改名）复用同一套「不更坏」判定。
-func (s *ProjectStore) PersistUnlocked(dir string, pf *domain.ProjectFile, allow []string) error {
-	if fresh := domain.NewErrors(pf.ValidateErrors(), allow); len(fresh) > 0 {
+func (s *ProjectStore) PersistUnlocked(dir string, pf *project.ProjectFile, allow []string) error {
+	if fresh := project.NewErrors(pf.ValidateErrors(), allow); len(fresh) > 0 {
 		return &ProjectInvalidError{Errors: fresh}
 	}
 	return s.touchAndWrite(dir, pf)
 }
 
-func (s *ProjectStore) touchAndWrite(dir string, pf *domain.ProjectFile) error {
+func (s *ProjectStore) touchAndWrite(dir string, pf *project.ProjectFile) error {
 	pf.Metadata.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	return fs.WriteJSONAtomic(filepath.Join(dir, "project.json"), pf)
 }
 
 // load 读取 project.json，不取锁（调用方须已持锁）。
-func (s *ProjectStore) Load(dir string) (*domain.ProjectFile, error) {
-	pf := &domain.ProjectFile{}
+func (s *ProjectStore) Load(dir string) (*project.ProjectFile, error) {
+	pf := &project.ProjectFile{}
 	if err := fs.ReadJSON(filepath.Join(dir, "project.json"), pf); err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (s *ProjectStore) Load(dir string) (*domain.ProjectFile, error) {
 
 // writeProject 原子写 project.json，不做校验也不戳 updated_at —— 创建路径上
 // style/aspect_ratio 等字段还没补齐，校验会误拒。
-func (s *ProjectStore) writeProject(dir string, pf *domain.ProjectFile) error {
+func (s *ProjectStore) writeProject(dir string, pf *project.ProjectFile) error {
 	return fs.WriteJSONAtomic(filepath.Join(dir, "project.json"), pf)
 }
 

@@ -18,7 +18,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/shotwise/shotwise/internal/auth"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
+	domaindraft "github.com/shotwise/shotwise/internal/domain/draft"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 	httpcreative "github.com/shotwise/shotwise/internal/transport/http/creative"
 )
@@ -52,7 +54,7 @@ func newDraftTestEngine(t *testing.T, userID string) (*gin.Engine, *service.Proj
 	root := t.TempDir()
 	store := service.NewProjectStore(root)
 	repo := servicereference.NewFileDraftPromotionRepository(store)
-	svc := domain.NewDraftPromotionService(repo, servicereference.ScriptStructureDraftValidator())
+	svc := domaindraft.NewDraftPromotionService(repo, servicereference.ScriptStructureDraftValidator())
 
 	r := gin.New()
 	group := r.Group("/api/v1")
@@ -144,7 +146,7 @@ func routePaths(routes []gin.RouteInfo) []string {
 // TestDraftPromotionFullLifecycle 建 → 列 → 读 → 改 → 准备 → 确认 全链路。
 func TestDraftPromotionFullLifecycle(t *testing.T) {
 	engine, store := newDraftTestEngine(t, "")
-	if _, err := store.Create("p1", "项目", domain.ContentDrama, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create("p1", "项目", project.ContentDrama, project.GenerationStoryboard, "写实"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if err := store.SaveScript("p1", "episode_1.json", draftTestScript("并肩前行")); err != nil {
@@ -275,7 +277,7 @@ func TestDraftPromotionFullLifecycle(t *testing.T) {
 // TestDraftPromotionPrepareInvalidContent 结构非法的草稿 prepare 返回 invalid。
 func TestDraftPromotionPrepareInvalidContent(t *testing.T) {
 	engine, store := newDraftTestEngine(t, "")
-	if _, err := store.Create("p1", "项目", domain.ContentDrama, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create("p1", "项目", project.ContentDrama, project.GenerationStoryboard, "写实"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if err := store.SaveScript("p1", "episode_1.json", draftTestScript("a")); err != nil {
@@ -307,7 +309,7 @@ func TestDraftPromotionPrepareInvalidContent(t *testing.T) {
 // TestDraftPromotionAutoMergeOnOfficialChange 官方变了 → 自动合并后仍可确认。
 func TestDraftPromotionAutoMergeOnOfficialChange(t *testing.T) {
 	engine, store := newDraftTestEngine(t, "")
-	if _, err := store.Create("p1", "项目", domain.ContentDrama, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create("p1", "项目", project.ContentDrama, project.GenerationStoryboard, "写实"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if err := store.SaveScript("p1", "episode_1.json", draftTestScript("原始")); err != nil {
@@ -359,7 +361,7 @@ func TestDraftPromotionAutoMergeOnOfficialChange(t *testing.T) {
 // TestDraftPromotionConflicted 同一路径双改 → conflicted，确认拿不到令牌。
 func TestDraftPromotionConflicted(t *testing.T) {
 	engine, store := newDraftTestEngine(t, "")
-	if _, err := store.Create("p1", "项目", domain.ContentDrama, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create("p1", "项目", project.ContentDrama, project.GenerationStoryboard, "写实"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if err := store.SaveScript("p1", "episode_1.json", draftTestScript("原始")); err != nil {
@@ -399,7 +401,7 @@ func TestDraftPromotionConflicted(t *testing.T) {
 // TestDraftPromotionErrorMapping 404 / 400 口径与 Python router 对齐。
 func TestDraftPromotionErrorMapping(t *testing.T) {
 	engine, store := newDraftTestEngine(t, "")
-	if _, err := store.Create("p1", "项目", domain.ContentDrama, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create("p1", "项目", project.ContentDrama, project.GenerationStoryboard, "写实"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if err := store.SaveScript("p1", "episode_1.json", draftTestScript("a")); err != nil {
@@ -479,7 +481,7 @@ func TestDraftPromotionErrorMapping(t *testing.T) {
 // 重启进程（换仓储实例）后仍可读回——对应 Python 的 JSON store。
 func TestDraftPromotionStoreFile(t *testing.T) {
 	engine, store := newDraftTestEngine(t, "")
-	if _, err := store.Create("p1", "项目", domain.ContentDrama, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create("p1", "项目", project.ContentDrama, project.GenerationStoryboard, "写实"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if err := store.SaveScript("p1", "episode_1.json", draftTestScript("a")); err != nil {
@@ -494,7 +496,7 @@ func TestDraftPromotionStoreFile(t *testing.T) {
 	}
 
 	// 用同一个数据目录重建仓储（等价于进程重启）。
-	reloaded := domain.NewDraftPromotionService(
+	reloaded := domaindraft.NewDraftPromotionService(
 		servicereference.NewFileDraftPromotionRepository(service.NewProjectStore(store.Root())),
 		servicereference.ScriptStructureDraftValidator(),
 	)
@@ -502,14 +504,14 @@ func TestDraftPromotionStoreFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload draft: %v", err)
 	}
-	if loaded.Target.ScriptFile != "episode_1.json" || loaded.Origin != domain.DraftOriginAgent {
+	if loaded.Target.ScriptFile != "episode_1.json" || loaded.Origin != domaindraft.DraftOriginAgent {
 		t.Fatalf("reloaded draft = %+v", loaded)
 	}
 }
 
 // TestPromptRegistryEndpoints 注册表两个只读端点。
 func TestPromptRegistryEndpoints(t *testing.T) {
-	root := domain.AgentProfileRoot()
+	root := creation.AgentProfileRoot()
 	if root == "" {
 		t.Skip("agent_runtime_profile not found from test cwd")
 	}

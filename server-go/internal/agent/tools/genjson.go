@@ -1,15 +1,15 @@
 package tools
 
 import (
-	"github.com/shotwise/shotwise/internal/service/reference"
-	"github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service/reference"
+	"github.com/shotwise/shotwise/internal/service/script"
 	"os"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/service"
 )
@@ -39,7 +39,7 @@ func ReadJSONObject(path string) (map[string]any, error) {
 }
 
 // TargetLanguage 取项目输出语言：source_language 为唯一真相源，缺省回退中文。
-func TargetLanguage(pf *domain.ProjectFile) string {
+func TargetLanguage(pf *project.ProjectFile) string {
 	if pf != nil && strings.TrimSpace(pf.SourceLanguage) != "" {
 		return pf.SourceLanguage
 	}
@@ -56,7 +56,7 @@ func NormalizeInstructions(raw string) (string, string) {
 }
 
 // UsesReferenceVideoUnits 判定项目是否产出参考视频 unit——隔离草稿只在这条路径上有意义。
-func UsesReferenceVideoUnits(pf *domain.ProjectFile) bool {
+func UsesReferenceVideoUnits(pf *project.ProjectFile) bool {
 	if pf == nil || pf.ContentMode == "ad" {
 		return false
 	}
@@ -71,7 +71,7 @@ func ReferenceResolver(caps VideoCapabilityReader) (service.VideoCapabilityResol
 
 // ReferenceContextForTool 为参考路径解析运行时能力上下文（拆分档位 + 逐 unit 取档 context）。
 func ReferenceContextForTool(
-	ctx context.Context, pf *domain.ProjectFile, caps VideoCapabilityReader,
+	ctx context.Context, pf *project.ProjectFile, caps VideoCapabilityReader,
 ) (script.ScriptReferenceContext, error) {
 	resolver, ok := ReferenceResolver(caps)
 	if !ok {

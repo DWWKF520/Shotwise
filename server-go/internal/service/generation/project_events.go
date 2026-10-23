@@ -18,7 +18,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -56,7 +57,7 @@ var skeletonTaskLabelNouns = map[string]string{
 // taskChangeSpecs 是任务类型 → 固定变更规格的唯一真相源。
 //
 // tts / grid / grid_split / voice_sample 在此登记；三类项目级资产（character / scene / prop）与
-// product 的规格由 domain.AssetSpecs 派生（action 恒为 updated，label 为「<类型名>「{}」设计图」）。
+// product 的规格由 project.AssetSpecs 派生（action 恒为 updated，label 为「<类型名>「{}」设计图」）。
 var taskChangeSpecs = func() map[string]taskChangeSpec {
 	specs := map[string]taskChangeSpec{
 		"tts":          {"segment", "tts_ready", "旁白「%s」", true},
@@ -64,13 +65,11 @@ var taskChangeSpecs = func() map[string]taskChangeSpec {
 		"grid_split":   {"grid", "grid_split_done", "宫格「%s」切分", true},
 		"voice_sample": {"character", "voice_sample_ready", "「%s」试听样本", false},
 	}
-	for kind, spec := range domain.AssetSpecs {
+	for kind, spec := range project.AssetSpecs {
 		specs[string(kind)] = taskChangeSpec{string(kind), "updated", spec.LabelZh + "「%s」设计图", false}
 	}
 	return specs
 }()
-
-
 
 // affectedFingerPath 是待算指纹的一对路径：rel 为项目相对路径（指纹 key），abs 为绝对路径（stat 用）。
 type affectedFingerPath struct{ rel, abs string }
@@ -237,18 +236,18 @@ func EmitGenerationSuccessBatch(hub *service.EventHub, store *service.ProjectSto
 		kind := "video_units"
 		if taskType != "reference_video" {
 			if script != nil {
-				kind = domain.ResolveScriptKind(script)
+				kind = domainscript.ResolveScriptKind(script)
 			} else {
 				kind = "segments"
 			}
 		}
-		entityType := domain.ScriptSkeletonEntityTypes[kind]
+		entityType := domainscript.ScriptSkeletonEntityTypes[kind]
 		if entityType == "" {
 			entityType = "segment"
 		}
 		noun := skeletonTaskLabelNouns[taskType]
 		if noun == "" {
-			noun = domain.ScriptSkeletonItemNouns[kind]
+			noun = domainscript.ScriptSkeletonItemNouns[kind]
 		}
 		if noun == "" {
 			noun = "分镜"

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
 )
@@ -42,8 +42,8 @@ const newAPIVideoRoundTo = 8
 // newAPIVideoResolveSize：比例优先、清晰度其次。短边来自 resolution（档位 / 自定义 / None 兜底
 // 720P），比例精确来自 aspect_ratio、对齐 8 的倍数。
 func newAPIVideoResolveSize(resolution, aspectRatio string) (int, int) {
-	short := domain.ResolutionToShortEdge(resolution, domain.VideoTierShortEdge, domain.DefaultShortEdge)
-	return domain.AspectSize(aspectRatio, short, domain.AspectSizeOptions{RoundTo: newAPIVideoRoundTo})
+	short := project.ResolutionToShortEdge(resolution, project.VideoTierShortEdge, project.DefaultShortEdge)
+	return project.AspectSize(aspectRatio, short, project.AspectSizeOptions{RoundTo: newAPIVideoRoundTo})
 }
 
 // newAPIVideoCapabilitiesForModel 按 model_id 纯计算 caps —— 不构造 client（无需 api_key）。

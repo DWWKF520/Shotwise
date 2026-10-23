@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
+	"github.com/shotwise/shotwise/internal/domain/script"
+	"github.com/shotwise/shotwise/internal/domain/task"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -55,12 +58,12 @@ var _ queue.InterruptedSettler = (*LedgerSettler)(nil)
 
 // EncodeTaskFailure 把已知失败码 + 参数编码为落库的 error_message。
 //
-// 包装 domain.EncodeFailure（落库机器码，读侧按 Accept-Language 渲染）；码未登记或载荷无法
+// 包装 task.EncodeFailure（落库机器码，读侧按 Accept-Language 渲染）；码未登记或载荷无法
 // 编码时退化为 “[code]”。与 Python 侧 encode_failure 的差异仅此一条降级——Python 会抛
 // KeyError，但其调用点经 _try_encode_failure 包成 None 再降级，净效果同为本函数形态，且绝不
 // 因编码失败把任务卡死在 running。
 func EncodeTaskFailure(code string, params map[string]any) string {
-	encoded, err := domain.EncodeFailure(code, params)
+	encoded, err := task.EncodeFailure(code, params)
 	if err != nil {
 		return "[" + code + "]"
 	}
@@ -76,7 +79,7 @@ type failureCarrier struct {
 // asFailureCarrier 从错误里提取结构化失败坐标（code + params）。
 //
 // 覆盖 worker 执行路径会抛出的三类：图片/视频后端能力错误（provider.CapabilityError）、
-// 视频解析闸错误（config.VideoBucketCapabilityError）、剧本编辑错误（domain.ScriptEditError）。
+// 视频解析闸错误（config.VideoBucketCapabilityError）、剧本编辑错误（script.ScriptEditError）。
 // 认不出返回 ok=false，交调用方降级。
 func asFailureCarrier(err error) (failureCarrier, bool) {
 	var capability *provider.CapabilityError
@@ -91,7 +94,7 @@ func asFailureCarrier(err error) (failureCarrier, bool) {
 		}
 		return failureCarrier{code: bucketCap.Code, params: params}, true
 	}
-	var scriptEdit *domain.ScriptEditError
+	var scriptEdit *script.ScriptEditError
 	if errors.As(err, &scriptEdit) {
 		return failureCarrier{code: provider.FailureCode(scriptEdit.Key), params: scriptEdit.Params}, true
 	}
@@ -111,12 +114,12 @@ func EncodeTaskError(err error) string {
 		return ""
 	}
 	if carrier, ok := asFailureCarrier(err); ok {
-		if encoded, encodeErr := domain.EncodeFailure(string(carrier.code), carrier.params); encodeErr == nil {
+		if encoded, encodeErr := task.EncodeFailure(string(carrier.code), carrier.params); encodeErr == nil {
 			return encoded
 		}
-		return domain.BoundReason(err.Error(), domain.MaxErrorMessageLen)
+		return task.BoundReason(err.Error(), task.MaxErrorMessageLen)
 	}
-	return domain.BoundReason(err.Error(), domain.MaxErrorMessageLen)
+	return task.BoundReason(err.Error(), task.MaxErrorMessageLen)
 }
 
 // IsTransientTaskError 判定异常是否属于上游瞬态失败。
@@ -182,7 +185,7 @@ func NewProviderExtractor(store *service.ProjectStore, resolver *config.Resolver
 // loadProjectForExtraction 取项目上下文；无项目名或读取失败时返回 (nil, nil)/(nil, err)。
 //
 // 返回 nil 项目是合法输入：resolver 的层叠解析在无项目上下文时退到全局层。
-func loadProjectForExtraction(store *service.ProjectStore, projectName string) (*domain.ProjectFile, error) {
+func loadProjectForExtraction(store *service.ProjectStore, projectName string) (*domainproject.ProjectFile, error) {
 	if projectName == "" || store == nil {
 		return nil, nil
 	}
@@ -196,7 +199,7 @@ func loadProjectForExtraction(store *service.ProjectStore, projectName string) (
 
 // resolveProviderForLane 按媒体车道解析执行身份。
 func resolveProviderForLane(
-	ctx context.Context, resolver *config.Resolver, project *domain.ProjectFile, task *repository.TaskData,
+	ctx context.Context, resolver *config.Resolver, project *domainproject.ProjectFile, task *repository.TaskData,
 ) (config.ProviderModel, error) {
 	switch queue.MediaLane(task.MediaType, task.TaskType) {
 	case provider.MediaVideo:
@@ -288,13 +291,13 @@ func NewWorkerPreflight(store *service.ProjectStore) queue.Preflight {
 
 // preflightStoryboardItem 校验单个剧本条目引用的三类资产。
 //
-// 用 domain.StoryboardItems 取条目与资产引用字段名（与执行路径同源）；骨架数组键存在但类型非数组
+// 用 media.StoryboardItems 取条目与资产引用字段名（与执行路径同源）；骨架数组键存在但类型非数组
 // 的畸形剧本会退化为空条目，进而以「找不到分镜/场景」失败——仍阻断任务，只是文案与 Python 侧的
 // ScriptEditError 不同。
 func preflightStoryboardItem(
-	project *domain.ProjectFile, projectDir string, script map[string]any, resourceID string,
+	project *domainproject.ProjectFile, projectDir string, script map[string]any, resourceID string,
 ) error {
-	items, idField, fields := domain.StoryboardItems(script)
+	items, idField, fields := media.StoryboardItems(script)
 	item, ok := findPreflightItem(items, idField, resourceID)
 	if !ok {
 		return fmt.Errorf("生成前检查失败：找不到分镜/场景 %s", resourceID)
@@ -310,9 +313,9 @@ func preflightStoryboardItem(
 // ad 从成员镜头现算参考集（索引里的 references 只是可能落后的展示缓存），其余按 unit 声明的
 // references；两条路径委托既有 reference_preflight.go 的统一入口。
 func preflightReferenceUnit(
-	project *domain.ProjectFile, projectDir string, script map[string]any, resourceID string,
+	project *domainproject.ProjectFile, projectDir string, script map[string]any, resourceID string,
 ) error {
-	isAd := scriptContentMode(script, project) == string(domain.ContentAd)
+	isAd := scriptContentMode(script, project) == string(domainproject.ContentAd)
 	key := "video_units"
 	if isAd {
 		key = "reference_units"
@@ -368,7 +371,6 @@ func findReferenceUnit(script map[string]any, key, resourceID string) (map[strin
 	}
 	return nil, false
 }
-
 
 // taskIDOf 读 task id，nil 安全。
 func taskIDOf(task *repository.TaskData) string {

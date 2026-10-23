@@ -3,10 +3,10 @@ package script
 import "github.com/shotwise/shotwise/internal/agent/tools"
 
 import (
-	serviceref "github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"errors"
 	"fmt"
+	serviceref "github.com/shotwise/shotwise/internal/service/reference"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,7 +16,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/service"
 	servicescript "github.com/shotwise/shotwise/internal/service/script"
@@ -280,9 +280,9 @@ func memberOrNil(value *int, candidates []int) *int {
 
 // ScriptReviewProjects 是 step1 审核确认工具的项目依赖（*service.ProjectStore 满足）。
 type ScriptReviewProjects interface {
-	Get(name string) (*domain.ProjectFile, error)
+	Get(name string) (*domainproject.ProjectFile, error)
 	Dir(name string) (string, error)
-	Update(name string, mutate func(*domain.ProjectFile) error) error
+	Update(name string, mutate func(*domainproject.ProjectFile) error) error
 }
 
 // confirmScriptReviewIn 是 confirm_script_review 的入参。
@@ -335,7 +335,7 @@ func NewConfirmScriptReviewTool(project string, projects ScriptReviewProjects) (
 			}
 			fingerprint := service.ContentFingerprintOfData(content)
 			confirmedAt := time.Now().UTC().Format(time.RFC3339)
-			if err := projects.Update(project, func(p *domain.ProjectFile) error {
+			if err := projects.Update(project, func(p *domainproject.ProjectFile) error {
 				if !service.ApplyConfirmation(p, in.Episode, fingerprint, confirmedAt) {
 					return errEpisodeNotFound
 				}
@@ -378,10 +378,8 @@ func validateStep1Content(kind string, content map[string]any) error {
 	return nil
 }
 
-
-
 // assetNamesOf 返回资产桶的登记名（排序）。
-func assetNamesOf(bucket *domain.AssetBucket) []string {
+func assetNamesOf(bucket *domainproject.AssetBucket) []string {
 	if bucket == nil || len(*bucket) == 0 {
 		return nil
 	}
@@ -392,7 +390,6 @@ func assetNamesOf(bucket *domain.AssetBucket) []string {
 	sort.Strings(names)
 	return names
 }
-
 
 // generateEpisodeScriptIn 是 generate_episode_script 的入参。
 type generateEpisodeScriptIn struct {
@@ -493,9 +490,8 @@ func NewGenerateEpisodeScriptTool(
 		})
 }
 
-
 // resolveGenerateStep1 解析该集 step1 路径与缺失提示；ad 一键生成不依赖 step1 时 check=false。
-func resolveGenerateStep1(dir string, pf *domain.ProjectFile, episode int) (path, hint string, check bool) {
+func resolveGenerateStep1(dir string, pf *domainproject.ProjectFile, episode int) (path, hint string, check bool) {
 	if pf == nil || pf.ContentMode == "ad" {
 		return "", "", false
 	}

@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/provider"
@@ -51,7 +51,7 @@ func stubVideoCaps() provider.VideoCapabilities {
 }
 
 // newVideoFixture 装配视频执行所需依赖：假 backend + 视频生成器 + 落盘项目。
-func newVideoFixture(t *testing.T, contentMode domain.ContentMode, genMode domain.GenerationMode) (*TaskDispatcher, *service.ProjectStore, *gorm.DB, string) {
+func newVideoFixture(t *testing.T, contentMode project.ContentMode, genMode project.GenerationMode) (*TaskDispatcher, *service.ProjectStore, *gorm.DB, string) {
 	t.Helper()
 	gdb, dialect, err := db.Open("sqlite://"+filepath.Join(t.TempDir(), "video.db"), logger.Silent)
 	if err != nil {
@@ -97,7 +97,7 @@ func newVideoFixture(t *testing.T, contentMode domain.ContentMode, genMode domai
 	if _, err := store.Create("p1", "测试项目", contentMode, genMode, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := store.Update("p1", func(p *domain.ProjectFile) error {
+	if err := store.Update("p1", func(p *project.ProjectFile) error {
 		p.VideoBackend = "openai/sora-2"
 		return nil
 	}); err != nil {
@@ -157,7 +157,7 @@ func writeSegmentScript(t *testing.T, store *service.ProjectStore, projectDir, s
 }
 
 func TestExecuteVideoTaskEndToEnd(t *testing.T) {
-	dispatcher, store, gdb, projectName := newVideoFixture(t, domain.ContentNarration, domain.GenerationStoryboard)
+	dispatcher, store, gdb, projectName := newVideoFixture(t, project.ContentNarration, project.GenerationStoryboard)
 	projectDir, err := store.Dir(projectName)
 	if err != nil {
 		t.Fatalf("project dir: %v", err)
@@ -206,12 +206,12 @@ func TestExecuteVideoTaskEndToEnd(t *testing.T) {
 }
 
 func TestRenderUnitPromptSegments(t *testing.T) {
-	character := domain.NewAssetEntry()
+	character := project.NewAssetEntry()
 	character.SetString("description", "主角")
 	character.SetString("character_sheet", "characters/李明.png")
 	character.SetString("voice_style", "低沉")
-	project := &domain.ProjectFile{
-		Characters: domain.AssetBucket{"李明": character},
+	project := &project.ProjectFile{
+		Characters: project.AssetBucket{"李明": character},
 		Style:      "水墨",
 	}
 	text := "镜头1：@[李明] 缓步走向窗前。\n@[李明]：{这地方比我想的还热闹。}"
@@ -253,10 +253,10 @@ func TestResolveAdUnitReferenceEntriesLabelsAndSkips(t *testing.T) {
 	if err := os.WriteFile(sheet, []byte("png"), 0o644); err != nil {
 		t.Fatalf("write sheet: %v", err)
 	}
-	scene := domain.NewAssetEntry()
+	scene := project.NewAssetEntry()
 	scene.SetString("description", "酒馆")
 	scene.SetString("scene_sheet", "scenes/酒馆.png")
-	project := &domain.ProjectFile{Scenes: domain.AssetBucket{"酒馆": scene}}
+	project := &project.ProjectFile{Scenes: project.AssetBucket{"酒馆": scene}}
 
 	entries, warnings := reference.ResolveAdUnitReferenceEntries(project, projectDir, []map[string]any{
 		{"type": "scene", "name": "酒馆"},
@@ -287,7 +287,7 @@ func TestAppendProductFidelityTailIdempotent(t *testing.T) {
 }
 
 func TestExecuteVideoTaskMissingScriptFileFailsLoud(t *testing.T) {
-	dispatcher, _, _, _ := newVideoFixture(t, domain.ContentNarration, domain.GenerationStoryboard)
+	dispatcher, _, _, _ := newVideoFixture(t, project.ContentNarration, project.GenerationStoryboard)
 	_, err := dispatcher.Execute(context.Background(), videoTask("E1S01", map[string]any{"prompt": "x"}))
 	if err == nil || !strings.Contains(err.Error(), "script_file is required") {
 		t.Fatalf("missing script_file should fail loud: %v", err)
@@ -375,7 +375,7 @@ func TestRenderMentionsAsSubjects(t *testing.T) {
 
 func TestResolveUnitReferencesMissingFails(t *testing.T) {
 	projectDir := t.TempDir()
-	project := &domain.ProjectFile{Characters: domain.AssetBucket{}}
+	project := &project.ProjectFile{Characters: project.AssetBucket{}}
 	_, err := reference.ResolveUnitReferences(project, projectDir, []map[string]any{{"type": "character", "name": "李明"}})
 	if err == nil || !strings.Contains(err.Error(), "Missing references: character:李明") {
 		t.Fatalf("missing reference should fail loud: %v", err)
@@ -483,16 +483,16 @@ func writeUnitScript(t *testing.T, store *service.ProjectStore, projectDir strin
 }
 
 func TestExecuteReferenceVideoTaskEndToEnd(t *testing.T) {
-	dispatcher, store, _, projectName := newVideoFixture(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	dispatcher, store, _, projectName := newVideoFixture(t, project.ContentNarration, project.GenerationReferenceVideo)
 	projectDir, err := store.Dir(projectName)
 	if err != nil {
 		t.Fatalf("project dir: %v", err)
 	}
-	if err := store.Update(projectName, func(p *domain.ProjectFile) error {
-		entry := domain.NewAssetEntry()
+	if err := store.Update(projectName, func(p *project.ProjectFile) error {
+		entry := project.NewAssetEntry()
 		entry.SetString("description", "角色")
 		entry.SetString("character_sheet", "characters/李明.png")
-		p.Characters = domain.AssetBucket{"李明": entry}
+		p.Characters = project.AssetBucket{"李明": entry}
 		return nil
 	}); err != nil {
 		t.Fatalf("seed character: %v", err)
@@ -531,7 +531,7 @@ func TestExecuteReferenceVideoTaskEndToEnd(t *testing.T) {
 }
 
 func TestExecuteReferenceVideoTaskUnitNotFoundFailsLoud(t *testing.T) {
-	dispatcher, store, _, projectName := newVideoFixture(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	dispatcher, store, _, projectName := newVideoFixture(t, project.ContentNarration, project.GenerationReferenceVideo)
 	projectDir, err := store.Dir(projectName)
 	if err != nil {
 		t.Fatalf("project dir: %v", err)

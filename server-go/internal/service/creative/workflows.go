@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 )
@@ -71,7 +71,7 @@ func NewWorkflowService(gdb *gorm.DB) *WorkflowService { return &WorkflowService
 
 // wfJSON 输出 canonical JSON；序列化失败时退回 fallback（调用点均为可选字段）。
 func wfJSON(value any, fallback string) string {
-	encoded, err := domain.WorkflowCanonicalJSON(value)
+	encoded, err := creation.WorkflowCanonicalJSON(value)
 	if err != nil {
 		return fallback
 	}
@@ -332,13 +332,13 @@ func (s *WorkflowService) CreateRevision(ctx context.Context, p WorkflowRevision
 func (s *WorkflowService) createRevision(
 	ctx context.Context, tx *gorm.DB, p WorkflowRevisionParams,
 ) (map[string]any, error) {
-	if err := domain.WorkflowValidateGraph(p.Nodes, p.Edges); err != nil {
+	if err := creation.WorkflowValidateGraph(p.Nodes, p.Edges); err != nil {
 		return nil, err
 	}
-	if err := domain.WorkflowValidateModes(p.ContentMode, p.GenerationMode); err != nil {
+	if err := creation.WorkflowValidateModes(p.ContentMode, p.GenerationMode); err != nil {
 		return nil, err
 	}
-	if err := domain.WorkflowValidateNodeContracts(p.Nodes); err != nil {
+	if err := creation.WorkflowValidateNodeContracts(p.Nodes); err != nil {
 		return nil, err
 	}
 	definition, err := loadDefinition(ctx, tx, p.DefinitionID, p.ActorID)
@@ -354,11 +354,11 @@ func (s *WorkflowService) createRevision(
 	}
 	revisionNo := maxRevision + 1
 
-	graphHash, err := domain.WorkflowGraphHash(p.Nodes, p.Edges, true)
+	graphHash, err := creation.WorkflowGraphHash(p.Nodes, p.Edges, true)
 	if err != nil {
 		return nil, err
 	}
-	executionHash, err := domain.WorkflowGraphHash(p.Nodes, p.Edges, false)
+	executionHash, err := creation.WorkflowGraphHash(p.Nodes, p.Edges, false)
 	if err != nil {
 		return nil, err
 	}
@@ -387,24 +387,24 @@ func (s *WorkflowService) createRevision(
 	}
 
 	for _, node := range p.Nodes {
-		nodeType := domain.WorkflowMapString(node, "node_type")
+		nodeType := creation.WorkflowMapString(node, "node_type")
 		if nodeType == "" {
-			nodeType = domain.WorkflowMapString(node, "node_key")
+			nodeType = creation.WorkflowMapString(node, "node_key")
 		}
 		row := repository.WorkflowNode{
 			ID:                       uuid.NewString(),
 			RevisionID:               revision.ID,
-			NodeKey:                  domain.WorkflowMapString(node, "node_key"),
+			NodeKey:                  creation.WorkflowMapString(node, "node_key"),
 			NodeType:                 nodeType,
 			NodeTypeVersion:          wfStringDefault(node, "node_type_version", "1"),
 			ConfigSchemaVersion:      wfStringDefault(node, "config_schema_version", "1"),
 			ConfigJSON:               wfJSON(wfValue(node, "config", map[string]any{}), "{}"),
-			Weight:                   domain.WorkflowMapFloat(node, "weight", 1.0),
+			Weight:                   creation.WorkflowMapFloat(node, "weight", 1.0),
 			InputSchemaJSON:          wfJSON(wfValue(node, "input_schema", map[string]any{}), "{}"),
 			OutputSchemaJSON:         wfJSON(wfValue(node, "output_schema", map[string]any{}), "{}"),
 			ExecutorID:               wfStringDefault(node, "executor_id", "builtin"),
 			RequiredCapabilitiesJSON: wfJSON(wfValue(node, "required_capabilities", []any{}), "[]"),
-			EstimatedCost:            domain.WorkflowMapFloat(node, "estimated_cost", 0),
+			EstimatedCost:            creation.WorkflowMapFloat(node, "estimated_cost", 0),
 			CachePolicy:              wfStringDefault(node, "cache_policy", "reuse"),
 		}
 		if value, ok := node["ui_position"]; ok && value != nil {
@@ -427,11 +427,11 @@ func (s *WorkflowService) createRevision(
 		row := repository.WorkflowEdge{
 			ID:            uuid.NewString(),
 			RevisionID:    revision.ID,
-			EdgeKey:       domain.WorkflowMapString(edge, "edge_key"),
-			SourceNodeKey: domain.WorkflowMapString(edge, "source_node_key"),
-			TargetNodeKey: domain.WorkflowMapString(edge, "target_node_key"),
+			EdgeKey:       creation.WorkflowMapString(edge, "edge_key"),
+			SourceNodeKey: creation.WorkflowMapString(edge, "source_node_key"),
+			TargetNodeKey: creation.WorkflowMapString(edge, "target_node_key"),
 			OnFailure:     wfStringDefault(edge, "on_failure", "stop"),
-			Priority:      int64(domain.WorkflowMapInt(edge, "priority", 0)),
+			Priority:      int64(creation.WorkflowMapInt(edge, "priority", 0)),
 		}
 		if value, ok := edge["condition"]; ok && value != nil {
 			encoded := wfJSON(value, "{}")
@@ -480,7 +480,7 @@ func wfValue(m map[string]any, key string, fallback any) any {
 }
 
 func wfStringDefault(m map[string]any, key, fallback string) string {
-	if value := domain.WorkflowMapString(m, key); value != "" {
+	if value := creation.WorkflowMapString(m, key); value != "" {
 		return value
 	}
 	return fallback
@@ -494,7 +494,7 @@ func (s *WorkflowService) ValidateRevision(ctx context.Context, revisionID, acto
 		if err != nil {
 			return err
 		}
-		if err := domain.WorkflowValidateGraph(graph.Nodes, graph.Edges); err != nil {
+		if err := creation.WorkflowValidateGraph(graph.Nodes, graph.Edges); err != nil {
 			return err
 		}
 		out = map[string]any{
@@ -534,7 +534,7 @@ func (s *WorkflowService) publishRevision(
 			"id": revisionID, "status": graph.Revision.Status,
 		})
 	}
-	if err := domain.WorkflowValidateGraph(graph.Nodes, graph.Edges); err != nil {
+	if err := creation.WorkflowValidateGraph(graph.Nodes, graph.Edges); err != nil {
 		return nil, err
 	}
 	definition, err := loadDefinition(ctx, tx, graph.Revision.DefinitionID, actorID)
@@ -760,10 +760,10 @@ func (s *WorkflowService) PlanRun(ctx context.Context, p WorkflowPlanRunParams) 
 
 func (s *WorkflowService) planRun(ctx context.Context, tx *gorm.DB, p WorkflowPlanRunParams) (map[string]any, error) {
 	if p.Mode != "auto" && p.Mode != "manual" && p.Mode != "hybrid" {
-		return nil, domain.NewWorkflowValidationError("workflow_input_invalid", map[string]any{"reason": "mode"})
+		return nil, creation.NewWorkflowValidationError("workflow_input_invalid", map[string]any{"reason": "mode"})
 	}
 	if p.BudgetLimit != nil && *p.BudgetLimit < 0 {
-		return nil, domain.NewWorkflowValidationError("workflow_input_invalid", map[string]any{"reason": "budget_limit"})
+		return nil, creation.NewWorkflowValidationError("workflow_input_invalid", map[string]any{"reason": "budget_limit"})
 	}
 	graphActorID := p.ActorID
 	if p.OfficialRevision {
@@ -788,12 +788,12 @@ func (s *WorkflowService) planRun(ctx context.Context, tx *gorm.DB, p WorkflowPl
 		}
 	}
 	if mode := snapshotGenerationMode(p.InputSnapshot); mode != "" && mode != graph.Revision.GenerationMode {
-		return nil, domain.NewWorkflowValidationError("workflow_generation_mode_mismatch", map[string]any{
+		return nil, creation.NewWorkflowValidationError("workflow_generation_mode_mismatch", map[string]any{
 			"project_generation_mode":  mode,
 			"workflow_generation_mode": graph.Revision.GenerationMode,
 		})
 	}
-	fingerprint, err := domain.WorkflowInputFingerprint(map[string]any{
+	fingerprint, err := creation.WorkflowInputFingerprint(map[string]any{
 		"schema_version":          1,
 		"workspace_id":            p.WorkspaceID,
 		"project_id":              p.ProjectID,
@@ -849,10 +849,10 @@ func (s *WorkflowService) planRun(ctx context.Context, tx *gorm.DB, p WorkflowPl
 	}
 	targets := map[string]bool{}
 	for _, edge := range graph.Edges {
-		targets[domain.WorkflowMapString(edge, "target_node_key")] = true
+		targets[creation.WorkflowMapString(edge, "target_node_key")] = true
 	}
 	for _, node := range graph.Nodes {
-		key := domain.WorkflowMapString(node, "node_key")
+		key := creation.WorkflowMapString(node, "node_key")
 		status := "ready"
 		if targets[key] {
 			status = "blocked"
@@ -1107,7 +1107,7 @@ func (s *WorkflowService) transitionRun(
 		})
 	}
 	previousStatus := run.Status
-	if err := domain.WorkflowTransitionRun(previousStatus, target); err != nil {
+	if err := creation.WorkflowTransitionRun(previousStatus, target); err != nil {
 		return nil, err
 	}
 	now := db.NewFlexibleTime(wfNow())
@@ -1124,7 +1124,7 @@ func (s *WorkflowService) transitionRun(
 	if target == "running" && !run.StartedAt.Valid {
 		updates["started_at"] = now
 	}
-	if domain.WorkflowTerminalRunStatuses[target] {
+	if creation.WorkflowTerminalRunStatuses[target] {
 		updates["finished_at"] = now
 	}
 	if err := tx.Model(&repository.WorkflowRun{}).Where("id = ?", runID).Updates(updates).Error; err != nil {
@@ -1313,17 +1313,17 @@ func (s *WorkflowService) ListNodeLogs(
 		if !ok {
 			continue
 		}
-		if domain.WorkflowMapString(payload, "node_key") != nodeKey {
+		if creation.WorkflowMapString(payload, "node_key") != nodeKey {
 			continue
 		}
-		level := domain.WorkflowMapString(payload, "level")
+		level := creation.WorkflowMapString(payload, "level")
 		if level == "" {
 			level = "info"
 		}
 		items = append(items, map[string]any{
 			"seq":        rows[i].Seq,
 			"level":      level,
-			"line":       domain.WorkflowMapString(payload, "line"),
+			"line":       creation.WorkflowMapString(payload, "line"),
 			"created_at": wfISO(rows[i].CreatedAt),
 		})
 	}
@@ -1355,7 +1355,7 @@ func (s *WorkflowService) RetryRunFromNode(
 		}
 		present := map[string]bool{}
 		for _, node := range graph.Nodes {
-			present[domain.WorkflowMapString(node, "node_key")] = true
+			present[creation.WorkflowMapString(node, "node_key")] = true
 		}
 		if !present[nodeKey] {
 			return workflowNotFound("workflow_node_not_found", map[string]any{"node_key": nodeKey})
@@ -1381,7 +1381,7 @@ func (s *WorkflowService) RetryRunFromNode(
 				"node_key": nodeKey, "status": status,
 			})
 		}
-		outgoing, incoming := domain.WorkflowNodeGraphEdges(graph.Edges)
+		outgoing, incoming := creation.WorkflowNodeGraphEdges(graph.Edges)
 		descendants := map[string]bool{}
 		queue := make([]string, 0, len(outgoing[nodeKey]))
 		for key := range outgoing[nodeKey] {
@@ -1430,7 +1430,7 @@ func (s *WorkflowService) RetryRunFromNode(
 			return err
 		}
 		for _, node := range graph.Nodes {
-			key := domain.WorkflowMapString(node, "node_key")
+			key := creation.WorkflowMapString(node, "node_key")
 			previous, hasPrevious := latest[key]
 			var status string
 			switch {
@@ -1640,7 +1640,7 @@ type WorkflowImportParams struct {
 func (s *WorkflowService) ImportDefinition(ctx context.Context, p WorkflowImportParams) (map[string]any, error) {
 	var out map[string]any
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := domain.WorkflowValidateGraph(p.Nodes, p.Edges); err != nil {
+		if err := creation.WorkflowValidateGraph(p.Nodes, p.Edges); err != nil {
 			return err
 		}
 		definition, err := s.createDefinition(ctx, tx, WorkflowDefinitionParams{

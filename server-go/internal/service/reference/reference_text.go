@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
@@ -74,12 +74,12 @@ func normalizeShotSource(text string) string {
 
 // isASCIIWordChar 复刻 Python 的 ASCII 词字符判定（字母 / 数字 / 下划线）。
 func isASCIIWordChar(r rune) bool {
-	return r == '_' || domain.IsASCIIWordChar(r)
+	return r == '_' || domainproject.IsASCIIWordChar(r)
 }
 
 // isLegacyMentionChar 判定旧式裸 `@名称` 的延续字符。
 func isLegacyMentionChar(r rune) bool {
-	if r == '_' || domain.IsASCIIWordChar(r) {
+	if r == '_' || domainproject.IsASCIIWordChar(r) {
 		return true
 	}
 	return r >= '一' && r <= '鿿'
@@ -440,7 +440,7 @@ func splitCharacterVariantMention(name string) (string, string) {
 //
 // 键为 slug（与落盘形状一致），返回到该 slug 的 variant dict（含 id / slug / image_path；
 // image_path 缺失或非字符串时为空串，与 Python normalize_variant 的缺省口径一致）。
-func findCharacterVariant(character *domain.AssetEntry, characterID, identifier string) map[string]any {
+func findCharacterVariant(character *domainproject.AssetEntry, characterID, identifier string) map[string]any {
 	if character == nil {
 		return nil
 	}
@@ -448,7 +448,7 @@ func findCharacterVariant(character *domain.AssetEntry, characterID, identifier 
 	if len(rawVariants) == 0 {
 		return nil
 	}
-	target := domain.NormalizeAssetName(identifier)
+	target := domainproject.NormalizeAssetName(identifier)
 	slugs := make([]string, 0, len(rawVariants))
 	for slug := range rawVariants {
 		slugs = append(slugs, slug)
@@ -464,7 +464,7 @@ func findCharacterVariant(character *domain.AssetEntry, characterID, identifier 
 		if rawSlug == "" {
 			rawSlug = slug
 		}
-		if id == identifier || domain.NormalizeAssetName(rawSlug) == target {
+		if id == identifier || domainproject.NormalizeAssetName(rawSlug) == target {
 			imagePath, _ := raw["image_path"].(string)
 			return map[string]any{"id": id, "slug": rawSlug, "image_path": imagePath}
 		}
@@ -475,8 +475,8 @@ func findCharacterVariant(character *domain.AssetEntry, characterID, identifier 
 // resolveReferences 按项目三 bucket 把 mention 名字分派成 ReferenceResource（character → scene → prop）。
 //
 // 名字与三张资产表都先归一到比对坐标系（NFC），产出的 name 与 missing 一律是归一形式。
-func resolveReferences(names []string, project *domain.ProjectFile) ([]map[string]any, []string) {
-	buckets := map[string]domain.AssetBucket{}
+func resolveReferences(names []string, project *domainproject.ProjectFile) ([]map[string]any, []string) {
+	buckets := map[string]domainproject.AssetBucket{}
 	if project != nil {
 		buckets["character"] = project.Characters
 		buckets["scene"] = project.Scenes
@@ -486,12 +486,12 @@ func resolveReferences(names []string, project *domain.ProjectFile) ([]map[strin
 	var refs []map[string]any
 	var missing []string
 	for _, rawName := range names {
-		displayName := domain.NormalizeAssetName(rawName)
+		displayName := domainproject.NormalizeAssetName(rawName)
 		characterName, variantSlug := splitCharacterVariantMention(displayName)
 		if variantSlug != "" {
-			characterName = domain.NormalizeAssetName(characterName)
+			characterName = domainproject.NormalizeAssetName(characterName)
 			bucket := buckets["character"]
-			var character *domain.AssetEntry
+			var character *domainproject.AssetEntry
 			if bucket != nil {
 				if key, ok := bucket.ResolveKey(characterName); ok {
 					character = bucket[key]
@@ -529,7 +529,7 @@ func resolveReferences(names []string, project *domain.ProjectFile) ([]map[strin
 }
 
 // deriveReferencesFromText 是书写层正文 → (references, missing) 的唯一派生入口。
-func DeriveReferencesFromText(text string, project *domain.ProjectFile) ([]map[string]any, []string) {
+func DeriveReferencesFromText(text string, project *domainproject.ProjectFile) ([]map[string]any, []string) {
 	return resolveReferences(extractMentions(text), project)
 }
 
@@ -646,7 +646,7 @@ func hasDescriptionLine(shotText string) bool {
 const fullwidthBraceChars = "｛｝"
 
 // assertLineSyntax 逐行判书写层语法：全角花括号、写坏的引用、缺花括号的台词行、描述行花括号。
-func assertLineSyntax(label, text string, characters domain.AssetBucket) error {
+func assertLineSyntax(label, text string, characters domainproject.AssetBucket) error {
 	for idx, line := range contentLines(text) {
 		lineIdx := idx
 		if strings.ContainsAny(line, fullwidthBraceChars) {
@@ -706,11 +706,11 @@ func Violation(label, code string, line *int, format string, args ...any) *Draft
 // ValidateUnitText 校验一个 unit 的正文并机械派生 (shots, references)。
 //
 // 覆盖正文为空 / 镜头无画面描述 / 镜头行数超上限 / 语法误用 / 引用未登记 / references 超上限。
-func ValidateUnitText(label, text string, project *domain.ProjectFile, maxRefs *int) ([]map[string]any, []map[string]any, error) {
+func ValidateUnitText(label, text string, project *domainproject.ProjectFile, maxRefs *int) ([]map[string]any, []map[string]any, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, nil, Violation(label, "empty_text", nil, "%s 的正文为空", label)
 	}
-	var characters domain.AssetBucket
+	var characters domainproject.AssetBucket
 	if project != nil {
 		characters = project.Characters
 	}

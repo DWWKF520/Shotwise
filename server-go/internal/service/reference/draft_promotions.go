@@ -17,7 +17,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domaindraft "github.com/shotwise/shotwise/internal/domain/draft"
+	"github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -50,20 +51,20 @@ func (r *FileDraftPromotionRepository) StorePath() string { return r.path }
 
 // ReadOfficial 读取正式剧本快照；剧本文件不存在时返回空内容 + revision 0
 // （对应 Python read_official 的 exists 分支）。
-func (r *FileDraftPromotionRepository) ReadOfficial(target domain.DraftTarget) (domain.OfficialScript, error) {
+func (r *FileDraftPromotionRepository) ReadOfficial(target domaindraft.DraftTarget) (domaindraft.OfficialScript, error) {
 	dir, err := r.projectDir(target.ProjectName)
 	if err != nil {
-		return domain.OfficialScript{}, err
+		return domaindraft.OfficialScript{}, err
 	}
 	filename, err := draftScriptFilename(target.ScriptFile)
 	if err != nil {
-		return domain.OfficialScript{}, err
+		return domaindraft.OfficialScript{}, err
 	}
 	return draftReadOfficial(r.store, dir, target.ProjectName, filename, false)
 }
 
 // LoadDraft 读取草稿；不存在或 actor 不匹配时返回 (nil, nil)。
-func (r *FileDraftPromotionRepository) LoadDraft(draftID, actorID string) (*domain.Draft, error) {
+func (r *FileDraftPromotionRepository) LoadDraft(draftID, actorID string) (*domaindraft.Draft, error) {
 	store, err := r.loadStore()
 	if err != nil {
 		return nil, err
@@ -83,12 +84,12 @@ func (r *FileDraftPromotionRepository) LoadDraft(draftID, actorID string) (*doma
 }
 
 // ListDrafts 列出某剧本的全部草稿（不排序，排序由领域服务负责）。
-func (r *FileDraftPromotionRepository) ListDrafts(target domain.DraftTarget, actorID string) ([]*domain.Draft, error) {
+func (r *FileDraftPromotionRepository) ListDrafts(target domaindraft.DraftTarget, actorID string) ([]*domaindraft.Draft, error) {
 	store, err := r.loadStore()
 	if err != nil {
 		return nil, err
 	}
-	var out []*domain.Draft
+	var out []*domaindraft.Draft
 	for _, raw := range store {
 		draft, err := draftFromJSON(raw)
 		if err != nil {
@@ -106,12 +107,12 @@ func (r *FileDraftPromotionRepository) ListDrafts(target domain.DraftTarget, act
 }
 
 // ListAll 列出某项目的全部草稿，按 id 字典序。
-func (r *FileDraftPromotionRepository) ListAll(projectName, actorID string) ([]*domain.Draft, error) {
+func (r *FileDraftPromotionRepository) ListAll(projectName, actorID string) ([]*domaindraft.Draft, error) {
 	store, err := r.loadStore()
 	if err != nil {
 		return nil, err
 	}
-	var out []*domain.Draft
+	var out []*domaindraft.Draft
 	for _, raw := range store {
 		draft, err := draftFromJSON(raw)
 		if err != nil {
@@ -136,7 +137,7 @@ func (r *FileDraftPromotionRepository) ListAll(projectName, actorID string) ([]*
 // ——float64 只有 53 位尾数，该量级下 ULP 是 256ns，读回来必然和写入值差几十上百，
 // 晋升的 compare-and-write 于是恒判「官方已变」。Python 的 json.load 把整数解析成
 // 任意精度 int，没有这个问题；Go 侧用原始字节等价复刻。
-func (r *FileDraftPromotionRepository) SaveDraft(draft *domain.Draft) error {
+func (r *FileDraftPromotionRepository) SaveDraft(draft *domaindraft.Draft) error {
 	encoded, err := json.Marshal(draft)
 	if err != nil {
 		return err
@@ -156,11 +157,11 @@ func (r *FileDraftPromotionRepository) SaveDraft(draft *domain.Draft) error {
 
 // PromoteAtomically 在剧本锁内 compare-and-write 正式剧本。
 func (r *FileDraftPromotionRepository) PromoteAtomically(
-	target domain.DraftTarget, content map[string]any, expectedRevision int64, expectedFingerprint string,
-) (domain.OfficialScript, error) {
+	target domaindraft.DraftTarget, content map[string]any, expectedRevision int64, expectedFingerprint string,
+) (domaindraft.OfficialScript, error) {
 	filename, err := draftScriptFilename(target.ScriptFile)
 	if err != nil {
-		return domain.OfficialScript{}, err
+		return domaindraft.OfficialScript{}, err
 	}
 	err = r.store.WithScriptLock(target.ProjectName, filename, func(dir, locked string) error {
 		current, readErr := draftReadOfficial(r.store, dir, target.ProjectName, locked, true)
@@ -168,14 +169,14 @@ func (r *FileDraftPromotionRepository) PromoteAtomically(
 			return readErr
 		}
 		if current.Revision != expectedRevision || current.Fingerprint != expectedFingerprint {
-			return &domain.OfficialRevisionConflict{Current: current}
+			return &domaindraft.OfficialRevisionConflict{Current: current}
 		}
 		// 与 Python _write_script_unlocked(validate=True, before=改前剧本) 同序：
 		// 结构不更坏守卫 → 集号一致性 → metadata 重算 → 原子写 → 集元数据同步。
 		return r.store.WriteScript(target.ProjectName, dir, locked, service.CloneScript(content), current.Content, true)
 	})
 	if err != nil {
-		return domain.OfficialScript{}, err
+		return domaindraft.OfficialScript{}, err
 	}
 	// 锁外重读一次拿新 revision / fingerprint（Python 同样 return self.read_official(target)）。
 	return r.ReadOfficial(target)
@@ -231,7 +232,7 @@ func draftScriptFilename(name string) (string, error) {
 // revision 必须在读**之后**才 stat：读路径可能顺手把存量迁移写回盘（mtime 随之变化），
 // 先 stat 会把迁移前的旧 mtime 当基线，下一次读取必然对不上，晋升被误判成 stale。
 // Python read_official 同样是 load_script 之后才 stat。
-func draftReadOfficial(store *service.ProjectStore, dir, project, filename string, insideLock bool) (domain.OfficialScript, error) {
+func draftReadOfficial(store *service.ProjectStore, dir, project, filename string, insideLock bool) (domaindraft.OfficialScript, error) {
 	path := filepath.Join(dir, "scripts", filename)
 	var (
 		content map[string]any
@@ -245,23 +246,23 @@ func draftReadOfficial(store *service.ProjectStore, dir, project, filename strin
 	if err != nil {
 		if errors.Is(err, fs.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 			// 剧本文件不存在：空内容 + revision 0（Python read_official 的 exists 分支）。
-			fingerprint, fpErr := domain.CanonicalFingerprint(map[string]any{})
+			fingerprint, fpErr := domaindraft.CanonicalFingerprint(map[string]any{})
 			if fpErr != nil {
-				return domain.OfficialScript{}, fpErr
+				return domaindraft.OfficialScript{}, fpErr
 			}
-			return domain.OfficialScript{Content: map[string]any{}, Revision: 0, Fingerprint: fingerprint}, nil
+			return domaindraft.OfficialScript{Content: map[string]any{}, Revision: 0, Fingerprint: fingerprint}, nil
 		}
-		return domain.OfficialScript{}, err
+		return domaindraft.OfficialScript{}, err
 	}
 	info, statErr := os.Stat(path)
 	if statErr != nil {
-		return domain.OfficialScript{}, statErr
+		return domaindraft.OfficialScript{}, statErr
 	}
-	fingerprint, err := domain.CanonicalFingerprint(content)
+	fingerprint, err := domaindraft.CanonicalFingerprint(content)
 	if err != nil {
-		return domain.OfficialScript{}, err
+		return domaindraft.OfficialScript{}, err
 	}
-	return domain.OfficialScript{
+	return domaindraft.OfficialScript{
 		Content:     content,
 		Revision:    info.ModTime().UnixNano(),
 		Fingerprint: fingerprint,
@@ -270,8 +271,8 @@ func draftReadOfficial(store *service.ProjectStore, dir, project, filename strin
 
 // draftFromJSON 还原草稿记录；字段缺失 / 类型不符按坏条目处理（对应 Python 的
 // _draft_from_dict 抛错 → list 侧跳过）。
-func draftFromJSON(raw json.RawMessage) (*domain.Draft, error) {
-	var draft domain.Draft
+func draftFromJSON(raw json.RawMessage) (*domaindraft.Draft, error) {
+	var draft domaindraft.Draft
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if err := decoder.Decode(&draft); err != nil {
 		return nil, err
@@ -280,7 +281,7 @@ func draftFromJSON(raw json.RawMessage) (*domain.Draft, error) {
 		return nil, errors.New("stored draft is invalid")
 	}
 	if draft.Status == "" {
-		draft.Status = domain.DraftStatusActive
+		draft.Status = domaindraft.DraftStatusActive
 	}
 	return &draft, nil
 }
@@ -288,25 +289,25 @@ func draftFromJSON(raw json.RawMessage) (*domain.Draft, error) {
 // ScriptStructureDraftValidator 注入给领域服务的结构校验：对应 Python router 的
 // _validate_script_draft —— 先确认是 JSON 对象，再跑剧本结构校验，错误逐条转成
 // script_structure_invalid 问题（Pydantic 的报错文本已是成品文案）。
-func ScriptStructureDraftValidator() domain.DraftValidator {
-	return func(content map[string]any) []domain.DraftValidationIssue {
+func ScriptStructureDraftValidator() domaindraft.DraftValidator {
+	return func(content map[string]any) []domaindraft.DraftValidationIssue {
 		if content == nil {
-			return []domain.DraftValidationIssue{{
+			return []domaindraft.DraftValidationIssue{{
 				Code:    "draft_not_object",
 				Message: "Draft content must be a JSON object.",
 			}}
 		}
-		messages := domain.ValidateScriptStructure(content)
+		messages := script.ValidateScriptStructure(content)
 		if len(messages) == 0 {
 			return nil
 		}
-		issues := make([]domain.DraftValidationIssue, 0, len(messages))
+		issues := make([]domaindraft.DraftValidationIssue, 0, len(messages))
 		for _, message := range messages {
-			issues = append(issues, domain.DraftValidationIssue{Code: "script_structure_invalid", Message: message})
+			issues = append(issues, domaindraft.DraftValidationIssue{Code: "script_structure_invalid", Message: message})
 		}
 		return issues
 	}
 }
 
 // 编译期断言：仓储满足领域接缝。
-var _ domain.DraftPromotionRepository = (*FileDraftPromotionRepository)(nil)
+var _ domaindraft.DraftPromotionRepository = (*FileDraftPromotionRepository)(nil)

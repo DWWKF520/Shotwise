@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/agent/tools/assets"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service/asset"
 )
 
@@ -205,12 +205,12 @@ func TestPatchEpisodeMetaWhitelistAndTitle(t *testing.T) {
 // fakeRenamer 记录改名请求并回放预置报告。
 type fakeRenamer struct {
 	calls  int
-	kind   domain.AssetKind
+	kind   project.AssetKind
 	report asset.RenameReport
 	err    error
 }
 
-func (f *fakeRenamer) Rename(_ string, kind domain.AssetKind, _, _ string, _ bool) (asset.RenameReport, error) {
+func (f *fakeRenamer) Rename(_ string, kind project.AssetKind, _, _ string, _ bool) (asset.RenameReport, error) {
 	f.calls++
 	f.kind = kind
 	if f.err != nil {
@@ -232,7 +232,7 @@ func TestRenameAssetReportsCascadeAndRejectsUnknownTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if renamer.calls != 1 || renamer.kind != domain.AssetCharacter {
+	if renamer.calls != 1 || renamer.kind != project.AssetCharacter {
 		t.Fatalf("改名请求有误: %+v", renamer)
 	}
 	if !strings.Contains(out, "更新 3 集共 7 处引用，迁移 2 个关联文件") {

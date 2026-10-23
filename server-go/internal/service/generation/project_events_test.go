@@ -11,7 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/repository"
 )
 
@@ -19,7 +20,7 @@ import (
 func newProjectEventsFixture(t *testing.T) (*service.ProjectStore, string) {
 	t.Helper()
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	return store, "p1"
@@ -92,11 +93,11 @@ func TestComputeAffectedFingerprintsCharacterAvatarPreferred(t *testing.T) {
 	}
 	writeProjectFile(t, projectDir, "characters/阿明.png")
 	writeProjectFile(t, projectDir, "characters/avatars/阿明.png")
-	if err := store.Update(projectName, func(p *domain.ProjectFile) error {
+	if err := store.Update(projectName, func(p *project.ProjectFile) error {
 		if p.Characters == nil {
-			p.Characters = domain.AssetBucket{}
+			p.Characters = project.AssetBucket{}
 		}
-		p.Characters["阿明"] = domain.WrapAssetEntry(map[string]any{
+		p.Characters["阿明"] = project.WrapAssetEntry(map[string]any{
 			"description":      "阿明",
 			"character_sheet":  "characters/阿明.png",
 			"character_avatar": "characters/avatars/阿明.png",
@@ -131,9 +132,9 @@ func TestComputeAffectedFingerprintsGridCells(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.Save(&domain.GridGeneration{
+	if err := manager.Save(&grid.GridGeneration{
 		ID:         gridID,
-		FrameChain: []domain.GridFrameCell{{ImagePath: &cellRel}, {ImagePath: &escapeRel}, {ImagePath: &absRel}},
+		FrameChain: []grid.GridFrameCell{{ImagePath: &cellRel}, {ImagePath: &escapeRel}, {ImagePath: &absRel}},
 	}); err != nil {
 		t.Fatalf("save grid: %v", err)
 	}

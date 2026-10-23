@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -52,7 +52,7 @@ func newGenerateFixture(t *testing.T) generateFixture {
 	})
 
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 
@@ -79,8 +79,8 @@ func (f generateFixture) seedScript(t *testing.T, segments []any) {
 	if err := f.store.WriteScriptJSON("p1", "episode_1.json", script); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"})
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"})
 		return nil
 	}); err != nil {
 		t.Fatalf("register episode: %v", err)
@@ -193,8 +193,8 @@ func TestGenerateStoryboardPreflightFailure(t *testing.T) {
 // （409），避免拿到「请先生成分镜图」的误导指引。
 func TestGenerateVideoRejectsReferenceRoute(t *testing.T) {
 	f := newGenerateFixture(t)
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
-		pf.GenerationMode = string(domain.GenerationReferenceVideo)
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
+		pf.GenerationMode = string(project.GenerationReferenceVideo)
 		return nil
 	}); err != nil {
 		t.Fatalf("switch generation mode: %v", err)
@@ -254,11 +254,11 @@ func TestGenerateAssetReusesExistingSheet(t *testing.T) {
 		t.Fatalf("dir: %v", err)
 	}
 	writeVersionFile(t, dir, "characters/甲.png", "png")
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
 		if pf.Characters == nil {
-			pf.Characters = domain.AssetBucket{}
+			pf.Characters = project.AssetBucket{}
 		}
-		pf.Characters["甲"] = domain.WrapAssetEntry(map[string]any{
+		pf.Characters["甲"] = project.WrapAssetEntry(map[string]any{
 			"character_sheet": "characters/甲.png",
 			"description":     "测试角色",
 		})
@@ -370,11 +370,11 @@ func (f generateFixture) seedSceneImage(t *testing.T, name string) {
 		t.Fatalf("dir: %v", err)
 	}
 	writeVersionFile(t, dir, "scenes/"+name+".png", "png")
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
 		if pf.Scenes == nil {
-			pf.Scenes = domain.AssetBucket{}
+			pf.Scenes = project.AssetBucket{}
 		}
-		pf.Scenes[name] = domain.WrapAssetEntry(map[string]any{
+		pf.Scenes[name] = project.WrapAssetEntry(map[string]any{
 			"scene_sheet": "scenes/" + name + ".png",
 			"description": "测试场景",
 		})

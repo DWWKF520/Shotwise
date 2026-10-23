@@ -15,17 +15,18 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
 // VideoCapabilityResolver 是项目视频能力与音频开关的解析能力（*config.Resolver 满足）。
 type VideoCapabilityResolver interface {
 	VideoCapabilitiesForProjectBucket(
-		ctx context.Context, project *domain.ProjectFile, bucket provider.VideoBucket,
+		ctx context.Context, project *domainproject.ProjectFile, bucket provider.VideoBucket,
 	) (config.VideoCapabilityView, error)
-	VideoGenerateAudioForProject(ctx context.Context, project *domain.ProjectFile) (bool, error)
-	ResolveResolution(ctx context.Context, project *domain.ProjectFile, providerID, modelID string) (string, error)
+	VideoGenerateAudioForProject(ctx context.Context, project *domainproject.ProjectFile) (bool, error)
+	ResolveResolution(ctx context.Context, project *domainproject.ProjectFile, providerID, modelID string) (string, error)
 }
 
 // FallbackUnitDuration 是 unit 时长缺值时的兜底秒数：执行层取档、入队前预检与新建 unit 的默认
@@ -73,7 +74,7 @@ type ProjectVideoCaps struct {
 
 // ResolveProjectVideoCaps 解析项目视频能力；解析失败返回部分结果，由调用方各自降级。
 func ResolveProjectVideoCaps(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile, bucket provider.VideoBucket,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile, bucket provider.VideoBucket,
 ) ProjectVideoCaps {
 	caps := ProjectVideoCaps{}
 	if view, err := r.VideoCapabilitiesForProjectBucket(ctx, project, bucket); err == nil {
@@ -95,7 +96,7 @@ func ResolveProjectVideoCaps(
 // ResolveAudioSwitchConflict 判定项目的「关闭音频」意图是否落在一个收不到音轨开关的模型上；
 // 冲突时返回 (provider, model, true)。解析失败一律返回无冲突（不把配置解析问题升级为提交期拒绝）。
 func ResolveAudioSwitchConflict(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile, bucket provider.VideoBucket,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile, bucket provider.VideoBucket,
 ) (string, string, bool) {
 	view, err := r.VideoCapabilitiesForProjectBucket(ctx, project, bucket)
 	if err != nil {
@@ -117,7 +118,7 @@ func ResolveAudioSwitchConflict(
 
 // AssertAudioSwitchSupported 是智能体视频入队前的音频开关预检，冲突时返回错误。
 func AssertAudioSwitchSupported(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile, bucket provider.VideoBucket,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile, bucket provider.VideoBucket,
 ) error {
 	providerID, modelID, conflict := ResolveAudioSwitchConflict(ctx, r, project, bucket)
 	if !conflict {
@@ -138,7 +139,7 @@ func (e *AudioSwitchConflictError) Error() string {
 }
 
 // ResolveProjectIsSilent 判定这一集是否听不到声音——模型不产音或本集关闭音频，两条路径同口径。
-func ResolveProjectIsSilent(ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile) bool {
+func ResolveProjectIsSilent(ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile) bool {
 	bucket := provider.VideoBucketForGenerationMode(project.GenerationMode)
 	caps := ResolveProjectVideoCaps(ctx, r, project, bucket)
 	if !caps.Resolved {
@@ -154,7 +155,7 @@ func ResolveProjectIsSilent(ctx context.Context, r VideoCapabilityResolver, proj
 // DeriveVoiceConsistency 派生三级声音一致性标识（native / soft / none）。
 func DeriveVoiceConsistency(view config.VideoCapabilityView, generationMode string) string {
 	if view.Caps.ReferenceAudioMode == provider.ReferenceAudioDirect &&
-		generationMode == string(domain.GenerationReferenceVideo) {
+		generationMode == string(domainproject.GenerationReferenceVideo) {
 		return "native"
 	}
 	if info, ok := provider.ModelInfoFor(view.ProviderID, view.ModelID); ok &&
@@ -168,7 +169,7 @@ func DeriveVoiceConsistency(view config.VideoCapabilityView, generationMode stri
 // 执行层按实际身份（含自定义供应商合成能力）派生，不另走一次项目能力视图查询。
 func VoiceConsistencyForCaps(caps provider.VideoCapabilities, model config.ProviderModel, generationMode string) string {
 	if caps.ReferenceAudioMode == provider.ReferenceAudioDirect &&
-		generationMode == string(domain.GenerationReferenceVideo) {
+		generationMode == string(domainproject.GenerationReferenceVideo) {
 		return "native"
 	}
 	if info, ok := provider.ModelInfoFor(model.ProviderID, model.ModelID); ok &&
@@ -181,7 +182,7 @@ func VoiceConsistencyForCaps(caps provider.VideoCapabilities, model config.Provi
 // ResolveProjectDurationContext 一次性解析视频能力（档位全集 + 单次生成时长上限 + 分辨率 + 身份）。
 // 解析失败按空档位处理（沿用现状放行）；分辨率仅在档位非空时解析。
 func ResolveProjectDurationContext(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile, bucket provider.VideoBucket,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile, bucket provider.VideoBucket,
 ) ProjectDurationContext {
 	out := ProjectDurationContext{}
 	view, err := r.VideoCapabilitiesForProjectBucket(ctx, project, bucket)
@@ -206,7 +207,7 @@ func ResolveProjectDurationContext(
 // 未显式配置时取 provider fallback，与执行层同源——预检若停在这里，就会漏掉「按 fallback
 // 分辨率才生效」的档位约束。
 func projectResolution(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile, providerID, modelID string,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile, providerID, modelID string,
 ) string {
 	if providerID == "" || modelID == "" {
 		return ""
@@ -276,7 +277,7 @@ func PrecheckUnit(
 // referenceImagePresence 判定 unit 是否带参考图：ad 传成员镜头时现算参考集，否则读 unit 声明。
 func referenceImagePresence(unit map[string]any, adShots []map[string]any) bool {
 	if adShots != nil {
-		return len(domain.AdUnitReferences(adShots)) > 0
+		return len(media.AdUnitReferences(adShots)) > 0
 	}
 	if unit == nil {
 		return false
@@ -327,7 +328,7 @@ func ResolveDurationSlot(totalSeconds float64, supportedDurations []int) Duratio
 // 字段值来自磁盘剧本 JSON，非整数秒/不可解析的脏数据返回错误，由调用方按跳过处理。
 func UnitScriptDuration(unit map[string]any, adShots []map[string]any) (int, error) {
 	if adShots != nil {
-		if total := domain.AdScriptTotalDuration(adShots); total != 0 {
+		if total := media.AdScriptTotalDuration(adShots); total != 0 {
 			return total, nil
 		}
 		return FallbackUnitDuration, nil
@@ -366,7 +367,7 @@ func (e *DurationValueError) Error() string {
 
 // ResolveMaxUnitDuration 解析项目视频后端的单次生成时长上限（秒）；解析失败返回 nil（派生分组
 // 退化为仅按镜头数切分）。
-func ResolveMaxUnitDuration(ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile) *int {
+func ResolveMaxUnitDuration(ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile) *int {
 	caps := ResolveProjectVideoCaps(ctx, r, project, provider.VideoBucketForGenerationMode(project.GenerationMode))
 	if !caps.Resolved {
 		return nil
@@ -378,7 +379,7 @@ func ResolveMaxUnitDuration(ctx context.Context, r VideoCapabilityResolver, proj
 }
 
 // DefaultUnitDuration 是新建 unit 的默认时长（秒）：项目偏好 > 收窄后的最短档位 > 兜底。
-func DefaultUnitDuration(dctx ProjectDurationContext, project *domain.ProjectFile, withReferences bool) int {
+func DefaultUnitDuration(dctx ProjectDurationContext, project *domainproject.ProjectFile, withReferences bool) int {
 	if project == nil {
 		return FallbackUnitDuration
 	}
@@ -400,7 +401,7 @@ func DefaultUnitDuration(dctx ProjectDurationContext, project *domain.ProjectFil
 // supported_durations 已按项目分辨率与生成模式经时长联动约束收窄（未收窄的集合交给 LLM 会产出
 // 执行期必然被拒的时长）。default_duration 是用户配置的原样值。
 func FetchVideoCaps(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile, generationMode string,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile, generationMode string,
 ) (*int, []int) {
 	bucket := provider.VideoBucketForGenerationMode(project.GenerationMode)
 	view, err := r.VideoCapabilitiesForProjectBucket(ctx, project, bucket)
@@ -417,10 +418,10 @@ func FetchVideoCaps(
 // 不带图集按 i2v 桶模型求值（无引用 unit 执行期降级到 i2v 桶执行）；i2v 桶解析失败或无档位声明
 // 时回退按同一份 r2v 输入求值。两套集合之间不假定包含关系。
 func ReferenceUnitDurationTiers(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile,
 	view config.VideoCapabilityView, durations []int,
 ) (withReferences []int, withoutReferences []int) {
-	withReferences = constrainedCapsDurations(ctx, r, project, view, durations, string(domain.GenerationReferenceVideo), boolPtr(true))
+	withReferences = constrainedCapsDurations(ctx, r, project, view, durations, string(domainproject.GenerationReferenceVideo), boolPtr(true))
 	i2vView, i2vDurations := view, durations
 	if resolved, err := r.VideoCapabilitiesForProjectBucket(ctx, project, provider.BucketI2V); err == nil {
 		if len(resolved.SupportedDurations) > 0 {
@@ -428,20 +429,20 @@ func ReferenceUnitDurationTiers(
 		}
 	}
 	withoutReferences = constrainedCapsDurations(
-		ctx, r, project, i2vView, i2vDurations, string(domain.GenerationReferenceVideo), boolPtr(false),
+		ctx, r, project, i2vView, i2vDurations, string(domainproject.GenerationReferenceVideo), boolPtr(false),
 	)
 	return withReferences, withoutReferences
 }
 
 // constrainedCapsDurations 按 caps 里的模型身份对 durations 施加时长联动约束。
 func constrainedCapsDurations(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile,
 	view config.VideoCapabilityView, durations []int, generationMode string, usesReferenceImages *bool,
 ) []int {
 	if len(durations) == 0 {
 		return durations
 	}
-	withReferences := generationMode == string(domain.GenerationReferenceVideo)
+	withReferences := generationMode == string(domainproject.GenerationReferenceVideo)
 	if usesReferenceImages != nil {
 		withReferences = *usesReferenceImages
 	}
@@ -451,7 +452,7 @@ func constrainedCapsDurations(
 
 // resolutionForConstraints 求约束求值用的生效分辨率：项目已保存档位，参考视频模式下补 provider 兜底。
 func resolutionForConstraints(
-	ctx context.Context, r VideoCapabilityResolver, project *domain.ProjectFile,
+	ctx context.Context, r VideoCapabilityResolver, project *domainproject.ProjectFile,
 	providerID, modelID, generationMode string,
 ) string {
 	if providerID == "" || modelID == "" {
@@ -461,7 +462,7 @@ func resolutionForConstraints(
 	if err != nil {
 		saved = ""
 	}
-	if saved != "" || generationMode != string(domain.GenerationReferenceVideo) {
+	if saved != "" || generationMode != string(domainproject.GenerationReferenceVideo) {
 		return saved
 	}
 	return config.ProviderFallbackResolution(providerID)

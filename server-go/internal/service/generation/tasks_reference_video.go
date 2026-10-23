@@ -13,12 +13,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
-	"github.com/shotwise/shotwise/internal/service/reference"
 	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
 // executeReferenceVideoTask 处理一个 reference_video unit 的生成。
@@ -43,8 +44,8 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 	if err != nil {
 		return nil, err
 	}
-	isAd := project.ContentMode == string(domain.ContentAd)
-	unit, ok := domain.FindReferenceUnit(script, task.ResourceID, isAd)
+	isAd := project.ContentMode == string(domainproject.ContentAd)
+	unit, ok := media.FindReferenceUnit(script, task.ResourceID, isAd)
 	if !ok {
 		return nil, fmt.Errorf("unit not found: %s", task.ResourceID)
 	}
@@ -52,12 +53,12 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 	var sourceSignature string
 	if isAd {
 		// 索引悬空（镜头被删/改 ID 后未重新派生）在此 fail-loud，提示重新派生。
-		adShots, err = domain.ResolveAdUnitShots(script, unit)
+		adShots, err = media.ResolveAdUnitShots(script, unit)
 		if err != nil {
 			return nil, err
 		}
 		// 来源签名按执行期剧本快照计算：prompt 与签名同源于此快照。
-		sourceSignature = domain.AdUnitSourceSignature(script, unit)
+		sourceSignature = media.AdUnitSourceSignature(script, unit)
 	}
 
 	// 解析 references：narration/drama 缺图直接失败；ad 软口径跳过 + warning。
@@ -234,10 +235,9 @@ func (d *TaskDispatcher) executeReferenceVideoTask(ctx context.Context, task *re
 	return d.finalizeReferenceVideoUnit(task, projectDir, scriptFile, out, warnings, signatureArg, sourceSignature)
 }
 
-
 // adUnitReferenceMaps 把 ad 成员镜头的参考集渲染成 “[{type,name}]“ 结构。
 func adUnitReferenceMaps(shots []map[string]any) []map[string]any {
-	refs := domain.AdUnitReferences(shots)
+	refs := media.AdUnitReferences(shots)
 	out := make([]map[string]any, 0, len(refs))
 	for _, ref := range refs {
 		out = append(out, map[string]any{"type": ref.Type, "name": ref.Name})
@@ -393,7 +393,7 @@ func applyUnitVideoAssets(
 			}
 			resolved := signature
 			if mode == service.SignatureCompute {
-				resolved = domain.AdUnitSourceSignature(script, u)
+				resolved = media.AdUnitSourceSignature(script, u)
 			}
 			if resolved != "" {
 				ga["source_signature"] = resolved
@@ -418,11 +418,11 @@ func init() {
 // 渲染用 reference.AssembleShotsTextForRender（按数组位置重新注入规范 header），因为经解析预览面板编辑回写的
 // unit 其 shots[*].text 普遍已不带 header。
 func renderUnitPromptForUnit(
-	unit map[string]any, project *domain.ProjectFile, constrainedRefs []string,
+	unit map[string]any, project *domainproject.ProjectFile, constrainedRefs []string,
 	settings reference.VoiceRenderSettings, style string,
 ) (reference.RenderedUnitPrompt, error) {
 	shotsAny, _ := unit["shots"].([]any)
-	if strings.TrimSpace(domain.AssembleShotsText(shotsAny)) == "" {
+	if strings.TrimSpace(media.AssembleShotsText(shotsAny)) == "" {
 		return reference.RenderedUnitPrompt{}, fmt.Errorf("reference video unit prompt is empty: all shots[*].text are blank")
 	}
 	// 与 constrained_refs 同口径裁 references：保证「图片N」的 1-based 索引与 backend 实际收到的

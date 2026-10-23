@@ -13,7 +13,8 @@ import (
 	"context"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -22,7 +23,7 @@ import (
 // 此窄接口注入依赖、测试注入替身。
 type VideoBackendResolver interface {
 	ResolveVideoBackend(
-		ctx context.Context, project *domain.ProjectFile, payload map[string]any, bucket *provider.VideoBucket,
+		ctx context.Context, project *domainproject.ProjectFile, payload map[string]any, bucket *provider.VideoBucket,
 	) (config.ProviderModel, error)
 }
 
@@ -32,14 +33,14 @@ type VideoBackendResolver interface {
 // 已登记而设计图缺失 / 不可读的资产——执行层按软口径跳过并记 warning，不在提交期拒绝。
 // Go 侧无角色衍生形态（variant）概念，调用方渲染 missing_variants 段时恒传空占位。
 func ValidateTypedReferences(
-	project *domain.ProjectFile, projectDir string, refs []domain.AdReference, requireSheetImages bool,
+	project *domainproject.ProjectFile, projectDir string, refs []media.AdReference, requireSheetImages bool,
 ) service.PreflightResult {
 	items := make([]service.ItemReference, 0, len(refs))
 	for _, ref := range refs {
 		items = append(items, service.ItemReference{
-			Kind:  domain.AssetKind(ref.Type),
+			Kind:  domainproject.AssetKind(ref.Type),
 			Field: "references",
-			Name:  domain.NormalizeAssetName(ref.Name),
+			Name:  domainproject.NormalizeAssetName(ref.Name),
 		})
 	}
 	result := service.ValidateAssetReferences(project, projectDir, items)
@@ -63,7 +64,7 @@ func ValidateTypedReferences(
 // 其余解析失败（如未配置任何供应商）返回 nil 放行入队，由 worker 在任务面板暴露——
 // 不把非能力类失败升级为提交期拒绝。
 func RequireVideoBucketCapability(
-	ctx context.Context, resolver VideoBackendResolver, project *domain.ProjectFile, bucket provider.VideoBucket,
+	ctx context.Context, resolver VideoBackendResolver, project *domainproject.ProjectFile, bucket provider.VideoBucket,
 ) error {
 	_, err := resolver.ResolveVideoBackend(ctx, project, nil, &bucket)
 	if err == nil {

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/repository"
 )
@@ -43,13 +43,13 @@ func (f *fakeAssetQueue) IsWorkerOnline(context.Context, string) (bool, error) {
 
 // fakeGenerationProjects 提供生成类工具所需的项目读取面。
 type fakeGenerationProjects struct {
-	pf      *domain.ProjectFile
+	pf      *project.ProjectFile
 	dir     string
 	scripts map[string]map[string]any
 }
 
-func (f *fakeGenerationProjects) Get(string) (*domain.ProjectFile, error) { return f.pf, nil }
-func (f *fakeGenerationProjects) Dir(string) (string, error)              { return f.dir, nil }
+func (f *fakeGenerationProjects) Get(string) (*project.ProjectFile, error) { return f.pf, nil }
+func (f *fakeGenerationProjects) Dir(string) (string, error)               { return f.dir, nil }
 
 func (f *fakeGenerationProjects) ReadScriptJSON(_, filename string) (map[string]any, error) {
 	script, ok := f.scripts[filename]
@@ -63,12 +63,12 @@ func (f *fakeGenerationProjects) ReadScriptJSON(_, filename string) (map[string]
 type fakeImageCaps struct{}
 
 func (fakeImageCaps) ResolveImageBackend(
-	context.Context, *domain.ProjectFile, map[string]any, config.ImageCapability,
+	context.Context, *project.ProjectFile, map[string]any, config.ImageCapability,
 ) (config.ProviderModel, error) {
 	return config.ProviderModel{ProviderID: "gemini-aistudio", ModelID: "gemini-image"}, nil
 }
 
-func (fakeImageCaps) ResolveResolution(context.Context, *domain.ProjectFile, string, string) (string, error) {
+func (fakeImageCaps) ResolveResolution(context.Context, *project.ProjectFile, string, string) (string, error) {
 	return "2K", nil
 }
 
@@ -90,7 +90,7 @@ func newGenerationFixture(t *testing.T) (*fakeAssetQueue, *fakeGenerationProject
 		t.Fatal(err)
 	}
 
-	entry := domain.NewAssetEntry()
+	entry := project.NewAssetEntry()
 	entry.SetString("description", "少年")
 	entry.SetString("character_sheet", "characters/阿明.png")
 
@@ -114,9 +114,9 @@ func newGenerationFixture(t *testing.T) (*fakeAssetQueue, *fakeGenerationProject
 		},
 	}
 	return &fakeAssetQueue{}, &fakeGenerationProjects{
-		pf: &domain.ProjectFile{
+		pf: &project.ProjectFile{
 			ContentMode: "narration", GenerationMode: "storyboard", Style: "写实",
-			Characters: domain.AssetBucket{"阿明": entry},
+			Characters: project.AssetBucket{"阿明": entry},
 		},
 		dir:     dir,
 		scripts: map[string]map[string]any{"episode_1.json": script},

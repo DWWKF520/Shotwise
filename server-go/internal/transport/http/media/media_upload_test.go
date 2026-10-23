@@ -14,7 +14,7 @@ import (
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit/httpkittest"
 	"gorm.io/gorm/logger"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
@@ -51,11 +51,11 @@ func newMediaFixture(t *testing.T) mediaFixture {
 	})
 
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
-		pf.Episodes = append(pf.Episodes, domain.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"})
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
+		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"})
 		return nil
 	}); err != nil {
 		t.Fatalf("register episode: %v", err)
@@ -227,8 +227,8 @@ func TestEndFrameSelectCopiesProjectImage(t *testing.T) {
 // TestEndFrameRejectsReferenceVideoProject 校验参考生视频路线一律拒绝（按项目路线而非剧本戳）。
 func TestEndFrameRejectsReferenceVideoProject(t *testing.T) {
 	f := newMediaFixture(t)
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
-		pf.GenerationMode = string(domain.GenerationReferenceVideo)
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
+		pf.GenerationMode = string(project.GenerationReferenceVideo)
 		return nil
 	}); err != nil {
 		t.Fatalf("switch mode: %v", err)

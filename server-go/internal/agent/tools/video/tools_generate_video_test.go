@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -51,16 +51,16 @@ type fakeVideoCapResolver struct {
 }
 
 func (f *fakeVideoCapResolver) VideoCapabilitiesForProjectBucket(
-	context.Context, *domain.ProjectFile, provider.VideoBucket,
+	context.Context, *project.ProjectFile, provider.VideoBucket,
 ) (config.VideoCapabilityView, error) {
 	return f.view, nil
 }
 
-func (f *fakeVideoCapResolver) VideoGenerateAudioForProject(context.Context, *domain.ProjectFile) (bool, error) {
+func (f *fakeVideoCapResolver) VideoGenerateAudioForProject(context.Context, *project.ProjectFile) (bool, error) {
 	return f.generateAud, nil
 }
 
-func (f *fakeVideoCapResolver) ResolveResolution(context.Context, *domain.ProjectFile, string, string) (string, error) {
+func (f *fakeVideoCapResolver) ResolveResolution(context.Context, *project.ProjectFile, string, string) (string, error) {
 	return "", nil
 }
 
@@ -84,12 +84,12 @@ func newVideoFixture(t *testing.T) (*fakeVideoQueue, *fakeGenerationProjects, De
 	writeFile("storyboards/scene_E1S2.png")
 	writeFile("videos/scene_E1S1.mp4")
 
-	entry := domain.NewAssetEntry()
+	entry := project.NewAssetEntry()
 	entry.SetString("description", "少年")
 	entry.SetString("character_sheet", "characters/阿明.png")
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		ContentMode: "narration", GenerationMode: "storyboard", Style: "写实",
-		Characters: domain.AssetBucket{"阿明": entry},
+		Characters: project.AssetBucket{"阿明": entry},
 	}
 	script := map[string]any{
 		"title": "第1集", "content_mode": "narration", "episode": float64(1),

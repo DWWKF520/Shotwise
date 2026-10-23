@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
@@ -47,7 +47,7 @@ func newMediaAssetsRouter(t *testing.T) (*gin.Engine, *service.ProjectStore) {
 	gin.SetMode(gin.TestMode)
 	root := t.TempDir()
 	store := service.NewProjectStore(root)
-	if _, err := store.Create("demo", "Demo", domain.ContentDrama, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create("demo", "Demo", project.ContentDrama, project.GenerationStoryboard, "写实"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	r := gin.New()

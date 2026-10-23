@@ -1,9 +1,9 @@
 package video
 
 import (
-	serviceref "github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"encoding/json"
+	serviceref "github.com/shotwise/shotwise/internal/service/reference"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/agent/tools/script"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/service"
 )
@@ -35,34 +35,34 @@ func (f fakeReferenceCaps) view() config.VideoCapabilityView {
 }
 
 func (f fakeReferenceCaps) VideoCapabilitiesForProject(
-	context.Context, *domain.ProjectFile,
+	context.Context, *project.ProjectFile,
 ) (config.VideoCapabilityView, error) {
 	return f.view(), nil
 }
 
 func (f fakeReferenceCaps) VideoCapabilitiesForProjectBucket(
-	context.Context, *domain.ProjectFile, provider.VideoBucket,
+	context.Context, *project.ProjectFile, provider.VideoBucket,
 ) (config.VideoCapabilityView, error) {
 	return f.view(), nil
 }
 
-func (f fakeReferenceCaps) VideoGenerateAudioForProject(context.Context, *domain.ProjectFile) (bool, error) {
+func (f fakeReferenceCaps) VideoGenerateAudioForProject(context.Context, *project.ProjectFile) (bool, error) {
 	return true, nil
 }
 
-func (f fakeReferenceCaps) ResolveResolution(context.Context, *domain.ProjectFile, string, string) (string, error) {
+func (f fakeReferenceCaps) ResolveResolution(context.Context, *project.ProjectFile, string, string) (string, error) {
 	return "", nil
 }
 
 // newReferenceProject 造一个参考生视频项目（narration 内容、reference_video 路线）。
 func newReferenceProject(t *testing.T) (*fakeGenerationProjects, string) {
 	t.Helper()
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		ContentMode:    "narration",
-		GenerationMode: string(domain.GenerationReferenceVideo),
+		GenerationMode: string(project.GenerationReferenceVideo),
 		Title:          "测试项目",
 		Style:          "写实",
-		Episodes:       []domain.EpisodeMeta{{Episode: 1, ScriptFile: "scripts/episode_1.json"}},
+		Episodes:       []project.EpisodeMeta{{Episode: 1, ScriptFile: "scripts/episode_1.json"}},
 	}
 	projects, dir := newTextGenProject(t, "narration", pf)
 	if err := os.WriteFile(filepath.Join(dir, "source", "episode_1.txt"), []byte("他推开门。"), 0o644); err != nil {
@@ -236,7 +236,7 @@ func TestGenerateEpisodeScriptToolReference(t *testing.T) {
 }
 
 func TestGenerateEpisodeScriptToolAD(t *testing.T) {
-	pf := &domain.ProjectFile{ContentMode: "ad", GenerationMode: string(domain.GenerationStoryboard), TargetDuration: intPtr(30)}
+	pf := &project.ProjectFile{ContentMode: "ad", GenerationMode: string(project.GenerationStoryboard), TargetDuration: intPtr(30)}
 	projects, _ := newTextGenProject(t, "ad", pf)
 	out := `{"title":"广告","shots":[{"shot_id":"E1S01","section":"hook","duration_seconds":6,"voiceover_text":"来",` +
 		`"products_in_shot":[],"characters_in_shot":[],"scenes":[],"props":[],` +

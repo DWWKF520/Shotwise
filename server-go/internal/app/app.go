@@ -12,7 +12,8 @@ import (
 	"github.com/shotwise/shotwise/internal/agent"
 	"github.com/shotwise/shotwise/internal/auth"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/draft"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -244,7 +245,7 @@ func registerDraftPromotions(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	script.RegisterDraftPromotions(authed, script.DraftPromotionDeps{
 		Store: rt.Store,
-		Drafts: domain.NewDraftPromotionService(
+		Drafts: draft.NewDraftPromotionService(
 			servicereference.NewFileDraftPromotionRepository(rt.Store),
 			servicereference.ScriptStructureDraftValidator(),
 		),
@@ -476,7 +477,7 @@ func registerCharacterRelations(v1 *gin.RouterGroup, rt *Runtime) {
 	authed := v1.Group("", rt.Auth.Middleware())
 	httpasset.RegisterCharacterRelations(authed, httpasset.CharacterRelationsDeps{
 		Store: rt.Store,
-		RelationFactory: func(ctx context.Context, pf *domain.ProjectFile) (agent.RelationTextGenerator, error) {
+		RelationFactory: func(ctx context.Context, pf *domainproject.ProjectFile) (agent.RelationTextGenerator, error) {
 			return textgen.NewGenerator(ctx, rt.DB, pf, textgen.TaskScript)
 		},
 	})

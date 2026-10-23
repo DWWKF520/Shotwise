@@ -6,12 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // preflightFields 是三类资产在分镜条目里的引用字段名。
-func preflightFields() domain.StoryboardItemFields {
-	return domain.StoryboardItemFields{
+func preflightFields() media.StoryboardItemFields {
+	return media.StoryboardItemFields{
 		CharField:  "characters_in_segment",
 		SceneField: "scenes",
 		PropField:  "props",
@@ -21,7 +22,7 @@ func preflightFields() domain.StoryboardItemFields {
 // setupPreflightProject 造一个含各色资产的 project.json 表示：
 // 阿明 / 客厅 / 长剑 有可用设计图；无图角色 设计图字段为空；丢失角色 指向不存在文件；
 // 越界角色 指向项目外路径。返回的 dir 内已写入可用设计图文件。
-func setupPreflightProject(t *testing.T) (*domain.ProjectFile, string) {
+func setupPreflightProject(t *testing.T) (*domainproject.ProjectFile, string) {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "characters"), 0o755); err != nil {
@@ -39,18 +40,18 @@ func setupPreflightProject(t *testing.T) (*domain.ProjectFile, string) {
 		}
 	}
 
-	project := &domain.ProjectFile{
-		Characters: domain.AssetBucket{
-			"阿明":   domain.WrapAssetEntry(map[string]any{"character_sheet": "characters/阿明.png"}),
-			"无图角色": domain.WrapAssetEntry(map[string]any{"character_sheet": ""}),
-			"丢失角色": domain.WrapAssetEntry(map[string]any{"character_sheet": "characters/missing.png"}),
-			"越界角色": domain.WrapAssetEntry(map[string]any{"character_sheet": "../outside.png"}),
+	project := &domainproject.ProjectFile{
+		Characters: domainproject.AssetBucket{
+			"阿明":   domainproject.WrapAssetEntry(map[string]any{"character_sheet": "characters/阿明.png"}),
+			"无图角色": domainproject.WrapAssetEntry(map[string]any{"character_sheet": ""}),
+			"丢失角色": domainproject.WrapAssetEntry(map[string]any{"character_sheet": "characters/missing.png"}),
+			"越界角色": domainproject.WrapAssetEntry(map[string]any{"character_sheet": "../outside.png"}),
 		},
-		Scenes: domain.AssetBucket{
-			"客厅": domain.WrapAssetEntry(map[string]any{"scene_sheet": "scenes/客厅.png"}),
+		Scenes: domainproject.AssetBucket{
+			"客厅": domainproject.WrapAssetEntry(map[string]any{"scene_sheet": "scenes/客厅.png"}),
 		},
-		Props: domain.AssetBucket{
-			"长剑": domain.WrapAssetEntry(map[string]any{"prop_sheet": "props/长剑.png"}),
+		Props: domainproject.AssetBucket{
+			"长剑": domainproject.WrapAssetEntry(map[string]any{"prop_sheet": "props/长剑.png"}),
 		},
 	}
 	return project, dir
@@ -89,7 +90,7 @@ func TestPreflightUnregistered(t *testing.T) {
 	if issue.AssetName != "幽灵" {
 		t.Errorf("asset name = %q", issue.AssetName)
 	}
-	if issue.AssetType != domain.AssetCharacter {
+	if issue.AssetType != domainproject.AssetCharacter {
 		t.Errorf("asset type = %q", issue.AssetType)
 	}
 }
@@ -129,7 +130,7 @@ func TestPreflightNFCResolvesEquivalentName(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "scenes", nfc+".png"), []byte("png"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	project.Scenes[nfc] = domain.WrapAssetEntry(map[string]any{"scene_sheet": "scenes/" + nfc + ".png"})
+	project.Scenes[nfc] = domainproject.WrapAssetEntry(map[string]any{"scene_sheet": "scenes/" + nfc + ".png"})
 
 	if result := ValidateItemAssetReferences(project, dir, map[string]any{"scenes": []any{nfd}}, preflightFields()); len(result.Issues) != 0 {
 		t.Fatalf("NFD reference must resolve to NFC key, got %+v", result.Issues)
@@ -140,7 +141,7 @@ func TestPreflightNFCResolvesEquivalentName(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "scenes", nfdKey+".png"), []byte("png"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	project.Scenes[nfdKey] = domain.WrapAssetEntry(map[string]any{"scene_sheet": "scenes/" + nfdKey + ".png"})
+	project.Scenes[nfdKey] = domainproject.WrapAssetEntry(map[string]any{"scene_sheet": "scenes/" + nfdKey + ".png"})
 
 	if result := ValidateItemAssetReferences(project, dir, map[string]any{"scenes": []any{"role_" + nfc}}, preflightFields()); len(result.Issues) != 0 {
 		t.Fatalf("NFC reference must resolve to NFD key, got %+v", result.Issues)
@@ -192,13 +193,13 @@ func TestPreflightNilProjectReportsUnregistered(t *testing.T) {
 
 func TestMergePreflightResultsOrderAndDedup(t *testing.T) {
 	first := PreflightResult{Issues: []PreflightIssue{
-		{Field: "scenes", AssetName: "客厅", Kind: PreflightKindMissingSheet, AssetType: domain.AssetScene},
-		{Field: "characters_in_segment", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domain.AssetCharacter},
+		{Field: "scenes", AssetName: "客厅", Kind: PreflightKindMissingSheet, AssetType: domainproject.AssetScene},
+		{Field: "characters_in_segment", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domainproject.AssetCharacter},
 	}}
 	second := PreflightResult{Issues: []PreflightIssue{
 		// 与 first 首条同身份（种类/类型/名相同），应被去重，字段保留首次出现的值。
-		{Field: "scenes", AssetName: "客厅", Kind: PreflightKindMissingSheet, AssetType: domain.AssetScene},
-		{Field: "props", AssetName: "长剑", Kind: PreflightKindUnregistered, AssetType: domain.AssetProp},
+		{Field: "scenes", AssetName: "客厅", Kind: PreflightKindMissingSheet, AssetType: domainproject.AssetScene},
+		{Field: "props", AssetName: "长剑", Kind: PreflightKindUnregistered, AssetType: domainproject.AssetProp},
 	}}
 	merged := MergePreflightResults(first, second)
 	if len(merged.Issues) != 3 {
@@ -214,10 +215,10 @@ func TestMergePreflightResultsOrderAndDedup(t *testing.T) {
 
 func TestMergePreflightResultsFieldKeepsFirstSeen(t *testing.T) {
 	first := PreflightResult{Issues: []PreflightIssue{
-		{Field: "characters_in_segment", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domain.AssetCharacter},
+		{Field: "characters_in_segment", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domainproject.AssetCharacter},
 	}}
 	second := PreflightResult{Issues: []PreflightIssue{
-		{Field: "characters_in_scene", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domain.AssetCharacter},
+		{Field: "characters_in_scene", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domainproject.AssetCharacter},
 	}}
 	merged := MergePreflightResults(first, second)
 	if len(merged.Issues) != 1 || merged.Issues[0].Field != "characters_in_segment" {
@@ -227,9 +228,9 @@ func TestMergePreflightResultsFieldKeepsFirstSeen(t *testing.T) {
 
 func TestFormatPreflightErrorRendering(t *testing.T) {
 	result := PreflightResult{Issues: []PreflightIssue{
-		{Field: "characters_in_segment", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domain.AssetCharacter},
-		{Field: "scenes", AssetName: "废弃", Kind: PreflightKindUnregistered, AssetType: domain.AssetScene},
-		{Field: "characters_in_segment", AssetName: "无图角色", Kind: PreflightKindMissingSheet, AssetType: domain.AssetCharacter},
+		{Field: "characters_in_segment", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domainproject.AssetCharacter},
+		{Field: "scenes", AssetName: "废弃", Kind: PreflightKindUnregistered, AssetType: domainproject.AssetScene},
+		{Field: "characters_in_segment", AssetName: "无图角色", Kind: PreflightKindMissingSheet, AssetType: domainproject.AssetCharacter},
 	}}
 	got := FormatPreflightError(result)
 	const prefix = "生成前检查失败。未登记资产："
@@ -246,7 +247,7 @@ func TestFormatPreflightErrorRendering(t *testing.T) {
 
 func TestFormatPreflightErrorPlaceholderForEmptyCategory(t *testing.T) {
 	result := PreflightResult{Issues: []PreflightIssue{
-		{Field: "characters_in_segment", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domain.AssetCharacter},
+		{Field: "characters_in_segment", AssetName: "幽灵", Kind: PreflightKindUnregistered, AssetType: domainproject.AssetCharacter},
 	}}
 	got := FormatPreflightError(result)
 	want := "生成前检查失败。未登记资产：character:幽灵；缺少设计图：—"

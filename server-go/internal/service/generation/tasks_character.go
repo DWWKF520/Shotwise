@@ -13,12 +13,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/domain/creation"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // executeCharacterTask 生成角色四视图设计图并派生头像。
@@ -32,7 +33,7 @@ func (d *TaskDispatcher) executeCharacterTask(ctx context.Context, task *reposit
 	if raw == "" {
 		return nil, fmt.Errorf("prompt is required for character task")
 	}
-	characterName, err := domain.ValidateAssetName(task.ResourceID)
+	characterName, err := project.ValidateAssetName(task.ResourceID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid character name: %s", task.ResourceID)
 	}
@@ -44,7 +45,7 @@ func (d *TaskDispatcher) executeCharacterTask(ctx context.Context, task *reposit
 	if err != nil {
 		return nil, err
 	}
-	characters, ok := pf.BucketRef(domain.AssetCharacter)
+	characters, ok := pf.BucketRef(project.AssetCharacter)
 	if !ok {
 		return nil, fmt.Errorf("character bucket missing")
 	}
@@ -54,7 +55,7 @@ func (d *TaskDispatcher) executeCharacterTask(ctx context.Context, task *reposit
 	}
 	entry := (*characters)[key]
 
-	fullPrompt := domain.BuildCharacterPrompt(key, raw, pf.Style, pf.StyleDescription)
+	fullPrompt := creation.BuildCharacterPrompt(key, raw, pf.Style, pf.StyleDescription)
 	// 角色参考图（手动上传的定妆锚点）作为 i2i 输入；缺失或越界时退化为纯文生图。
 	var refs []provider.ReferenceImage
 	if refRel, ok := entry.String("reference_image"); ok && strings.TrimSpace(refRel) != "" {
@@ -104,8 +105,8 @@ func (d *TaskDispatcher) executeCharacterTask(ctx context.Context, task *reposit
 	}
 
 	finalized := false
-	if err := d.store.Update(task.ProjectName, func(p *domain.ProjectFile) error {
-		b, ok := p.BucketRef(domain.AssetCharacter)
+	if err := d.store.Update(task.ProjectName, func(p *project.ProjectFile) error {
+		b, ok := p.BucketRef(project.AssetCharacter)
 		if !ok {
 			return fmt.Errorf("character bucket missing")
 		}
@@ -119,7 +120,7 @@ func (d *TaskDispatcher) executeCharacterTask(ctx context.Context, task *reposit
 		if e.MustString("character_avatar") != previousAvatar {
 			return nil
 		}
-		sheetSpec, _ := domain.Spec(domain.AssetCharacter)
+		sheetSpec, _ := project.Spec(project.AssetCharacter)
 		e.SetString(sheetSpec.SheetKey, sheetRel)
 		e.SetString("character_avatar", avatarRel)
 		finalized = true

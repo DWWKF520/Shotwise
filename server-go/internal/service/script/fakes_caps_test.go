@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -19,7 +19,7 @@ type fakeVideoCapsResolver struct {
 }
 
 func (f *fakeVideoCapsResolver) VideoCapabilitiesForProjectBucket(
-	_ context.Context, _ *domain.ProjectFile, bucket provider.VideoBucket,
+	_ context.Context, _ *project.ProjectFile, bucket provider.VideoBucket,
 ) (config.VideoCapabilityView, error) {
 	if f.viewErr != nil {
 		return config.VideoCapabilityView{}, f.viewErr
@@ -32,11 +32,11 @@ func (f *fakeVideoCapsResolver) VideoCapabilitiesForProjectBucket(
 	return f.view, nil
 }
 
-func (f *fakeVideoCapsResolver) VideoGenerateAudioForProject(context.Context, *domain.ProjectFile) (bool, error) {
+func (f *fakeVideoCapsResolver) VideoGenerateAudioForProject(context.Context, *project.ProjectFile) (bool, error) {
 	return f.generateAu, f.audioErr
 }
 
-func (f *fakeVideoCapsResolver) ResolveResolution(context.Context, *domain.ProjectFile, string, string) (string, error) {
+func (f *fakeVideoCapsResolver) ResolveResolution(context.Context, *project.ProjectFile, string, string) (string, error) {
 	return f.resolution, nil
 }
 

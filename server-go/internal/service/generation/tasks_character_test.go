@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/repository"
 )
@@ -32,18 +32,18 @@ func characterTask(resourceID string, payload map[string]any) *repository.TaskDa
 // seedCharacter 往项目角色桶写入一条最小条目（description 是「不更坏」守卫的必填字段）。
 func seedCharacter(t *testing.T, store *service.ProjectStore, projectName, name string, fields map[string]string) {
 	t.Helper()
-	if err := store.Update(projectName, func(p *domain.ProjectFile) error {
-		bucket, ok := p.BucketRef(domain.AssetCharacter)
+	if err := store.Update(projectName, func(p *project.ProjectFile) error {
+		bucket, ok := p.BucketRef(project.AssetCharacter)
 		if !ok {
 			t.Fatal("character bucket missing")
 		}
 		if *bucket == nil {
-			*bucket = domain.AssetBucket{}
+			*bucket = project.AssetBucket{}
 		}
-		key := domain.NormalizeAssetName(name)
+		key := project.NormalizeAssetName(name)
 		entry, ok := (*bucket)[key]
 		if !ok {
-			entry = domain.NewAssetEntry()
+			entry = project.NewAssetEntry()
 			entry.SetString("description", "测试角色")
 			(*bucket)[key] = entry
 		}
@@ -93,8 +93,8 @@ func TestCharacterTaskEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	characters, _ := pf.BucketRef(domain.AssetCharacter)
-	entry := (*characters)[domain.NormalizeAssetName("阿明")]
+	characters, _ := pf.BucketRef(project.AssetCharacter)
+	entry := (*characters)[project.NormalizeAssetName("阿明")]
 	if got := entry.MustString("character_sheet"); got != "characters/阿明.png" {
 		t.Fatalf("character_sheet = %q", got)
 	}
@@ -118,9 +118,9 @@ func TestCharacterTaskStaleAvatarGuard(t *testing.T) {
 	}
 	// 桩在返回产物前抢先改写头像字段，模拟并发任务在执行器生成期间赢下写回竞态。
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = store.Update(projectName, func(p *domain.ProjectFile) error {
-			b, _ := p.BucketRef(domain.AssetCharacter)
-			(*b)[domain.NormalizeAssetName("阿明")].SetString("character_avatar", "characters/阿明_avatar_concurrent.png")
+		_ = store.Update(projectName, func(p *project.ProjectFile) error {
+			b, _ := p.BucketRef(project.AssetCharacter)
+			(*b)[project.NormalizeAssetName("阿明")].SetString("character_avatar", "characters/阿明_avatar_concurrent.png")
 			return nil
 		})
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -141,8 +141,8 @@ func TestCharacterTaskStaleAvatarGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
-	characters, _ := pf.BucketRef(domain.AssetCharacter)
-	if got := (*characters)[domain.NormalizeAssetName("阿明")].MustString("character_avatar"); got != "characters/阿明_avatar_concurrent.png" {
+	characters, _ := pf.BucketRef(project.AssetCharacter)
+	if got := (*characters)[project.NormalizeAssetName("阿明")].MustString("character_avatar"); got != "characters/阿明_avatar_concurrent.png" {
 		t.Fatalf("并发赢家的头像应保留，得到 %q", got)
 	}
 	// 落败方（本次任务）的头像文件被清理；手动上传的文件不受影响。

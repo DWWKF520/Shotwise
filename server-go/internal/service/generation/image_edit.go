@@ -6,7 +6,8 @@
 package generation
 
 import (
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
@@ -19,8 +20,8 @@ var EditableResourceTypes = append(append([]string{}, assetTypeNames()...), Stor
 
 // assetTypeNames 按 AssetTypeOrder 列出四类资产类型标识。
 func assetTypeNames() []string {
-	out := make([]string, 0, len(domain.AssetTypeOrder))
-	for _, kind := range domain.AssetTypeOrder {
+	out := make([]string, 0, len(project.AssetTypeOrder))
+	for _, kind := range project.AssetTypeOrder {
 		out = append(out, string(kind))
 	}
 	return out
@@ -42,7 +43,7 @@ func EditVersionResourceType(resourceType string) (string, bool) {
 	if resourceType == StoryboardResourceType {
 		return "storyboards", true
 	}
-	spec, ok := domain.Spec(domain.AssetKind(resourceType))
+	spec, ok := project.Spec(project.AssetKind(resourceType))
 	if !ok {
 		return "", false
 	}
@@ -59,11 +60,11 @@ func EditVersionResourceType(resourceType string) (string, bool) {
 // found=false 与 rel 为空是两种语义：前者表示「资源不存在」，后者表示「资源在但没有当前图」，
 // 调用方按 Python 侧的两条分支分别告警。
 func ResolveCurrentImageRel(
-	pf *domain.ProjectFile, resourceType, resourceID string, script map[string]any,
+	pf *project.ProjectFile, resourceType, resourceID string, script map[string]any,
 ) (string, bool) {
 	if resourceType == StoryboardResourceType {
-		items, idField, _ := domain.StoryboardItems(script)
-		item, _, ok := domain.FindStoryboardItem(items, idField, resourceID)
+		items, idField, _ := media.StoryboardItems(script)
+		item, _, ok := media.FindStoryboardItem(items, idField, resourceID)
 		if !ok {
 			return "", false
 		}
@@ -78,11 +79,11 @@ func ResolveCurrentImageRel(
 		return canonical, true
 	}
 
-	spec, ok := domain.Spec(domain.AssetKind(resourceType))
+	spec, ok := project.Spec(project.AssetKind(resourceType))
 	if !ok {
 		return "", false
 	}
-	bucket, ok := pf.BucketRef(domain.AssetKind(resourceType))
+	bucket, ok := pf.BucketRef(project.AssetKind(resourceType))
 	if !ok || bucket == nil {
 		return "", false
 	}

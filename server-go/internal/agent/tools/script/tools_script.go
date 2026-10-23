@@ -10,9 +10,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 )
-
 
 // scriptRegenTriggerFields 是改了之后需紧接着重新生成图/视频的字段前缀（工具不自动作废旧资产）。
 var scriptRegenTriggerFields = []string{"image_prompt", "video_prompt"}
@@ -55,7 +54,7 @@ func NewPatchEpisodeScriptTool(project string, scripts tools.ScriptStore) (tool.
 					}
 					fields := tools.SortedKeys(fieldMap)
 					for _, field := range fields {
-						if err := domain.PatchScriptField(script, id, field, fieldMap[field]); err != nil {
+						if err := domainscript.PatchScriptField(script, id, field, fieldMap[field]); err != nil {
 							return fmt.Errorf("分镜 %s 的字段 %s：%w", id, field, err)
 						}
 						if isRegenTriggerField(field) && !tools.Contains(regenIDs, id) {
@@ -112,10 +111,10 @@ func NewInsertSegmentTool(project string, scripts tools.ScriptStore) (tool.Invok
 			var ids []string
 			var idsErr error
 			err := scripts.UpdateScript(project, in.Script, func(script map[string]any) error {
-				if err := domain.InsertScriptSegment(script, in.AfterID, in.Item); err != nil {
+				if err := domainscript.InsertScriptSegment(script, in.AfterID, in.Item); err != nil {
 					return err
 				}
-				ids, idsErr = domain.ScriptItemIDs(script)
+				ids, idsErr = domainscript.ScriptItemIDs(script)
 				return idsErr
 			})
 			if err != nil {
@@ -148,10 +147,10 @@ func NewRemoveSegmentTool(project string, scripts tools.ScriptStore) (tool.Invok
 			var ids []string
 			var idsErr error
 			err := scripts.UpdateScript(project, in.Script, func(script map[string]any) error {
-				if err := domain.RemoveScriptSegment(script, in.ID); err != nil {
+				if err := domainscript.RemoveScriptSegment(script, in.ID); err != nil {
 					return err
 				}
-				ids, idsErr = domain.ScriptItemIDs(script)
+				ids, idsErr = domainscript.ScriptItemIDs(script)
 				return idsErr
 			})
 			if err != nil {
@@ -185,10 +184,10 @@ func NewSplitSegmentTool(project string, scripts tools.ScriptStore) (tool.Invoka
 			var ids []string
 			var idsErr error
 			err := scripts.UpdateScript(project, in.Script, func(script map[string]any) error {
-				if err := domain.SplitScriptSegment(script, in.ID, in.Parts); err != nil {
+				if err := domainscript.SplitScriptSegment(script, in.ID, in.Parts); err != nil {
 					return err
 				}
-				ids, idsErr = domain.ScriptItemIDs(script)
+				ids, idsErr = domainscript.ScriptItemIDs(script)
 				return idsErr
 			})
 			if err != nil {

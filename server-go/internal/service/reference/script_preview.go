@@ -6,7 +6,9 @@ package reference
 // warning 依赖该集视频后端的能力与本集的无声开关，settings 由调用方从同一份能力解析
 // 出口派生（VoiceRenderSettingsFromCaps）；能力解析失败时按 soft 降级，只是少发提示。
 
-import "github.com/shotwise/shotwise/internal/domain"
+import (
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
+)
 
 // ScriptPreviewUtterance 是镜头级发声条目：ShotIndex 是 1-based 镜头序号。
 type ScriptPreviewUtterance struct {
@@ -35,7 +37,7 @@ type ScriptPreview struct {
 // maxReferenceImages 非 nil 时与执行层「先裁 references 再渲染」同口径先裁再判定纯画外
 // 降级；nil 表示不裁（能力不可解析时的降级口径）。
 func BuildScriptPreview(
-	text string, project *domain.ProjectFile, settings VoiceRenderSettings, maxReferenceImages *int,
+	text string, project *domainproject.ProjectFile, settings VoiceRenderSettings, maxReferenceImages *int,
 ) ScriptPreview {
 	shots, mentions := parsePrompt(text)
 	refs, missing := resolveReferences(mentions, project)
@@ -62,7 +64,7 @@ func BuildScriptPreview(
 		}
 	}
 
-	var characters domain.AssetBucket
+	var characters domainproject.AssetBucket
 	if project != nil {
 		characters = project.Characters
 	}

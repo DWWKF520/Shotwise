@@ -12,7 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/queue"
@@ -65,7 +65,7 @@ func resumeStrPtr(s string) *string { return &s }
 // newResumeFixture 在视频夹具基础上换装 resume-capable 后端，并把项目 provider 配置清空——
 // 让执行身份的唯一来源是 payload 锁定键，从而验证 resume 按提交时身份解析而非当前项目配置。
 func newResumeFixture(
-	t *testing.T, contentMode domain.ContentMode, genMode domain.GenerationMode,
+	t *testing.T, contentMode project.ContentMode, genMode project.GenerationMode,
 ) (*TaskDispatcher, *ResumeExecutor, *service.ProjectStore, *gorm.DB, *resumeStubBackend, string, string) {
 	t.Helper()
 	dispatcher, store, gdb, projectName := newVideoFixture(t, contentMode, genMode)
@@ -78,7 +78,7 @@ func newResumeFixture(
 		CapabilitiesForModel: func(string) (provider.VideoCapabilities, error) { return stubVideoCaps(), nil },
 	})
 	t.Cleanup(func() { provider.RegisterVideoBackend("openai", provider.VideoBackendRegistration{}) })
-	if err := store.Update(projectName, func(p *domain.ProjectFile) error {
+	if err := store.Update(projectName, func(p *project.ProjectFile) error {
 		p.VideoBackend = ""
 		p.VideoProviderI2V = ""
 		return nil
@@ -125,7 +125,7 @@ func loadCall(t *testing.T, gdb *gorm.DB, id int64) repository.APICall {
 }
 
 func TestResumeVideoTaskHappyPath(t *testing.T) {
-	_, exec, store, gdb, backend, projectDir, projectName := newResumeFixture(t, domain.ContentNarration, domain.GenerationStoryboard)
+	_, exec, store, gdb, backend, projectDir, projectName := newResumeFixture(t, project.ContentNarration, project.GenerationStoryboard)
 	writeSegmentScript(t, store, projectDir, "storyboards/scene_E1S01.png")
 
 	callID := seedPendingCall(t, gdb, projectName)
@@ -195,7 +195,7 @@ func TestResumeVideoTaskHappyPath(t *testing.T) {
 }
 
 func TestResumeVideoTaskExpiredSettlesFailed(t *testing.T) {
-	_, exec, store, gdb, backend, projectDir, projectName := newResumeFixture(t, domain.ContentNarration, domain.GenerationStoryboard)
+	_, exec, store, gdb, backend, projectDir, projectName := newResumeFixture(t, project.ContentNarration, project.GenerationStoryboard)
 	writeSegmentScript(t, store, projectDir, "storyboards/scene_E1S01.png")
 	backend.resumeErr = &provider.ResumeExpiredError{JobID: "job-9", Provider: "openai"}
 
@@ -223,7 +223,7 @@ func TestResumeVideoTaskExpiredSettlesFailed(t *testing.T) {
 }
 
 func TestResumeVideoTaskUnsupportedMapsSentinel(t *testing.T) {
-	_, exec, store, gdb, backend, projectDir, projectName := newResumeFixture(t, domain.ContentNarration, domain.GenerationStoryboard)
+	_, exec, store, gdb, backend, projectDir, projectName := newResumeFixture(t, project.ContentNarration, project.GenerationStoryboard)
 	writeSegmentScript(t, store, projectDir, "storyboards/scene_E1S01.png")
 	backend.resumeErr = provider.ErrResumeUnsupported
 
@@ -249,7 +249,7 @@ func TestResumeVideoTaskUnsupportedMapsSentinel(t *testing.T) {
 }
 
 func TestResumeVideoTaskMissingAPICallIDStillSucceeds(t *testing.T) {
-	_, exec, store, _, _, projectDir, projectName := newResumeFixture(t, domain.ContentNarration, domain.GenerationStoryboard)
+	_, exec, store, _, _, projectDir, projectName := newResumeFixture(t, project.ContentNarration, project.GenerationStoryboard)
 	writeSegmentScript(t, store, projectDir, "storyboards/scene_E1S01.png")
 
 	task := &repository.TaskData{
@@ -272,7 +272,7 @@ func TestResumeVideoTaskMissingAPICallIDStillSucceeds(t *testing.T) {
 }
 
 func TestResumeReferenceVideoTaskHappyPath(t *testing.T) {
-	_, exec, store, _, _, projectDir, projectName := newResumeFixture(t, domain.ContentNarration, domain.GenerationReferenceVideo)
+	_, exec, store, _, _, projectDir, projectName := newResumeFixture(t, project.ContentNarration, project.GenerationReferenceVideo)
 	writeUnitScript(t, store, projectDir)
 
 	task := &repository.TaskData{
@@ -304,7 +304,7 @@ func TestResumeReferenceVideoTaskHappyPath(t *testing.T) {
 }
 
 func TestResumeRejectsNonVideoTaskType(t *testing.T) {
-	_, exec, _, _, _, _, projectName := newResumeFixture(t, domain.ContentNarration, domain.GenerationStoryboard)
+	_, exec, _, _, _, _, projectName := newResumeFixture(t, project.ContentNarration, project.GenerationStoryboard)
 	_, err := exec.ResumeVideo(context.Background(), &repository.TaskData{
 		TaskID: "task-resume-6", ProjectName: projectName, TaskType: "storyboard", MediaType: "video",
 		ResourceID: "E1S01",
@@ -352,7 +352,7 @@ func TestSubmittedBaseURLForResume(t *testing.T) {
 
 func TestResumeDurationSecondsAndAPICallID(t *testing.T) {
 	two := 2
-	project := &domain.ProjectFile{DefaultDuration: &two}
+	project := &project.ProjectFile{DefaultDuration: &two}
 	if got := resumeDurationSeconds(map[string]any{"duration_seconds": "8.0"}, project); got != 8 {
 		t.Fatalf("float string duration = %d, want 8", got)
 	}

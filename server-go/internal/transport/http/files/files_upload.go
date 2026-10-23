@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/service"
@@ -265,7 +265,7 @@ func uploadStyleImage(d FileUploadDeps) gin.HandlerFunc {
 			return
 		}
 
-		if err := d.Store.Update(name, func(p *domain.ProjectFile) error {
+		if err := d.Store.Update(name, func(p *project.ProjectFile) error {
 			p.StyleImage = fileName
 			p.StyleDescription = description
 			// 强互斥：自定义参考图与模板二选一，同时清掉模板展开写入的 style prompt。

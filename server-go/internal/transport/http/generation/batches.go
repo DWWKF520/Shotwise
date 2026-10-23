@@ -16,7 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	domaintask "github.com/shotwise/shotwise/internal/domain/task"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/generation"
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit"
@@ -368,7 +368,7 @@ func batchResponse(
 			entry["progress_source"] = task["progress_source"]
 			entry["phase_code"] = task["phase_code"]
 			if message, ok := task["error_message"].(string); ok && message != "" {
-				entry["reason"] = domain.SanitizeFailureReason(message)
+				entry["reason"] = domaintask.SanitizeFailureReason(message)
 			}
 		}
 		tasks = append(tasks, entry)

@@ -5,12 +5,12 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"strconv"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // ReferenceShotDurationRange 是 ad + 参考生视频路径下单镜头时长的合法区间（秒）。
@@ -130,7 +130,7 @@ func formatDurationConstraint(supportedDurations []int, defaultDuration *int) (s
 
 // adShotDurationConstraint 按 generation_mode 渲染单镜头时长约束文本。
 func adShotDurationConstraint(generationMode string, supportedDurations []int) (string, error) {
-	if generationMode == string(domain.GenerationReferenceVideo) {
+	if generationMode == string(project.GenerationReferenceVideo) {
 		full := make([]int, 0, ReferenceShotDurationRangeHigh-ReferenceShotDurationRangeLow+1)
 		for d := ReferenceShotDurationRangeLow; d <= ReferenceShotDurationRangeHigh; d++ {
 			full = append(full, d)
@@ -157,7 +157,7 @@ func formatPacingBlock(targetDuration int) string {
 }
 
 // formatProducts 渲染产品信息块：名称 / 品牌 / 描述 / 卖点（selling_points）。
-func formatProducts(products *domain.AssetBucket) string {
+func formatProducts(products *project.AssetBucket) string {
 	names := assetNames(products)
 	if len(names) == 0 {
 		return ""
@@ -193,13 +193,13 @@ func formatProducts(products *domain.AssetBucket) string {
 
 // AdPromptOptions 是 BuildAdPrompt 的入参。
 type AdPromptOptions struct {
-	ProjectOverview    *domain.Overview
+	ProjectOverview    *project.Overview
 	Style              string
 	StyleDescription   string
-	Characters         *domain.AssetBucket
-	Scenes             *domain.AssetBucket
-	Props              *domain.AssetBucket
-	Products           *domain.AssetBucket
+	Characters         *project.AssetBucket
+	Scenes             *project.AssetBucket
+	Props              *project.AssetBucket
+	Products           *project.AssetBucket
 	Brief              string
 	TargetDuration     int
 	GenerationMode     string

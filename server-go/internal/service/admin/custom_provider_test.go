@@ -13,7 +13,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/providers"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -573,10 +573,10 @@ func TestCustomProviderDeleteCascades(t *testing.T) {
 	f.setSetting(t, "default_video_backend_i2v", ref) // 桶键刻意不级联清理
 
 	if _, err := f.store.Create("p1", "测试项目",
-		domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+		project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
 		pf.VideoBackend = ref
 		pf.AudioBackend = "openai/gpt-4o-mini-tts"
 		return nil

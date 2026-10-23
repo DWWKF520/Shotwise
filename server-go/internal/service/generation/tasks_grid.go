@@ -13,11 +13,14 @@ import (
 	"path/filepath"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	domaingrid "github.com/shotwise/shotwise/internal/domain/grid"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domaintask "github.com/shotwise/shotwise/internal/domain/task"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // decodeScriptJSON 把剧本 JSON 文本解成通用对象（宫格参考图收集只做只读遍历）。
@@ -59,14 +62,14 @@ func (d *TaskDispatcher) executeGrid(ctx context.Context, task *repository.TaskD
 
 	// 失败一律把记录翻 failed 并留脱敏后的错误原因，再向上抛（与 Python 侧同语义）。
 	fail := func(cause error) (map[string]any, error) {
-		grid.Status = domain.GridStatusFailed
-		message := domain.BoundReason(domain.SanitizeFailureReason(cause.Error()), 2000)
+		grid.Status = domaingrid.GridStatusFailed
+		message := domaintask.BoundReason(domaintask.SanitizeFailureReason(cause.Error()), 2000)
 		grid.ErrorMessage = &message
 		_ = manager.Save(grid)
 		return nil, cause
 	}
 
-	grid.Status = domain.GridStatusGenerating
+	grid.Status = domaingrid.GridStatusGenerating
 	grid.ErrorMessage = nil
 	if err := manager.Save(grid); err != nil {
 		return nil, err
@@ -112,7 +115,7 @@ func (d *TaskDispatcher) executeGrid(ctx context.Context, task *repository.TaskD
 	// 保底档与档位门控取自同一常量，避免门控按 2K 判定、渲染却按别的档位下发。
 	imageSize := service.ResolveImageResolutionFor(ctx, d.images.resolver, pf, task.Payload, capability)
 	if imageSize == "" {
-		imageSize = domain.GRIDFallbackResolution
+		imageSize = domaingrid.GRIDFallbackResolution
 	}
 
 	outRel, err := service.ResourceRelativePath("grids", task.ResourceID)
@@ -144,7 +147,7 @@ func (d *TaskDispatcher) executeGrid(ctx context.Context, task *repository.TaskD
 	// 联合图内容已更新，旧的落格结果不再对应当前图：置 completed 并清空 split_at（待显式切分）。
 	imagePath := outRel
 	grid.GridImagePath = &imagePath
-	grid.Status = domain.GridStatusCompleted
+	grid.Status = domaingrid.GridStatusCompleted
 	grid.SplitAt = nil
 	if err := manager.Save(grid); err != nil {
 		return nil, err
@@ -180,8 +183,8 @@ func gridImageRequest(
 // collectGridReferenceImages 收集宫格分组内分镜引用的角色/场景/道具设计图（对应 Python
 // _collect_grid_reference_images）：最多 6 张，按分镜顺序、条目内角色→场景→道具顺序去重。
 func collectGridReferenceImages(
-	pf *domain.ProjectFile, projectDir string, payload map[string]any, sceneIDs []string,
-) ([]provider.ReferenceImage, []domain.GridReferenceImage, error) {
+	pf *project.ProjectFile, projectDir string, payload map[string]any, sceneIDs []string,
+) ([]provider.ReferenceImage, []domaingrid.GridReferenceImage, error) {
 	scriptFile := payloadString(payload, "script_file")
 	if scriptFile == "" {
 		return nil, nil, nil
@@ -203,7 +206,7 @@ func collectGridReferenceImages(
 		return nil, nil, err
 	}
 
-	items, idField, fields := domain.StoryboardItems(script)
+	items, idField, fields := media.StoryboardItems(script)
 	wanted := map[string]bool{}
 	for _, id := range sceneIDs {
 		wanted[id] = true
@@ -211,7 +214,7 @@ func collectGridReferenceImages(
 
 	var (
 		refs     []provider.ReferenceImage
-		metadata []domain.GridReferenceImage
+		metadata []domaingrid.GridReferenceImage
 	)
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -223,12 +226,12 @@ func collectGridReferenceImages(
 			continue
 		}
 		for _, group := range []struct {
-			kind  domain.AssetKind
+			kind  project.AssetKind
 			field string
 		}{
-			{domain.AssetCharacter, fields.CharField},
-			{domain.AssetScene, fields.SceneField},
-			{domain.AssetProp, fields.PropField},
+			{project.AssetCharacter, fields.CharField},
+			{project.AssetScene, fields.SceneField},
+			{project.AssetProp, fields.PropField},
 		} {
 			if group.field == "" {
 				continue
@@ -251,7 +254,7 @@ func collectGridReferenceImages(
 				}
 				seen[sheet] = true
 				refs = append(refs, provider.ReferenceImage{Path: full})
-				metadata = append(metadata, domain.GridReferenceImage{
+				metadata = append(metadata, domaingrid.GridReferenceImage{
 					Path: sheet, Name: name, RefType: string(group.kind),
 				})
 			}
@@ -261,8 +264,8 @@ func collectGridReferenceImages(
 }
 
 // assetSheetPath 取资产桶里该资产的设计图相对路径（桶/资产缺失或未出图时为空串）。
-func assetSheetPath(pf *domain.ProjectFile, kind domain.AssetKind, name string) string {
-	spec, ok := domain.Spec(kind)
+func assetSheetPath(pf *project.ProjectFile, kind project.AssetKind, name string) string {
+	spec, ok := project.Spec(kind)
 	if !ok {
 		return ""
 	}

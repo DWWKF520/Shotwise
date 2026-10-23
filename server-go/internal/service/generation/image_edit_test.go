@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service/asset"
 )
@@ -47,10 +47,10 @@ func TestEditVersionResourceTypeMapping(t *testing.T) {
 }
 
 func TestResolveCurrentImageRelAssetAndStoryboard(t *testing.T) {
-	entry := domain.NewAssetEntry()
+	entry := project.NewAssetEntry()
 	entry.SetString("description", "少年")
 	entry.SetString("character_sheet", "characters/阿明.png")
-	pf := &domain.ProjectFile{Characters: domain.AssetBucket{"阿明": entry}}
+	pf := &project.ProjectFile{Characters: project.AssetBucket{"阿明": entry}}
 
 	if got, found := ResolveCurrentImageRel(pf, "character", "阿明", nil); !found || got != "characters/阿明.png" {
 		t.Fatalf("资产当前图解析有误: %q,%v", got, found)
@@ -60,9 +60,9 @@ func TestResolveCurrentImageRelAssetAndStoryboard(t *testing.T) {
 		t.Fatal("未登记资产不应解析成功")
 	}
 	// 已登记但未出图 → ("", true)：与「资源不存在」区分。
-	blank := domain.NewAssetEntry()
+	blank := project.NewAssetEntry()
 	blank.SetString("description", "空")
-	pf2 := &domain.ProjectFile{Characters: domain.AssetBucket{"空": blank}}
+	pf2 := &project.ProjectFile{Characters: project.AssetBucket{"空": blank}}
 	if got, found := ResolveCurrentImageRel(pf2, "character", "空", nil); !found || got != "" {
 		t.Fatalf("无设计图应返回空串且 found=true: %q,%v", got, found)
 	}
@@ -89,10 +89,10 @@ func TestResolveCurrentImageRelAssetAndStoryboard(t *testing.T) {
 }
 
 func TestResolveCurrentImageRelResolvesNFDAssetName(t *testing.T) {
-	entry := domain.NewAssetEntry()
+	entry := project.NewAssetEntry()
 	entry.SetString("description", "x")
 	entry.SetString("character_sheet", "characters/e.png")
-	pf := &domain.ProjectFile{Characters: domain.AssetBucket{"\u00e9": entry}} // NFC é
+	pf := &project.ProjectFile{Characters: project.AssetBucket{"\u00e9": entry}} // NFC é
 	if got, found := ResolveCurrentImageRel(pf, "character", "e\u0301", nil); !found || got != "characters/e.png" {
 		t.Fatalf("NFD 输入应按坐标系解析到 NFC key: %q,%v", got, found)
 	}
@@ -107,7 +107,7 @@ func TestExecuteImageEditCharacterWritesSheetAndVersion(t *testing.T) {
 		t.Fatalf("project dir: %v", err)
 	}
 	assets := asset.NewAssetService(store)
-	if _, err := assets.Create(projectName, domain.AssetCharacter, "阿明", "少年", nil); err != nil {
+	if _, err := assets.Create(projectName, project.AssetCharacter, "阿明", "少年", nil); err != nil {
 		t.Fatalf("create asset: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(projectDir, "characters"), 0o755); err != nil {
@@ -117,7 +117,7 @@ func TestExecuteImageEditCharacterWritesSheetAndVersion(t *testing.T) {
 	if err := os.WriteFile(sheet, []byte("old-image"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := assets.Patch(projectName, domain.AssetCharacter, "阿明", map[string]any{
+	if _, err := assets.Patch(projectName, project.AssetCharacter, "阿明", map[string]any{
 		"character_sheet": "characters/阿明.png",
 	}); err != nil {
 		t.Fatalf("patch sheet: %v", err)

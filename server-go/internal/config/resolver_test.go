@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -117,7 +117,7 @@ func TestResolveImageLayeredPriority(t *testing.T) {
 	geminiImage := defaultModel(t, "gemini-aistudio", provider.MediaImage)
 
 	// 层 1：项目桶。
-	project := &domain.ProjectFile{
+	project := &project.ProjectFile{
 		ImageProviderT2I:    "openai/" + openaiImage,
 		DefaultImageBackend: "gemini-aistudio/" + geminiImage,
 	}
@@ -172,7 +172,7 @@ func TestResolveImageBareProviderFillsDefaultModel(t *testing.T) {
 
 	// project.json 里只写了裸 provider：pin 住该供应商并补全默认 model，
 	// 而不是回退到全局默认的另一供应商。
-	project := &domain.ProjectFile{DefaultImageBackend: "openai"}
+	project := &project.ProjectFile{DefaultImageBackend: "openai"}
 	got, err := r.ResolveImageBackend(context.Background(), project, nil, ImageCapT2I)
 	if err != nil {
 		t.Fatalf("resolve image: %v", err)
@@ -185,7 +185,7 @@ func TestResolveImageBareProviderFillsDefaultModel(t *testing.T) {
 func TestResolveImagePayloadWins(t *testing.T) {
 	r, gdb := newTestResolver(t)
 	openaiImage := defaultModel(t, "openai", provider.MediaImage)
-	project := &domain.ProjectFile{ImageProviderT2I: "gemini-aistudio/" + defaultModel(t, "gemini-aistudio", provider.MediaImage)}
+	project := &project.ProjectFile{ImageProviderT2I: "gemini-aistudio/" + defaultModel(t, "gemini-aistudio", provider.MediaImage)}
 
 	// payload 缺 model 时补该 provider 的默认 model。
 	got, err := r.ResolveImageBackend(context.Background(), project, map[string]any{
@@ -223,7 +223,7 @@ func TestResolveDisabledProviderFailsLoud(t *testing.T) {
 	ctx := context.Background()
 	setSetting(t, gdb, "provider_enabled:openai", "0")
 
-	project := &domain.ProjectFile{DefaultImageBackend: "openai/" + defaultModel(t, "openai", provider.MediaImage)}
+	project := &project.ProjectFile{DefaultImageBackend: "openai/" + defaultModel(t, "openai", provider.MediaImage)}
 	if _, err := r.ResolveImageBackend(ctx, project, nil, ImageCapT2I); !errors.Is(err, ErrProviderDisabled) {
 		t.Fatalf("disabled provider should not be silently replaced, got %v", err)
 	}
@@ -265,7 +265,7 @@ func TestResolveVideoPayloadPinnedWins(t *testing.T) {
 	openaiVideo := defaultModel(t, "openai", provider.MediaVideo)
 	bucket := provider.BucketI2V
 
-	project := &domain.ProjectFile{VideoBackend: "gemini-aistudio/" + defaultModel(t, "gemini-aistudio", provider.MediaVideo)}
+	project := &project.ProjectFile{VideoBackend: "gemini-aistudio/" + defaultModel(t, "gemini-aistudio", provider.MediaVideo)}
 	got, err := r.ResolveVideoBackend(context.Background(), project, map[string]any{
 		"video_provider_i2v": "openai/" + openaiVideo,
 	}, &bucket)
@@ -283,7 +283,7 @@ func TestResolveVideoIdentityGate(t *testing.T) {
 	bucket := provider.BucketI2V
 
 	// 引用一个不是视频模型的 id：身份闸先于能力闸报错。
-	project := &domain.ProjectFile{VideoBackend: "openai/" + defaultModel(t, "openai", provider.MediaImage)}
+	project := &project.ProjectFile{VideoBackend: "openai/" + defaultModel(t, "openai", provider.MediaImage)}
 	_, err := r.ResolveVideoBackend(ctx, project, nil, &bucket)
 	if _, ok := IsVideoBucketCapabilityError(err); !ok {
 		t.Fatalf("expected bucket capability error, got %v", err)
@@ -313,7 +313,7 @@ func TestResolveVideoBucketCapabilityGate(t *testing.T) {
 	r, _ := newTestResolver(t)
 	ctx := context.Background()
 	model := defaultModel(t, "openai", provider.MediaVideo)
-	project := &domain.ProjectFile{VideoBackend: "openai/" + model}
+	project := &project.ProjectFile{VideoBackend: "openai/" + model}
 
 	i2v := provider.BucketI2V
 	if _, err := r.ResolveVideoBackend(ctx, project, nil, &i2v); err != nil {
@@ -340,7 +340,7 @@ func TestResolveVideoCustomProviderConvergesToDefaultModel(t *testing.T) {
 	providerID := MakeProviderID(dbID)
 
 	// 不定桶路径：model 已禁用 → 收敛到该供应商默认启用的 video model。
-	project := &domain.ProjectFile{VideoBackend: providerID + "/stale-model"}
+	project := &project.ProjectFile{VideoBackend: providerID + "/stale-model"}
 	got, err := r.ResolveVideoBackend(ctx, project, nil, nil)
 	if err != nil {
 		t.Fatalf("resolve video custom: %v", err)
@@ -375,7 +375,7 @@ func TestResolveAudioBackend(t *testing.T) {
 	// 项目层覆盖优先（自定义供应商走同一骨架）。
 	dbID := addCustomProvider(t, gdb, true)
 	addCustomModel(t, gdb, dbID, "my-tts", "openai-tts", true, true)
-	project := &domain.ProjectFile{AudioBackend: MakeProviderID(dbID) + "/my-tts"}
+	project := &project.ProjectFile{AudioBackend: MakeProviderID(dbID) + "/my-tts"}
 	if got, err = r.ResolveAudioBackend(ctx, project, nil); err != nil {
 		t.Fatalf("resolve audio: %v", err)
 	}

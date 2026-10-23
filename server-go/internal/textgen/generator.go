@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -76,7 +76,7 @@ const (
 //
 // project 可为 nil，此时只参照全局配置。解析结果的 provider 不受支持或已被禁用时直接报错。
 // API key 与 base_url 从 provider 配置（含活跃凭证）读取；api_key 缺失时报错。
-func NewGenerator(ctx context.Context, db *gorm.DB, project *domain.ProjectFile, task TaskType) (Generator, error) {
+func NewGenerator(ctx context.Context, db *gorm.DB, project *project.ProjectFile, task TaskType) (Generator, error) {
 	target, err := resolveTarget(ctx, db, project, task)
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func NewGenerator(ctx context.Context, db *gorm.DB, project *domain.ProjectFile,
 // 项目层字段兼容裸 provider（取该 provider 的文本默认模型）；全局层要求 "provider/model" 完整形态。
 // 选中的候选即使被禁用也直接报错，不继续向下一层回落。
 func resolveTarget(
-	ctx context.Context, db *gorm.DB, project *domain.ProjectFile, task TaskType,
+	ctx context.Context, db *gorm.DB, project *project.ProjectFile, task TaskType,
 ) (config.ProviderModel, error) {
 	t, ok := taskTiers[task]
 	if !ok {
@@ -142,7 +142,7 @@ func resolveTarget(
 }
 
 // projectTierValue 读项目 project.json 中指定档位的字段。
-func projectTierValue(project *domain.ProjectFile, t tier) string {
+func projectTierValue(project *project.ProjectFile, t tier) string {
 	if t == tierSimple {
 		return project.TextBackendSimple
 	}

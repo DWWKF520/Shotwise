@@ -15,7 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/textgen"
 )
 
@@ -175,12 +175,12 @@ func (s *ProjectSource) GenerateOverview(ctx context.Context, project string) (m
 	overview["generated_at"] = time.Now().UTC().Format("2006-01-02T15:04:05.999999+00:00")
 	language, _ := overview["language"].(string)
 	// 落 project.json 用域结构体（Overview 是强类型）；响应仍回 map（与 Python model_dump 同形）。
-	if err := s.store.Update(project, func(updated *domain.ProjectFile) error {
+	if err := s.store.Update(project, func(updated *domainproject.ProjectFile) error {
 		raw, marshalErr := json.Marshal(overview)
 		if marshalErr != nil {
 			return marshalErr
 		}
-		var parsed domain.Overview
+		var parsed domainproject.Overview
 		if unmarshalErr := json.Unmarshal(raw, &parsed); unmarshalErr != nil {
 			return unmarshalErr
 		}
@@ -286,7 +286,7 @@ func parseOverviewResponse(response string) (map[string]any, error) {
 }
 
 // resolveSourceKind 解析源类型（screenplay 优先提取作者创作方案）。
-func resolveSourceKind(pf *domain.ProjectFile) string {
+func resolveSourceKind(pf *domainproject.ProjectFile) string {
 	if pf == nil {
 		return "novel"
 	}

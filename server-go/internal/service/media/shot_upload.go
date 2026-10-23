@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/infra/ffmpeg"
 	"github.com/shotwise/shotwise/internal/infra/img"
 	"github.com/shotwise/shotwise/internal/service"
@@ -213,7 +213,7 @@ func (s *ShotUploadService) updateSceneAssets(
 			assets = map[string]any{}
 			item["generated_assets"] = assets
 		}
-		for key, value := range domain.NewStoryboardGeneratedAssets() {
+		for key, value := range media.NewStoryboardGeneratedAssets() {
 			if _, present := assets[key]; !present {
 				assets[key] = value
 			}
@@ -221,7 +221,7 @@ func (s *ShotUploadService) updateSceneAssets(
 		for key, value := range updates {
 			assets[key] = value
 		}
-		domain.UpdateStoryboardItemStatus(item)
+		media.UpdateStoryboardItemStatus(item)
 		return nil
 	})
 }

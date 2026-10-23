@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/repository"
 	servicescript "github.com/shotwise/shotwise/internal/service/script"
@@ -44,22 +44,22 @@ func (f *fakeAssetQueue) GetTask(_ context.Context, id string) (*repository.Task
 func (f *fakeAssetQueue) IsWorkerOnline(context.Context, string) (bool, error) { return true, nil }
 
 type fakeAssetProjects struct {
-	pf  *domain.ProjectFile
+	pf  *project.ProjectFile
 	dir string
 }
 
-func (f *fakeAssetProjects) Get(string) (*domain.ProjectFile, error) { return f.pf, nil }
-func (f *fakeAssetProjects) Dir(string) (string, error)              { return f.dir, nil }
+func (f *fakeAssetProjects) Get(string) (*project.ProjectFile, error) { return f.pf, nil }
+func (f *fakeAssetProjects) Dir(string) (string, error)               { return f.dir, nil }
 
 // fakeGenerationProjects 提供生成类工具所需的项目读取面。
 type fakeGenerationProjects struct {
-	pf      *domain.ProjectFile
+	pf      *project.ProjectFile
 	dir     string
 	scripts map[string]map[string]any
 }
 
-func (f *fakeGenerationProjects) Get(string) (*domain.ProjectFile, error) { return f.pf, nil }
-func (f *fakeGenerationProjects) Dir(string) (string, error)              { return f.dir, nil }
+func (f *fakeGenerationProjects) Get(string) (*project.ProjectFile, error) { return f.pf, nil }
+func (f *fakeGenerationProjects) Dir(string) (string, error)               { return f.dir, nil }
 
 func (f *fakeGenerationProjects) ReadScriptJSON(_, filename string) (map[string]any, error) {
 	script, ok := f.scripts[filename]
@@ -88,7 +88,7 @@ func (f *fakeGenerationProjects) SaveScript(_, scriptFilename string, script map
 }
 
 // Update 就地 mutate 项目（TextGenerationProjects 的 step1 存量迁移要求）。
-func (f *fakeGenerationProjects) Update(_ string, mutate func(*domain.ProjectFile) error) error {
+func (f *fakeGenerationProjects) Update(_ string, mutate func(*project.ProjectFile) error) error {
 	return mutate(f.pf)
 }
 
@@ -107,7 +107,7 @@ func (f *fakeTextCompletion) Generate(_ context.Context, _ string, _ map[string]
 }
 
 // newTextGenProject 造一个含 source/ 与 scripts/ 目录的项目（与 script 包测试同口径）。
-func newTextGenProject(t *testing.T, contentMode string, pf *domain.ProjectFile) (*fakeGenerationProjects, string) {
+func newTextGenProject(t *testing.T, contentMode string, pf *project.ProjectFile) (*fakeGenerationProjects, string) {
 	t.Helper()
 	dir := t.TempDir()
 	for _, sub := range []string{"source", "scripts"} {
@@ -123,7 +123,7 @@ func newTextGenProject(t *testing.T, contentMode string, pf *domain.ProjectFile)
 
 // staticGenFactory 构造固定输出的文本生成工厂。
 func staticGenFactory(out string) servicescript.TextCompletionFactory {
-	return func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
+	return func(context.Context, *project.ProjectFile) (servicescript.TextCompletion, error) {
 		return &fakeTextCompletion{outputs: []string{out}}, nil
 	}
 }

@@ -11,7 +11,8 @@ package service
 import (
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -27,10 +28,10 @@ const (
 
 // PreflightIssue 是一条引用问题：字段名、资产名、问题种类与资产类型。
 type PreflightIssue struct {
-	Field     string           // characters_in_segment / scenes / props 等
-	AssetName string           // NFC 归一后的资产名
-	Kind      string           // PreflightKindUnregistered 或 PreflightKindMissingSheet
-	AssetType domain.AssetKind // character / scene / prop
+	Field     string                  // characters_in_segment / scenes / props 等
+	AssetName string                  // NFC 归一后的资产名
+	Kind      string                  // PreflightKindUnregistered 或 PreflightKindMissingSheet
+	AssetType domainproject.AssetKind // character / scene / prop
 }
 
 // PreflightResult 是一次引用校验的结果（可含多条问题）。
@@ -40,7 +41,7 @@ type PreflightResult struct {
 
 // ItemReference 是从分镜条目里提取出的一条类型化引用。
 type ItemReference struct {
-	Kind  domain.AssetKind
+	Kind  domainproject.AssetKind
 	Field string
 	Name  string
 }
@@ -49,8 +50,8 @@ type ItemReference struct {
 //
 // fields 给出三类资产在条目里的字段名；charField 为空表示该条目没有角色引用字段。
 // 条目中非列表值、非字符串元素、空白名一律跳过，与 Python collect_item_references 同语义。
-func ValidateItemAssetReferences(project *domain.ProjectFile, projectDir string, item map[string]any,
-	fields domain.StoryboardItemFields) PreflightResult {
+func ValidateItemAssetReferences(project *domainproject.ProjectFile, projectDir string, item map[string]any,
+	fields media.StoryboardItemFields) PreflightResult {
 	return ValidateAssetReferences(project, projectDir, collectItemReferences(item, fields))
 }
 
@@ -119,14 +120,14 @@ func FormatPreflightError(result PreflightResult) string {
 }
 
 // collectItemReferences 从分镜条目里按资产类型收集引用名，按 (类型, 名) 去重。
-func collectItemReferences(item map[string]any, fields domain.StoryboardItemFields) []ItemReference {
+func collectItemReferences(item map[string]any, fields media.StoryboardItemFields) []ItemReference {
 	pairs := []struct {
-		kind  domain.AssetKind
+		kind  domainproject.AssetKind
 		field string
 	}{
-		{domain.AssetCharacter, fields.CharField},
-		{domain.AssetScene, fields.SceneField},
-		{domain.AssetProp, fields.PropField},
+		{domainproject.AssetCharacter, fields.CharField},
+		{domainproject.AssetScene, fields.SceneField},
+		{domainproject.AssetProp, fields.PropField},
 	}
 	var references []ItemReference
 	seen := map[string]bool{}
@@ -139,7 +140,7 @@ func collectItemReferences(item map[string]any, fields domain.StoryboardItemFiel
 			if strings.TrimSpace(raw) == "" {
 				continue
 			}
-			name := domain.NormalizeAssetName(raw)
+			name := domainproject.NormalizeAssetName(raw)
 			key := string(pair.kind) + "\x00" + name
 			if seen[key] {
 				continue
@@ -152,11 +153,11 @@ func collectItemReferences(item map[string]any, fields domain.StoryboardItemFiel
 }
 
 // ValidateAssetReferences 逐条检查「是否登记」与「设计图是否可用」，两条问题各自去重。
-func ValidateAssetReferences(project *domain.ProjectFile, projectDir string, references []ItemReference) PreflightResult {
+func ValidateAssetReferences(project *domainproject.ProjectFile, projectDir string, references []ItemReference) PreflightResult {
 	var result PreflightResult
 	seen := map[string]bool{}
 	for _, ref := range references {
-		spec, ok := domain.Spec(ref.Kind)
+		spec, ok := domainproject.Spec(ref.Kind)
 		if !ok || strings.TrimSpace(ref.Name) == "" {
 			continue
 		}
@@ -194,7 +195,7 @@ func ValidateAssetReferences(project *domain.ProjectFile, projectDir string, ref
 }
 
 // bucketRef 取资产桶；project 为 nil 时按空桶处理，避免 nil 解引用。
-func bucketRef(project *domain.ProjectFile, kind domain.AssetKind) (*domain.AssetBucket, bool) {
+func bucketRef(project *domainproject.ProjectFile, kind domainproject.AssetKind) (*domainproject.AssetBucket, bool) {
 	if project == nil {
 		return nil, false
 	}

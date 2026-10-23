@@ -6,14 +6,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
 // EnsureProject 对应 Python 路由里的 `_ensure_project`：项目名非法 → 400，
 // 项目不存在 → 404。返回 false 时已写出错误响应。
 func EnsureProject(c *gin.Context, store *service.ProjectStore, name string) bool {
-	if _, err := domain.ValidateProjectName(name); err != nil {
+	if _, err := project.ValidateProjectName(name); err != nil {
 		apperr.Abort(c, apperr.NewText(http.StatusBadRequest, "invalid_project_name", map[string]any{"name": name}))
 		return false
 	}

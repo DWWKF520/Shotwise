@@ -13,18 +13,18 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
-	"github.com/shotwise/shotwise/internal/service/reference"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/service/reference"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 )
@@ -71,7 +71,7 @@ func NewScriptReviewService(store *service.ProjectStore, resolver service.VideoC
 
 // resolveStep1Kind 返回该集 step1 变体；不适用 gate（无结构化 step1，如 ad）时返回 not_applicable
 // 领域错误（对应 Python _resolve_step1_model 的变体判定半边；内容模型即 ValidateStep1Content）。
-func (s *ScriptReviewService) resolveStep1Kind(pf *domain.ProjectFile) (string, error) {
+func (s *ScriptReviewService) resolveStep1Kind(pf *project.ProjectFile) (string, error) {
 	kind := Step1Kind(pf)
 	if kind == "" {
 		return "", scriptReviewErr(ScriptReviewCodeNotApplicable)
@@ -89,8 +89,8 @@ func (s *ScriptReviewService) resolveStep1Kind(pf *domain.ProjectFile) (string, 
 // 而非直接判死锁——手动预拆分与账本为空同时出现时，唯一的登记来源就是这次自愈。派生文件也不
 // 存在时（真正缺失的集号）不自愈，直接报 episode_not_found。
 func (s *ScriptReviewService) requireEpisode(
-	projectName string, pf *domain.ProjectFile, episode int,
-) (*domain.ProjectFile, error) {
+	projectName string, pf *project.ProjectFile, episode int,
+) (*project.ProjectFile, error) {
 	if service.FindEpisodeEntry(pf, episode) != nil {
 		return pf, nil
 	}
@@ -114,9 +114,9 @@ func (s *ScriptReviewService) requireEpisode(
 // registerOrphanEpisodes 在项目锁内跑一次 RegisterOrphanEpisodeEntries 并落盘，返回自愈后的
 // project（对应 Python _register_orphan_episodes）。已登记的集号在函数内部即被跳过，重复触发
 // 不会重写既有条目或产生重复集号。
-func (s *ScriptReviewService) registerOrphanEpisodes(projectName string) (*domain.ProjectFile, error) {
-	var healed *domain.ProjectFile
-	err := s.store.Update(projectName, func(pf *domain.ProjectFile) error {
+func (s *ScriptReviewService) registerOrphanEpisodes(projectName string) (*project.ProjectFile, error) {
+	var healed *project.ProjectFile
+	err := s.store.Update(projectName, func(pf *project.ProjectFile) error {
 		healed = pf
 		projectDir, err := s.store.Dir(projectName)
 		if err != nil {
@@ -135,7 +135,7 @@ func (s *ScriptReviewService) registerOrphanEpisodes(projectName string) (*domai
 // _resolve_caps_best_effort：缺 caps 只是让下游退到 registry / 不收窄这两个既有降级口径，
 // 解析异常直接冒穿会让用户连草稿都加载不了）。
 func (s *ScriptReviewService) resolveCapsBestEffort(
-	ctx context.Context, projectName string, pf *domain.ProjectFile,
+	ctx context.Context, projectName string, pf *project.ProjectFile,
 ) config.VideoCapabilityView {
 	caps := service.ResolveProjectVideoCaps(ctx, s.resolver, pf, provider.VideoBucketForGenerationMode(pf.GenerationMode))
 	if !caps.Resolved {
@@ -155,7 +155,7 @@ func (s *ScriptReviewService) resolveCapsBestEffort(
 // 调用方须在取 step1 文件锁之前完成本解析（Python 侧锁是跨进程阻塞文件锁、不可跨 await 持有；
 // Go 侧保留该顺序以维持与 caps 查询的时序语义不变）。
 func (s *ScriptReviewService) resolveSupportedDurations(
-	ctx context.Context, projectName string, pf *domain.ProjectFile,
+	ctx context.Context, projectName string, pf *project.ProjectFile,
 ) []int {
 	if Step1Kind(pf) != step1KindReferenceVideo {
 		return nil
@@ -172,8 +172,8 @@ func (s *ScriptReviewService) resolveSupportedDurations(
 // 能力解析），与 step2 生成侧同源：迁移幂等一次性、谁先跑谁定终局。为 nil（项目未配置视频
 // 型号）时退回结构区间 clamp。
 func (s *ScriptReviewService) readStep1Migrated(
-	projectName string, pf *domain.ProjectFile, episode int, path string, supportedDurations []int,
-) (map[string]any, *domain.ProjectFile, error) {
+	projectName string, pf *project.ProjectFile, episode int, path string, supportedDurations []int,
+) (map[string]any, *project.ProjectFile, error) {
 	content, _ := service.ReadJSONObjectOrNone(path)
 	if content == nil || Step1Kind(pf) != step1KindReferenceVideo {
 		return content, pf, nil
@@ -219,7 +219,7 @@ func (s *ScriptReviewService) GetState(ctx context.Context, projectName string, 
 // pf 与 supportedDurations 由 GetState 预先取好传入——迁移不改动视频型号配置，档位表在迁移
 // 前后描述的是同一件事，无需在锁内重算。
 func (s *ScriptReviewService) getStateSync(
-	projectName string, pf *domain.ProjectFile, episode int, supportedDurations []int,
+	projectName string, pf *project.ProjectFile, episode int, supportedDurations []int,
 ) (map[string]any, error) {
 	projectDir, err := s.store.Dir(projectName)
 	if err != nil {
@@ -241,7 +241,7 @@ func (s *ScriptReviewService) getStateSync(
 		// 迁移可能回写 step1 与确认记录；指纹与状态在同一把锁内、迁移之后取，三者才据
 		// 同一份落盘内容派生——锁外取则并发 SaveContent 会让指纹描述另一份内容。
 		err = withStep1FileLock(path, func() error {
-			var updated *domain.ProjectFile
+			var updated *project.ProjectFile
 			content, updated, err = s.readStep1Migrated(projectName, pf, episode, path, supportedDurations)
 			if err != nil {
 				return err
@@ -500,7 +500,7 @@ func (s *ScriptReviewService) Confirm(ctx context.Context, projectName string, e
 
 // confirmSync 是 Confirm 的主体：隔离态校验、读时收编、结构校验、指纹落盘。
 func (s *ScriptReviewService) confirmSync(
-	projectName string, pf *domain.ProjectFile, episode int, supportedDurations []int,
+	projectName string, pf *project.ProjectFile, episode int, supportedDurations []int,
 ) error {
 	projectDir, err := s.store.Dir(projectName)
 	if err != nil {
@@ -527,7 +527,7 @@ func (s *ScriptReviewService) confirmSync(
 	// SaveContent 或迁移的写入插队——readStep1Migrated 要求调用方已持锁。
 	fingerprint := ""
 	err = withStep1FileLock(path, func() error {
-		var updated *domain.ProjectFile
+		var updated *project.ProjectFile
 		var content map[string]any
 		content, updated, err = s.readStep1Migrated(projectName, pf, episode, path, supportedDurations)
 		if err != nil {
@@ -574,7 +574,7 @@ func (s *ScriptReviewService) confirmSync(
 	}
 
 	confirmedAt := time.Now().UTC().Format(time.RFC3339)
-	return s.store.Update(projectName, func(pf *domain.ProjectFile) error {
+	return s.store.Update(projectName, func(pf *project.ProjectFile) error {
 		if !service.ApplyConfirmation(pf, episode, fingerprint, confirmedAt) {
 			return scriptReviewErr(ScriptReviewCodeEpisodeNotFound)
 		}

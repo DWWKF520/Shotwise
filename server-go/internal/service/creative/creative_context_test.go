@@ -8,7 +8,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
 )
@@ -18,7 +19,7 @@ func newCreativeContextEnv(t *testing.T) (*CreativeContextService, *CreativeBoar
 	t.Helper()
 	gdb := newServiceTestDB(t)
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "Project One", domain.ContentDrama, domain.GenerationStoryboard, ""); err != nil {
+	if _, err := store.Create("p1", "Project One", project.ContentDrama, project.GenerationStoryboard, ""); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	boards := NewCreativeBoardService(gdb)
@@ -39,7 +40,7 @@ func insertCreativeContextPlan(t *testing.T, gdb *gorm.DB, id, status, skillID s
 
 func creativeContextResolutionCode(t *testing.T, err error) string {
 	t.Helper()
-	var resolutionErr *domain.CreativeContextResolutionError
+	var resolutionErr *creation.CreativeContextResolutionError
 	if !errors.As(err, &resolutionErr) {
 		t.Fatalf("want resolution error, got %v", err)
 	}
@@ -65,7 +66,7 @@ func TestCreativeContextResolveSuccess(t *testing.T) {
 	out, err := svc.ResolveCreationContext(ctx, "p1", user, CreativeContextRequest{
 		CreativeBoardID:   boardID,
 		CreationPlanID:    "plan-1",
-		SelectedResources: []domain.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
+		SelectedResources: []creation.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
 	})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -104,7 +105,7 @@ func TestCreativeContextResolveBoardAndPlanErrors(t *testing.T) {
 	_, err = svc.ResolveCreationContext(ctx, "p1", user, CreativeContextRequest{
 		CreativeBoardID:   "board-404",
 		CreationPlanID:    "plan-1",
-		SelectedResources: []domain.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
+		SelectedResources: []creation.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
 	})
 	if code := creativeContextResolutionCode(t, err); code != "creative_board_not_found" {
 		t.Fatalf("code = %s", code)
@@ -113,7 +114,7 @@ func TestCreativeContextResolveBoardAndPlanErrors(t *testing.T) {
 	_, err = svc.ResolveCreationContext(ctx, "p1", user, CreativeContextRequest{
 		CreativeBoardID:   boardID,
 		CreationPlanID:    "plan-404",
-		SelectedResources: []domain.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
+		SelectedResources: []creation.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
 	})
 	if code := creativeContextResolutionCode(t, err); code != "creation_plan_not_found" {
 		t.Fatalf("code = %s", code)
@@ -127,7 +128,7 @@ func TestCreativeContextResolveBoardAndPlanErrors(t *testing.T) {
 	_, err = svc.ResolveCreationContext(ctx, "p1", user, CreativeContextRequest{
 		CreativeBoardID:   boardID,
 		CreationPlanID:    "plan-other",
-		SelectedResources: []domain.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
+		SelectedResources: []creation.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
 	})
 	if code := creativeContextResolutionCode(t, err); code != "creation_plan_not_found" {
 		t.Fatalf("code = %s", code)
@@ -171,7 +172,7 @@ func TestCreativeContextResolveRunPayloadFromRevision(t *testing.T) {
 		CreativeBoardID:   boardID,
 		CreationPlanID:    "plan-1",
 		WorkflowRunID:     strPtrValue("run-1"),
-		SelectedResources: []domain.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
+		SelectedResources: []creation.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
 	})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -191,7 +192,7 @@ func TestCreativeContextResolveRunPayloadFromRevision(t *testing.T) {
 		CreativeBoardID:   boardID,
 		CreationPlanID:    "plan-1",
 		WorkflowRunID:     strPtrValue("run-1"),
-		SelectedResources: []domain.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
+		SelectedResources: []creation.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
 	})
 	if code := creativeContextResolutionCode(t, err); code != "generation_mode_changed" {
 		t.Fatalf("code = %s", code)
@@ -225,7 +226,7 @@ func TestCreativeContextPlanPreviewMerge(t *testing.T) {
 	out, err := svc.ResolveCreationContext(ctx, "p1", user, CreativeContextRequest{
 		CreativeBoardID:   boardID,
 		CreationPlanID:    "plan-1",
-		SelectedResources: []domain.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
+		SelectedResources: []creation.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
 	})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -252,8 +253,8 @@ func TestCreativeContextResolveReferencesFlow(t *testing.T) {
 
 	out, err := svc.ResolveContextReferences(ctx, "p1", user, CreativeContextRequest{
 		CreativeBoardID:   boardID,
-		SelectedResources: []domain.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
-		ContextReferences: []domain.ContextReference{{Text: "原始文稿"}},
+		SelectedResources: []creation.SelectedResource{{ID: "doc-1", ResourceType: "document"}},
+		ContextReferences: []creation.ContextReference{{Text: "原始文稿"}},
 	})
 	if err != nil {
 		t.Fatalf("resolve references: %v", err)
@@ -284,7 +285,7 @@ func TestCreativeContextResolveReferencesBoardMismatch(t *testing.T) {
 
 	_, err = svc.ResolveContextReferences(ctx, "p1", repository.DefaultUserID, CreativeContextRequest{
 		CreativeBoardID: boardID,
-		ContextReferences: []domain.ContextReference{
+		ContextReferences: []creation.ContextReference{
 			{Text: "任意"},
 		},
 	})

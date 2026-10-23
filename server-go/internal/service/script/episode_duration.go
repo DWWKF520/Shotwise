@@ -9,12 +9,13 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"errors"
+	"github.com/shotwise/shotwise/internal/service"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -24,7 +25,9 @@ type EpisodeDurationRevisionConflictError struct {
 	Actual   string
 }
 
-func (e *EpisodeDurationRevisionConflictError) Error() string { return "episode duration revision is stale" }
+func (e *EpisodeDurationRevisionConflictError) Error() string {
+	return "episode duration revision is stale"
+}
 
 // EpisodeDurationInvalidError 对应 Python service.ValueError：422 episode_duration_invalid。
 type EpisodeDurationInvalidError struct{ Detail string }
@@ -55,17 +58,17 @@ type EpisodeDurationPlanInput struct {
 }
 
 // config 归一为规划配置；非法组合（如目标时长非正、策略未知）返回 422。
-func (p EpisodeDurationPlanInput) config() (domain.EpisodeDurationPlanConfig, error) {
+func (p EpisodeDurationPlanInput) config() (domainscript.EpisodeDurationPlanConfig, error) {
 	raw := map[string]any{
 		"target_seconds":     p.TargetSeconds,
 		"strategy":           p.Strategy,
 		"manual_allocations": manualAllocationsAny(p.ManualAllocations),
 	}
-	config := domain.ReadEpisodeDurationPlan(map[string]any{}, map[string]any{
+	config := domainscript.ReadEpisodeDurationPlan(map[string]any{}, map[string]any{
 		"metadata": map[string]any{"episode_duration_plan": raw},
 	})
 	if config == nil {
-		return domain.EpisodeDurationPlanConfig{}, &EpisodeDurationInvalidError{Detail: "invalid episode duration plan"}
+		return domainscript.EpisodeDurationPlanConfig{}, &EpisodeDurationInvalidError{Detail: "invalid episode duration plan"}
 	}
 	return *config, nil
 }
@@ -98,7 +101,7 @@ func (s *EpisodeDurationService) Save(
 	}
 	var revision string
 	err = s.store.UpdateEpisodeScriptNoValidate(projectName, episodeResolver(episode), func(script map[string]any) error {
-		actual := domain.EpisodeDurationRevision(script)
+		actual := domainscript.EpisodeDurationRevision(script)
 		if actual != expectedRevision {
 			return &EpisodeDurationRevisionConflictError{Expected: expectedRevision, Actual: actual}
 		}
@@ -108,7 +111,7 @@ func (s *EpisodeDurationService) Save(
 			script["metadata"] = metadata
 		}
 		metadata["episode_duration_plan"] = config.AsDict()
-		revision = domain.EpisodeDurationRevision(script)
+		revision = domainscript.EpisodeDurationRevision(script)
 		return nil
 	})
 	if err != nil {
@@ -133,9 +136,9 @@ func (s *EpisodeDurationService) Preview(
 	if err != nil {
 		return nil, err
 	}
-	revision := domain.EpisodeDurationRevision(script)
+	revision := domainscript.EpisodeDurationRevision(script)
 	shots := durationShotInputs(script, supported)
-	planner := domain.EpisodeDurationPlanner{}
+	planner := domainscript.EpisodeDurationPlanner{}
 	plan, err := planner.BuildPlan(config.TargetSeconds, shots, config.Strategy, config.ManualAllocations, &revision)
 	if err != nil {
 		return nil, &EpisodeDurationInvalidError{Detail: err.Error()}
@@ -170,12 +173,12 @@ func (s *EpisodeDurationService) Apply(
 	if err != nil {
 		return nil, err
 	}
-	planner := domain.EpisodeDurationPlanner{}
+	planner := domainscript.EpisodeDurationPlanner{}
 	applied := map[string]any{}
 	skipped := []any{}
 	var revision string
 	err = s.store.UpdateEpisodeScriptNoValidate(projectName, episodeResolver(episode), func(script map[string]any) error {
-		actual := domain.EpisodeDurationRevision(script)
+		actual := domainscript.EpisodeDurationRevision(script)
 		if actual != expectedRevision {
 			return &EpisodeDurationRevisionConflictError{Expected: expectedRevision, Actual: actual}
 		}
@@ -186,7 +189,7 @@ func (s *EpisodeDurationService) Apply(
 			return &EpisodeDurationInvalidError{Detail: buildErr.Error()}
 		}
 		changes := planner.ApplyConfirmedPlan(shots, plan)
-		items, idField, _, resolveErr := domain.ResolveScriptItems(script)
+		items, idField, _, resolveErr := domainscript.ResolveScriptItems(script)
 		if resolveErr != nil {
 			return &EpisodeDurationInvalidError{Detail: resolveErr.Error()}
 		}
@@ -201,7 +204,7 @@ func (s *EpisodeDurationService) Apply(
 		for resourceID, seconds := range changes {
 			item := byID[resourceID]
 			// 逐项状态可能在本请求期间变化（别人锁了 / 视频已生成）：跳过而不是覆盖。
-			if item == nil || domain.IsItemDurationLocked(item) || domain.IsItemVideoGenerated(item) {
+			if item == nil || domainscript.IsItemDurationLocked(item) || domainscript.IsItemVideoGenerated(item) {
 				skipped = append(skipped, resourceID)
 				continue
 			}
@@ -214,7 +217,7 @@ func (s *EpisodeDurationService) Apply(
 			script["metadata"] = metadata
 		}
 		metadata["episode_duration_plan"] = config.AsDict()
-		revision = domain.EpisodeDurationRevision(script)
+		revision = domainscript.EpisodeDurationRevision(script)
 		return nil
 	})
 	if err != nil {
@@ -237,11 +240,11 @@ func (s *EpisodeDurationService) SetLock(
 		result   bool
 	)
 	err := s.store.UpdateEpisodeScriptNoValidate(projectName, episodeResolver(episode), func(script map[string]any) error {
-		actual := domain.EpisodeDurationRevision(script)
+		actual := domainscript.EpisodeDurationRevision(script)
 		if actual != expectedRevision {
 			return &EpisodeDurationRevisionConflictError{Expected: expectedRevision, Actual: actual}
 		}
-		items, idField, _, resolveErr := domain.ResolveScriptItems(script)
+		items, idField, _, resolveErr := domainscript.ResolveScriptItems(script)
 		if resolveErr != nil {
 			return &EpisodeDurationInvalidError{Detail: resolveErr.Error()}
 		}
@@ -260,12 +263,12 @@ func (s *EpisodeDurationService) SetLock(
 			return &EpisodeDurationNotFoundError{}
 		}
 		// 视频已生成的分镜时长由成片决定，锁状态不允许再改（否则「锁」与「不可改」冲突）。
-		if domain.IsItemVideoGenerated(target) && domain.IsItemDurationLocked(target) != locked {
+		if domainscript.IsItemVideoGenerated(target) && domainscript.IsItemDurationLocked(target) != locked {
 			return &EpisodeDurationInvalidError{Detail: "generated item duration lock cannot be changed"}
 		}
 		target["duration_locked"] = locked
-		result = domain.IsItemDurationLocked(target)
-		revision = domain.EpisodeDurationRevision(script)
+		result = domainscript.IsItemDurationLocked(target)
+		revision = domainscript.EpisodeDurationRevision(script)
 		return nil
 	})
 	if err != nil {
@@ -278,7 +281,7 @@ func (s *EpisodeDurationService) SetLock(
 
 // episodeResolver 构造「按集号找 script_file」的解析器；缺集/缺 script_file 都是 404。
 func episodeResolver(episode int) service.EpisodeScriptResolver {
-	return func(project *domain.ProjectFile) (string, error) {
+	return func(project *project.ProjectFile) (string, error) {
 		scriptFile, err := service.EpisodeScriptFile(project, episode)
 		if err != nil {
 			return "", &EpisodeDurationNotFoundError{}
@@ -288,7 +291,7 @@ func episodeResolver(episode int) service.EpisodeScriptResolver {
 }
 
 // snapshot 只读加载 (project, script)：不加锁、不迁移、不写盘。
-func (s *EpisodeDurationService) snapshot(projectName string, episode int) (*domain.ProjectFile, map[string]any, error) {
+func (s *EpisodeDurationService) snapshot(projectName string, episode int) (*project.ProjectFile, map[string]any, error) {
 	pf, err := s.store.Get(projectName)
 	if err != nil {
 		return nil, nil, err
@@ -323,12 +326,12 @@ func (s *EpisodeDurationService) supportedDurations(ctx context.Context, project
 }
 
 // durationShotInputs 把剧本条目转成规划输入（对应 _duration_shot_inputs）。
-func durationShotInputs(script map[string]any, supported []int) []domain.ShotDurationInput {
-	items, idField, _, err := domain.ResolveScriptItems(script)
+func durationShotInputs(script map[string]any, supported []int) []domainscript.ShotDurationInput {
+	items, idField, _, err := domainscript.ResolveScriptItems(script)
 	if err != nil {
 		return nil
 	}
-	shots := make([]domain.ShotDurationInput, 0, len(items))
+	shots := make([]domainscript.ShotDurationInput, 0, len(items))
 	for _, raw := range items {
 		item, ok := raw.(map[string]any)
 		if !ok {
@@ -344,12 +347,12 @@ func durationShotInputs(script map[string]any, supported []int) []domain.ShotDur
 		if current != nil && *current > 0 {
 			weight = float64(*current)
 		}
-		shots = append(shots, domain.ShotDurationInput{
+		shots = append(shots, domainscript.ShotDurationInput{
 			ShotID:             resourceID,
 			CurrentSeconds:     current,
 			SupportedDurations: supported,
-			Locked:             domain.IsItemDurationLocked(item),
-			Generated:          domain.IsItemVideoGenerated(item),
+			Locked:             domainscript.IsItemDurationLocked(item),
+			Generated:          domainscript.IsItemVideoGenerated(item),
 			Weight:             weight,
 		})
 	}
@@ -357,12 +360,12 @@ func durationShotInputs(script map[string]any, supported []int) []domain.ShotDur
 }
 
 // episodeDurationState 组装 GET 响应（对应 _episode_duration_state）。
-func episodeDurationState(pf *domain.ProjectFile, script map[string]any) map[string]any {
+func episodeDurationState(pf *project.ProjectFile, script map[string]any) map[string]any {
 	var plan any
-	if config := domain.ReadEpisodeDurationPlan(projectAsMap(pf), script); config != nil {
+	if config := domainscript.ReadEpisodeDurationPlan(projectAsMap(pf), script); config != nil {
 		plan = config.AsDict()
 	}
-	items, idField, _, err := domain.ResolveScriptItems(script)
+	items, idField, _, err := domainscript.ResolveScriptItems(script)
 	list := make([]any, 0, len(items))
 	if err == nil {
 		for _, raw := range items {
@@ -373,13 +376,13 @@ func episodeDurationState(pf *domain.ProjectFile, script map[string]any) map[str
 			list = append(list, map[string]any{
 				"resource_id":      pythonStrOf(item[idField]),
 				"duration_seconds": item["duration_seconds"],
-				"locked":           domain.IsItemDurationLocked(item),
-				"generated":        domain.IsItemVideoGenerated(item),
+				"locked":           domainscript.IsItemDurationLocked(item),
+				"generated":        domainscript.IsItemVideoGenerated(item),
 			})
 		}
 	}
 	return map[string]any{
-		"revision": domain.EpisodeDurationRevision(script),
+		"revision": domainscript.EpisodeDurationRevision(script),
 		"plan":     plan,
 		"items":    list,
 	}
@@ -389,7 +392,7 @@ func episodeDurationState(pf *domain.ProjectFile, script map[string]any) map[str
 //
 // 规划配置可能落在 episode 级 metadata（旧格式）或 project.json，读侧只需这两处，
 // 因此只投影必要字段，避免为一次读配置做全量序列化。
-func projectAsMap(pf *domain.ProjectFile) map[string]any {
+func projectAsMap(pf *project.ProjectFile) map[string]any {
 	if pf == nil {
 		return map[string]any{}
 	}

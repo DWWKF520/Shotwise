@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
 )
@@ -287,10 +287,10 @@ func (b *OpenAIImageBackend) authHeaders() map[string]string {
 // WxH 剥离其自带比例（取 min 当短边）。image_size 为空时按默认短边兜底，仍下传精确比例
 // size——不回退上游默认（否则中转网关会用自家默认比例，丢掉项目比例）。
 func resolveOpenAIImageParams(imageSize, aspectRatio string) map[string]string {
-	short := domain.ResolutionToShortEdge(imageSize, domain.ImageTierShortEdge, domain.DefaultShortEdge)
+	short := project.ResolutionToShortEdge(imageSize, project.ImageTierShortEdge, project.DefaultShortEdge)
 	maxLong := openAIImageMaxLongEdge
 	ratio := openAIImageMaxRatio
-	w, h := domain.AspectSize(aspectRatio, short, domain.AspectSizeOptions{
+	w, h := project.AspectSize(aspectRatio, short, project.AspectSizeOptions{
 		RoundTo:     openAIImageRoundTo,
 		MaxLongEdge: &maxLong,
 		MaxRatio:    &ratio,

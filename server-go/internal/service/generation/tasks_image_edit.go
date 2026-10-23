@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -74,7 +74,7 @@ func (d *TaskDispatcher) executeImageEdit(ctx context.Context, task *repository.
 	// 路径统一按它写，避免同一资产落出两种编码形式的文件与版本记录。
 	key := task.ResourceID
 	if resourceType != StoryboardResourceType {
-		if bucket, ok := pf.BucketRef(domain.AssetKind(resourceType)); ok {
+		if bucket, ok := pf.BucketRef(domainproject.AssetKind(resourceType)); ok {
 			if resolved, found := bucket.ResolveKey(task.ResourceID); found {
 				key = resolved
 			}
@@ -152,12 +152,12 @@ func (d *TaskDispatcher) executeImageEdit(ctx context.Context, task *repository.
 // writeAssetSheet 把编辑产物路径写回资产 sheet 字段（对应 Python _update_asset_sheet）：
 // 项目锁内读改写，经「不更坏」校验落盘。
 func (d *TaskDispatcher) writeAssetSheet(project, resourceType, key, assetPath string) error {
-	spec, ok := domain.Spec(domain.AssetKind(resourceType))
+	spec, ok := domainproject.Spec(domainproject.AssetKind(resourceType))
 	if !ok {
 		return fmt.Errorf("unknown asset kind: %s", resourceType)
 	}
-	return d.store.Update(project, func(p *domain.ProjectFile) error {
-		b, ok := p.BucketRef(domain.AssetKind(resourceType))
+	return d.store.Update(project, func(p *domainproject.ProjectFile) error {
+		b, ok := p.BucketRef(domainproject.AssetKind(resourceType))
 		if !ok {
 			return fmt.Errorf("unknown asset kind: %s", resourceType)
 		}

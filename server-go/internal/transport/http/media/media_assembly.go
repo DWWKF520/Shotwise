@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	domainmedia "github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/service/media"
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit"
 )
@@ -275,7 +275,7 @@ func abortAssemblyErr(c *gin.Context, err error) {
 	var (
 		notFound   *media.AssemblyPlanNotFoundError
 		conflict   *media.AssemblyPlanConflictError
-		validation *domain.AssemblyPlanValidationError
+		validation *domainmedia.AssemblyPlanValidationError
 	)
 	switch {
 	case errors.As(err, &validation):

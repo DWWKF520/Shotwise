@@ -67,29 +67,29 @@ type DurationSummary struct {
 
 // MediaETA 是单条媒体类型的粗排期估计。
 type MediaETA struct {
-	Queued             int      `json:"queued"`
-	Running            int      `json:"running"`
-	SampleCount        int      `json:"sample_count"`
-	AvgServiceSeconds  *float64 `json:"avg_service_seconds"`
-	EffectiveCapacity  *int     `json:"effective_capacity"`
-	ETASeconds         *float64 `json:"eta_seconds"`
+	Queued            int      `json:"queued"`
+	Running           int      `json:"running"`
+	SampleCount       int      `json:"sample_count"`
+	AvgServiceSeconds *float64 `json:"avg_service_seconds"`
+	EffectiveCapacity *int     `json:"effective_capacity"`
+	ETASeconds        *float64 `json:"eta_seconds"`
 }
 
 // QueueSnapshot 是完整诊断快照。
 type QueueSnapshot struct {
-	GeneratedAt            string                            `json:"generated_at"`
-	ProjectName            *string                           `json:"project_name"`
-	Worker                 WorkerLeaseState                  `json:"worker"`
-	Counts                 map[string]int                    `json:"counts"`
-	ActiveByMedia          map[string]map[string]int         `json:"active_by_media"`
-	QueuedByProvider       map[string]int                    `json:"queued_by_provider"`
-	OldestQueuedAt         *string                           `json:"oldest_queued_at"`
-	OldestQueuedAgeSeconds *float64                          `json:"oldest_queued_age_seconds"`
-	ETA                    map[string]MediaETA               `json:"eta"`
+	GeneratedAt            string                                `json:"generated_at"`
+	ProjectName            *string                               `json:"project_name"`
+	Worker                 WorkerLeaseState                      `json:"worker"`
+	Counts                 map[string]int                        `json:"counts"`
+	ActiveByMedia          map[string]map[string]int             `json:"active_by_media"`
+	QueuedByProvider       map[string]int                        `json:"queued_by_provider"`
+	OldestQueuedAt         *string                               `json:"oldest_queued_at"`
+	OldestQueuedAgeSeconds *float64                              `json:"oldest_queued_age_seconds"`
+	ETA                    map[string]MediaETA                   `json:"eta"`
 	Providers              map[string]map[string]DurationSummary `json:"providers"`
-	Lanes                  any                               `json:"lanes"`
-	Health                 any                               `json:"health"`
-	Alerts                 []map[string]any                  `json:"alerts"`
+	Lanes                  any                                   `json:"lanes"`
+	Health                 any                                   `json:"health"`
+	Alerts                 []map[string]any                      `json:"alerts"`
 }
 
 // ObservabilityOptions 是可选的注入参数（生产路径全部走默认值）。
@@ -184,16 +184,16 @@ func (o *QueueObservability) BuildSnapshot(
 	}
 
 	snapshot := QueueSnapshot{
-		GeneratedAt:       pyISO(now),
-		ProjectName:       projectName,
-		Worker:            workerState,
-		Counts:            counts,
-		ActiveByMedia:     activeByMedia,
-		QueuedByProvider:  queuedByProvider,
-		ETA:               etaByMedia(activeByMedia, serviceSamples, lanes),
-		Providers:         providers,
-		Lanes:             lanes,
-		Health:            health,
+		GeneratedAt:      pyISO(now),
+		ProjectName:      projectName,
+		Worker:           workerState,
+		Counts:           counts,
+		ActiveByMedia:    activeByMedia,
+		QueuedByProvider: queuedByProvider,
+		ETA:              etaByMedia(activeByMedia, serviceSamples, lanes),
+		Providers:        providers,
+		Lanes:            lanes,
+		Health:           health,
 	}
 	if oldestQueuedAt != nil {
 		iso := pyISO(*oldestQueuedAt)
@@ -229,14 +229,14 @@ func (o *QueueObservability) WorkerLeaseState(
 
 // TaskQueuePosition 是单个任务在所属泳道里的排队名次。
 type TaskQueuePosition struct {
-	TaskID     string  `json:"task_id"`
-	ProjectName string `json:"project_name"`
-	Status     string  `json:"status"`
-	MediaType  string  `json:"media_type"`
-	ProviderID *string `json:"provider_id"`
-	Position   *int    `json:"position"`
-	LaneQueued int     `json:"lane_queued"`
-	QueuedAt   *string `json:"queued_at"`
+	TaskID      string  `json:"task_id"`
+	ProjectName string  `json:"project_name"`
+	Status      string  `json:"status"`
+	MediaType   string  `json:"media_type"`
+	ProviderID  *string `json:"provider_id"`
+	Position    *int    `json:"position"`
+	LaneQueued  int     `json:"lane_queued"`
+	QueuedAt    *string `json:"queued_at"`
 }
 
 // TaskQueuePosition 返回任务在其媒体类型泳道里的 0 基名次；任务不存在返回 nil, nil。

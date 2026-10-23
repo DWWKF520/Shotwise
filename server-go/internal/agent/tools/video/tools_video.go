@@ -11,9 +11,8 @@ import (
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
-
 
 type getVideoCapabilitiesIn struct{}
 
@@ -45,7 +44,7 @@ func NewGetVideoCapabilitiesTool(project string, reader tools.VideoCapabilityRea
 		})
 }
 
-func videoCapabilityPayload(pf *domain.ProjectFile, view config.VideoCapabilityView) map[string]any {
+func videoCapabilityPayload(pf *project.ProjectFile, view config.VideoCapabilityView) map[string]any {
 	maxDuration := view.SupportedDurations[0]
 	for _, d := range view.SupportedDurations {
 		if d > maxDuration {

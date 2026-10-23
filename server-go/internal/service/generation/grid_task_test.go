@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domaingrid "github.com/shotwise/shotwise/internal/domain/grid"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
 )
@@ -21,7 +21,7 @@ func TestExecuteGridWritesRecordAndVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grid := domain.NewGridGeneration(1, "episode_1.json", []string{"E1S1"}, 2, 2, "grid_4", "", "", "16:9", nil)
+	grid := domaingrid.NewGridGeneration(1, "episode_1.json", []string{"E1S1"}, 2, 2, "grid_4", "", "", "16:9", nil)
 	if err := manager.Save(grid); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestExecuteGridWritesRecordAndVersion(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("读记录失败: %v %v", ok, err)
 	}
-	if reloaded.Status != domain.GridStatusCompleted || reloaded.SplitAt != nil {
+	if reloaded.Status != domaingrid.GridStatusCompleted || reloaded.SplitAt != nil {
 		t.Fatalf("完成后记录状态有误: %+v", reloaded)
 	}
 	if reloaded.Provider == "" || reloaded.Model == "" {

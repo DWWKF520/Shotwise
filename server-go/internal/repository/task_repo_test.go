@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/task"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/migrations"
 )
@@ -229,20 +229,20 @@ func TestMarkFailedCascadesWithCollapsedReason(t *testing.T) {
 	}
 	// mid 的信封：code 正确、dependency 指向 root、内层 reason 是根因（不是再包一层）。
 	midData, _ := repo.Get(ctx, mid.TaskID)
-	code, params, ok := domain.ParseStructuredFailure(*midData.ErrorMessage)
-	if !ok || code != domain.CascadeFailureCode {
+	code, params, ok := task.ParseStructuredFailure(*midData.ErrorMessage)
+	if !ok || code != task.CascadeFailureCode {
 		t.Fatalf("mid error = %q, want cascade envelope", *midData.ErrorMessage)
 	}
 	if params["dependency_task_id"] != root.TaskID {
 		t.Fatalf("mid dependency = %v, want %s", params["dependency_task_id"], root.TaskID)
 	}
 	nested, _ := params["reason"].(string)
-	if strings.Contains(nested, domain.CascadeFailureCode) {
+	if strings.Contains(nested, task.CascadeFailureCode) {
 		t.Fatalf("cascade reason should be collapsed to root cause, got %q", nested)
 	}
 	// leaf 的信封指向 mid，但内层同样是根因。
 	leafData, _ := repo.Get(ctx, leaf.TaskID)
-	_, leafParams, ok := domain.ParseStructuredFailure(*leafData.ErrorMessage)
+	_, leafParams, ok := task.ParseStructuredFailure(*leafData.ErrorMessage)
 	if !ok || leafParams["dependency_task_id"] != mid.TaskID {
 		t.Fatalf("leaf envelope = %q", *leafData.ErrorMessage)
 	}

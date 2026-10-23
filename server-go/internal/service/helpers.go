@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 )
 
@@ -77,7 +78,7 @@ func NullableISO(ft db.FlexibleTime) any {
 }
 
 func CanonicalString(v any) (string, error) {
-	b, err := domain.CanonicalJSON(v)
+	b, err := media.CanonicalJSON(v)
 	if err != nil {
 		return "", err
 	}
@@ -127,14 +128,14 @@ func PythonStrLike(value any) string {
 // aspectRatioFor 移植 server/services/generation_tasks.py::get_aspect_ratio：
 // 角色与多视图资产固定横版；其余读项目顶层字段（字符串或按资源类型分字典），
 // 缺失时按 content_mode 推导（narration/ad 竖屏，drama 横屏）。
-func AspectRatioFor(project *domain.ProjectFile, resourceType string) string {
+func AspectRatioFor(project *domainproject.ProjectFile, resourceType string) string {
 	if resourceType == "characters" || resourceType == "scenes" || resourceType == "props" || resourceType == "products" {
 		return "16:9"
 	}
 	if project.AspectRatio != "" {
 		return project.AspectRatio
 	}
-	if project.ContentMode == string(domain.ContentNarration) || project.ContentMode == string(domain.ContentAd) {
+	if project.ContentMode == string(domainproject.ContentNarration) || project.ContentMode == string(domainproject.ContentAd) {
 		return "9:16"
 	}
 	return "16:9"

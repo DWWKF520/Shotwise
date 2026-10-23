@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/domain/media"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/repository"
+	"github.com/shotwise/shotwise/internal/service"
 	"gorm.io/gorm"
 )
 
@@ -68,16 +68,16 @@ type CreateRevisionParams struct {
 	ExpectedRevision *int64
 }
 
-// CreatePlan 校验并入队一份新计划及其首个 revision；校验失败返回 *domain.AssemblyPlanValidationError。
+// CreatePlan 校验并入队一份新计划及其首个 revision；校验失败返回 *media.AssemblyPlanValidationError。
 func (s *MediaAssemblyService) CreatePlan(ctx context.Context, p CreatePlanParams) (map[string]any, error) {
-	snapshot := domain.BuildSourceSnapshot(p.ProjectName, p.SourceManifest)
+	snapshot := media.BuildSourceSnapshot(p.ProjectName, p.SourceManifest)
 	audio, subtitle, packaging := orEmptyMap(p.Audio), orEmptyMap(p.Subtitle), orEmptyMap(p.Packaging)
 	outputProfile := orDefaultProfile(p.OutputProfile)
-	validation, err := domain.ValidatePlanDocument(snapshot, p.Timeline, audio, subtitle, packaging, outputProfile)
+	validation, err := media.ValidatePlanDocument(snapshot, p.Timeline, audio, subtitle, packaging, outputProfile)
 	if err != nil {
 		return nil, err
 	}
-	fingerprint, err := domain.SourceFingerprint(snapshot)
+	fingerprint, err := media.SourceFingerprint(snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (s *MediaAssemblyService) TransitionPlan(
 	if plan == nil {
 		return nil, &AssemblyPlanNotFoundError{PlanID: planID}
 	}
-	if err := domain.AssertTransition(plan.Status, targetStatus); err != nil {
+	if err := media.AssertTransition(plan.Status, targetStatus); err != nil {
 		return nil, &AssemblyPlanConflictError{Code: "invalid_status_transition", Status: plan.Status}
 	}
 	if targetStatus == "preview_ready" {
@@ -262,8 +262,8 @@ func (s *MediaAssemblyService) CheckStale(
 	if plan == nil {
 		return nil, &AssemblyPlanNotFoundError{PlanID: planID}
 	}
-	snapshot := domain.BuildSourceSnapshot(plan.ProjectName, currentSourceSnapshot)
-	fingerprint, err := domain.SourceFingerprint(snapshot)
+	snapshot := media.BuildSourceSnapshot(plan.ProjectName, currentSourceSnapshot)
+	fingerprint, err := media.SourceFingerprint(snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -291,23 +291,23 @@ func (s *MediaAssemblyService) CreateRevision(ctx context.Context, planID string
 	if plan == nil {
 		return nil, &AssemblyPlanNotFoundError{PlanID: planID}
 	}
-	snapshot := domain.BuildSourceSnapshot(plan.ProjectName, p.SourceManifest)
+	snapshot := media.BuildSourceSnapshot(plan.ProjectName, p.SourceManifest)
 	audio, subtitle, packaging := orEmptyMap(p.Audio), orEmptyMap(p.Subtitle), orEmptyMap(p.Packaging)
 	outputProfile := orDefaultProfile(p.OutputProfile)
 	if p.ExpectedRevision != nil && plan.CurrentRevisionNumber != *p.ExpectedRevision {
 		return nil, &AssemblyPlanConflictError{Code: "revision_conflict", Status: plan.Status}
 	}
-	if domain.IsRunningStatus(plan.Status) {
+	if media.IsRunningStatus(plan.Status) {
 		return nil, &AssemblyPlanConflictError{Code: "plan_busy", Status: plan.Status}
 	}
-	validation, err := domain.ValidatePlanDocument(snapshot, p.Timeline, audio, subtitle, packaging, outputProfile)
+	validation, err := media.ValidatePlanDocument(snapshot, p.Timeline, audio, subtitle, packaging, outputProfile)
 	if err != nil {
 		return nil, err
 	}
 	if p.ValidationMetadata != nil {
 		validation = p.ValidationMetadata
 	}
-	fingerprint, err := domain.SourceFingerprint(snapshot)
+	fingerprint, err := media.SourceFingerprint(snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -446,10 +446,6 @@ func assemblyPlanPayload(plan *repository.AssemblyPlan, revision *repository.Ass
 	}
 	return payload
 }
-
-
-
-
 
 func orEmptyMap(m map[string]any) map[string]any {
 	if m == nil {

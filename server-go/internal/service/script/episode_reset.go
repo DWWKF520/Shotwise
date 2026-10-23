@@ -20,7 +20,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // EpisodeResetError 是分集规划重置失败。
@@ -91,7 +91,7 @@ func pathOccupied(path string) bool {
 //
 // 只看坐标结构是否完整、不读源文校验数值越界——重置零前置校验。结构不完整按「不可重造」
 // 处理，其集文件走留底而非删除（删除不可逆，证据不足时偏保守）。
-func hasRecreatableSourceRange(entry *domain.EpisodeMeta) bool {
+func hasRecreatableSourceRange(entry *domainproject.EpisodeMeta) bool {
 	_, ok := ParseSourceRange(entry)
 	return ok
 }
@@ -100,8 +100,8 @@ func hasRecreatableSourceRange(entry *domain.EpisodeMeta) bool {
 //
 // 已消费判定取账本状态与磁盘产物的并集——账本损坏时 ledger_status 未必可信，磁盘上的剧本 /
 // step1 产物才是「这一集已经被消费过」的硬证据。fromEpisode 限定处置范围。
-func scanResetPlan(projectDir string, pf *domain.ProjectFile, fromEpisode int) resetPlan {
-	entriesByNum := map[int][]*domain.EpisodeMeta{}
+func scanResetPlan(projectDir string, pf *domainproject.ProjectFile, fromEpisode int) resetPlan {
+	entriesByNum := map[int][]*domainproject.EpisodeMeta{}
 	consumedByStatus := map[int]bool{}
 	if pf != nil {
 		for index := range pf.Episodes {
@@ -110,7 +110,7 @@ func scanResetPlan(projectDir string, pf *domain.ProjectFile, fromEpisode int) r
 			if !ok {
 				continue
 			}
-			if entry.LedgerStatus == domain.LedgerStatusConsumed {
+			if entry.LedgerStatus == domainproject.LedgerStatusConsumed {
 				consumedByStatus[num] = true
 			}
 			entriesByNum[num] = append(entriesByNum[num], entry)
@@ -243,7 +243,7 @@ func relPosix(projectDir, path string) string {
 // 任一不满足都会让「保留到哪、退回到哪」无法安全推算，报错并指引改用全量重置；调用方保证
 // 校验失败时账本不被改动。
 func resolvePartialResetCursor(
-	projectDir string, pf *domain.ProjectFile, fromEpisode int,
+	projectDir string, pf *domainproject.ProjectFile, fromEpisode int,
 ) (string, int, error) {
 	fail := func(format string, args ...any) (string, int, error) {
 		return "", 0, &EpisodeResetError{Message: fmt.Sprintf(format, args...) + "，" + fullResetHint}
@@ -252,7 +252,7 @@ func resolvePartialResetCursor(
 		return fail("项目未加载，无法安全推算部分重置边界")
 	}
 
-	entriesByNum := map[int]*domain.EpisodeMeta{}
+	entriesByNum := map[int]*domainproject.EpisodeMeta{}
 	for index := range pf.Episodes {
 		entry := &pf.Episodes[index]
 		num, ok := ParseEpisodeNum(entry.Episode)
@@ -396,9 +396,9 @@ func resolvePartialResetCursor(
 
 // EpisodeStore 是分集账本工具所需的最小项目能力（*service.ProjectStore 满足）。
 type EpisodeStore interface {
-	Get(name string) (*domain.ProjectFile, error)
+	Get(name string) (*domainproject.ProjectFile, error)
 	Dir(name string) (string, error)
-	Update(name string, mutate func(*domain.ProjectFile) error) error
+	Update(name string, mutate func(*domainproject.ProjectFile) error) error
 }
 
 // ResetEpisodePlanning 重置分集规划账本。
@@ -442,7 +442,7 @@ func ResetEpisodePlanning(
 		committed *EpisodeResetResult
 		conflict  error
 	)
-	err = store.Update(projectName, func(pf *domain.ProjectFile) error {
+	err = store.Update(projectName, func(pf *domainproject.ProjectFile) error {
 		// 锁内重新校验/重新扫描：确认清单与前置校验都是锁外读取时刻的快照，期间源文件可能被
 		// 外部改动、也可能出现清单之外的新消费集。
 		cursorRel, cursorOffset := "", 0
@@ -467,7 +467,7 @@ func ResetEpisodePlanning(
 		}
 
 		if hasCursor {
-			retained := make([]domain.EpisodeMeta, 0, len(pf.Episodes))
+			retained := make([]domainproject.EpisodeMeta, 0, len(pf.Episodes))
 			for _, entry := range pf.Episodes {
 				num, ok := ParseEpisodeNum(entry.Episode)
 				if ok && num < fromEpisode {
@@ -480,9 +480,9 @@ func ResetEpisodePlanning(
 				return left < right
 			})
 			pf.Episodes = retained
-			pf.PlanningCursor = &domain.PlanningCursor{SourceFile: cursorRel, Offset: cursorOffset}
+			pf.PlanningCursor = &domainproject.PlanningCursor{SourceFile: cursorRel, Offset: cursorOffset}
 		} else {
-			pf.Episodes = []domain.EpisodeMeta{}
+			pf.Episodes = []domainproject.EpisodeMeta{}
 			pf.PlanningCursor = nil
 			pf.SourceFingerprints = nil
 		}

@@ -23,9 +23,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
+	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/textgen"
 )
 
@@ -69,7 +69,7 @@ type LedgerStats struct {
 // PlanResult 是一次 plan 调用的结果。
 type PlanResult struct {
 	Episodes        []EpisodePlanSummary
-	Cursor          *domain.PlanningCursor
+	Cursor          *domainproject.PlanningCursor
 	SourceExhausted bool
 	StaleEpisodes   []int
 	TotalPlanned    int
@@ -82,7 +82,7 @@ type TextCompletion interface {
 }
 
 // TextCompletionFactory 按项目创建文本生成器（走与剧本生成同一条 SCRIPT 任务配置链）。
-type TextCompletionFactory func(ctx context.Context, pf *domain.ProjectFile) (TextCompletion, error)
+type TextCompletionFactory func(ctx context.Context, pf *domainproject.ProjectFile) (TextCompletion, error)
 
 // planningProgress 是本批规划时的全局进度快照，仅在 instructions 非空时注入 prompt。
 type planningProgress struct {
@@ -239,12 +239,12 @@ func resolveBoundaries(window string, drafts []planningDraftEpisode, snapWhitesp
 }
 
 // ledgerEntryFromDraft 把单集草稿物化为账本条目。
-func ledgerEntryFromDraft(draft planningDraftEpisode, num int, sourceRel string, start, end int, status string) domain.EpisodeMeta {
-	entry := domain.EpisodeMeta{
+func ledgerEntryFromDraft(draft planningDraftEpisode, num int, sourceRel string, start, end int, status string) domainproject.EpisodeMeta {
+	entry := domainproject.EpisodeMeta{
 		Episode:      num,
 		Title:        draft.Title,
 		ScriptFile:   EpisodeScriptRelpath(num),
-		SourceRange:  &domain.SourceRange{SourceFile: sourceRel, Start: start, End: end},
+		SourceRange:  &domainproject.SourceRange{SourceFile: sourceRel, Start: start, End: end},
 		Hook:         draft.Hook,
 		LedgerStatus: status,
 	}
@@ -253,7 +253,7 @@ func ledgerEntryFromDraft(draft planningDraftEpisode, num int, sourceRel string,
 		if draft.NextEpisodeTeaser != nil {
 			teaser = *draft.NextEpisodeTeaser
 		}
-		entry.Outline = &domain.Outline{StoryBeats: append([]string(nil), draft.StoryBeats...), NextEpisodeTeaser: teaser}
+		entry.Outline = &domainproject.Outline{StoryBeats: append([]string(nil), draft.StoryBeats...), NextEpisodeTeaser: teaser}
 	}
 	return entry
 }
@@ -287,8 +287,8 @@ const userInstructionsHeader = "# 用户意见"
 
 // buildPlanningPrompt 组装规划 prompt。仅面向文本模型，不做 i18n。
 func buildPlanningPrompt(
-	project *domain.ProjectFile, window string, windowIsFinal bool, maxEpisodes int,
-	contentMode string, contextEntries []domain.EpisodeMeta, instructions string,
+	project *domainproject.ProjectFile, window string, windowIsFinal bool, maxEpisodes int,
+	contentMode string, contextEntries []domainproject.EpisodeMeta, instructions string,
 	failure []string, progress *planningProgress,
 ) string {
 	isScreenplay := project.SourceKind == "screenplay"
@@ -502,7 +502,6 @@ func parsePlanDraft(responseText string, drama bool) ([]planningDraftEpisode, er
 	return out, nil
 }
 
-
 // --- 规划器 ---
 
 // EpisodePlanner 是分集规划器。
@@ -522,7 +521,7 @@ func NewEpisodePlanner(store EpisodeStore, projectName string, gen TextCompletio
 	return &EpisodePlanner{store: store, projectName: projectName, projectDir: dir, gen: gen}, nil
 }
 
-func (p *EpisodePlanner) loadProject() (*domain.ProjectFile, error) {
+func (p *EpisodePlanner) loadProject() (*domainproject.ProjectFile, error) {
 	return p.store.Get(p.projectName)
 }
 
@@ -648,12 +647,12 @@ func (p *EpisodePlanner) Plan(ctx context.Context, instructions string) (*PlanRe
 	var (
 		summaries  []EpisodePlanSummary
 		staleNums  []int
-		cursor     *domain.PlanningCursor
+		cursor     *domainproject.PlanningCursor
 		exhausted  bool
 		totalCount int
 		stats      *LedgerStats
 	)
-	err = p.store.Update(p.projectName, func(pf *domain.ProjectFile) error {
+	err = p.store.Update(p.projectName, func(pf *domainproject.ProjectFile) error {
 		// 锁内复核缺位置记录的条目，并补齐同一并发窗口内新出现的孤儿派生文件。
 		RegisterOrphanEpisodeEntries(p.projectDir, pf)
 		if err := checkSourceRanges(pf); err != nil {
@@ -694,11 +693,11 @@ func (p *EpisodePlanner) Plan(ctx context.Context, instructions string) (*PlanRe
 			num := nextNum + offset
 			relEnd := ends[offset]
 			absEnd := start + relEnd
-			entry := ledgerEntryFromDraft(draft, num, sourceRel, prev, absEnd, domain.LedgerStatusPlanned)
+			entry := ledgerEntryFromDraft(draft, num, sourceRel, prev, absEnd, domainproject.LedgerStatusPlanned)
 			// 新集号若在磁盘上已有剧本/step1/媒体产物（重置到更早集号后重新规划、新布局与原消费
 			// 范围重叠），说明该集实际已被消费过；标 stale 提示需重做下游产物，产物本身不删除。
 			if HasDownstreamProducts(p.projectDir, num, &entry) {
-				entry.LedgerStatus = domain.LedgerStatusStale
+				entry.LedgerStatus = domainproject.LedgerStatusStale
 				staleNums = append(staleNums, num)
 			}
 			pf.Episodes = append(pf.Episodes, entry)
@@ -713,7 +712,7 @@ func (p *EpisodePlanner) Plan(ctx context.Context, instructions string) (*PlanRe
 			prev = absEnd
 		}
 		sortEpisodesIfPossible(pf.Episodes)
-		cursor = &domain.PlanningCursor{SourceFile: sourceRel, Offset: start + ends[len(ends)-1]}
+		cursor = &domainproject.PlanningCursor{SourceFile: sourceRel, Offset: start + ends[len(ends)-1]}
 		pf.PlanningCursor = cursor
 		pf.SourceFingerprints = currentFingerprints
 		if err := p.reconcileDerivedFiles(pf, map[string]string{sourceRel: text}); err != nil {
@@ -796,7 +795,7 @@ func (p *EpisodePlanner) requestValidatedDrafts(
 // --- helpers ---
 
 // effectiveStart 返回下一批规划起点：以账本中最后一个锚定集的范围末尾为准，游标更靠后时取游标。
-func (p *EpisodePlanner) effectiveStart(project *domain.ProjectFile) (string, int, error) {
+func (p *EpisodePlanner) effectiveStart(project *domainproject.ProjectFile) (string, int, error) {
 	var lastRel string
 	var lastEnd int
 	bestNum := 0
@@ -893,7 +892,7 @@ func (p *EpisodePlanner) loadNormalizedSource(rel string) (string, error) {
 }
 
 // checkSourceFingerprints 比对账本记录的源文指纹与当前源文，不一致即拒绝规划。
-func (p *EpisodePlanner) checkSourceFingerprints(project *domain.ProjectFile, sources []SourceDoc) error {
+func (p *EpisodePlanner) checkSourceFingerprints(project *domainproject.ProjectFile, sources []SourceDoc) error {
 	docs := sources
 	if docs == nil {
 		docs = DiscoverSources(p.projectDir)
@@ -905,7 +904,7 @@ func (p *EpisodePlanner) checkSourceFingerprints(project *domain.ProjectFile, so
 }
 
 // checkSourceRanges 账本存在无位置记录的条目即拒绝规划（老项目遗留，指路全量重置）。
-func checkSourceRanges(project *domain.ProjectFile) error {
+func checkSourceRanges(project *domainproject.ProjectFile) error {
 	if missing := EpisodesWithoutSourceRange(project); len(missing) > 0 {
 		listed := make([]string, 0, missingRangeListedLimit)
 		for _, num := range missing[:minInt(len(missing), missingRangeListedLimit)] {
@@ -933,7 +932,7 @@ func (p *EpisodePlanner) backfillSourceFingerprintsIfMissing(usedFingerprints ma
 	if project.SourceFingerprints != nil {
 		return nil
 	}
-	return p.store.Update(p.projectName, func(pf *domain.ProjectFile) error {
+	return p.store.Update(p.projectName, func(pf *domainproject.ProjectFile) error {
 		currentSources := DiscoverSources(p.projectDir)
 		if err := p.checkSourceFingerprints(pf, currentSources); err != nil {
 			return err
@@ -955,7 +954,7 @@ func (p *EpisodePlanner) backfillSourceFingerprintsIfMissing(usedFingerprints ma
 }
 
 // settingInt 读项目设置里的正整数；缺失或非法回落内部默认。
-func (p *EpisodePlanner) settingInt(project *domain.ProjectFile, key string, fallback int) int {
+func (p *EpisodePlanner) settingInt(project *domainproject.ProjectFile, key string, fallback int) int {
 	var value *int
 	switch key {
 	case "planning_window_chars":
@@ -976,7 +975,7 @@ func (p *EpisodePlanner) settingInt(project *domain.ProjectFile, key string, fal
 //
 // 两阶段执行：先全量校验并构建写入计划，全部通过后再统一落盘——锚定集原文范围非法或源文
 // 不可读时在校验阶段抛错中止提交（账本写回随之回滚，派生文件未动）。残留文件删除失败仅告警。
-func (p *EpisodePlanner) reconcileDerivedFiles(project *domain.ProjectFile, textCache map[string]string) error {
+func (p *EpisodePlanner) reconcileDerivedFiles(project *domainproject.ProjectFile, textCache map[string]string) error {
 	sourceDir := filepath.Join(p.projectDir, "source")
 	// source/ 是符号链接时拒绝写入：派生文件会落到链接目标（可能在项目外）。
 	// 边界：Windows 目录联接不置 ModeSymlink，本检查在 Windows 上只覆盖符号链接。
@@ -1050,7 +1049,7 @@ func (p *EpisodePlanner) reconcileDerivedFiles(project *domain.ProjectFile, text
 }
 
 // computeLedgerStats 账本现算全局体量分布：累计集数、最小 5 集、体量中位数。
-func (p *EpisodePlanner) computeLedgerStats(project *domain.ProjectFile) *LedgerStats {
+func (p *EpisodePlanner) computeLedgerStats(project *domainproject.ProjectFile) *LedgerStats {
 	language := project.SourceLanguage
 	textCache := map[string]string{}
 	unitsByEpisode := map[int]int{}
@@ -1112,10 +1111,10 @@ func (p *EpisodePlanner) computeLedgerStats(project *domain.ProjectFile) *Ledger
 }
 
 // contextEntries 取已规划末尾若干集的标题+钩子，作为续写连贯性上下文（只取有位置记录的条目）。
-func (p *EpisodePlanner) contextEntries(project *domain.ProjectFile) []domain.EpisodeMeta {
+func (p *EpisodePlanner) contextEntries(project *domainproject.ProjectFile) []domainproject.EpisodeMeta {
 	type anchoredEntry struct {
 		num   int
-		entry domain.EpisodeMeta
+		entry domainproject.EpisodeMeta
 	}
 	var anchored []anchoredEntry
 	for index := range project.Episodes {
@@ -1134,7 +1133,7 @@ func (p *EpisodePlanner) contextEntries(project *domain.ProjectFile) []domain.Ep
 	if len(anchored) > contextEpisodesLimit {
 		start = len(anchored) - contextEpisodesLimit
 	}
-	out := make([]domain.EpisodeMeta, 0, len(anchored)-start)
+	out := make([]domainproject.EpisodeMeta, 0, len(anchored)-start)
 	for _, item := range anchored[start:] {
 		out = append(out, item.entry)
 	}
@@ -1152,7 +1151,7 @@ func sourceChangedError(paths []string) error {
 }
 
 // sortEpisodesIfPossible 全部集号可解析时按集号排序，否则保持原序。
-func sortEpisodesIfPossible(episodes []domain.EpisodeMeta) {
+func sortEpisodesIfPossible(episodes []domainproject.EpisodeMeta) {
 	for index := range episodes {
 		if _, ok := ParseEpisodeNum(episodes[index].Episode); !ok {
 			return
@@ -1166,7 +1165,7 @@ func sortEpisodesIfPossible(episodes []domain.EpisodeMeta) {
 }
 
 // countPlannedEpisodes 账本现算已规划集数（含全部 ledger_status）。
-func countPlannedEpisodes(project *domain.ProjectFile) int {
+func countPlannedEpisodes(project *domainproject.ProjectFile) int {
 	if project == nil {
 		return 0
 	}

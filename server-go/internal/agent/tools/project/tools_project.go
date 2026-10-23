@@ -13,19 +13,18 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // AssetWriter 是 patch_project 资产分支所需的写入能力（由 asset.AssetService 满足）。
 type AssetWriter interface {
-	Upsert(project string, kind domain.AssetKind, rawName string, fields map[string]any) (created bool, err error)
+	Upsert(project string, kind domainproject.AssetKind, rawName string, fields map[string]any) (created bool, err error)
 }
 
 // ProjectWriter 是 patch_project 设置/概述分支所需的 project.json 读改写能力（由 service.ProjectStore 满足）。
 type ProjectWriter interface {
-	Update(name string, mutate func(*domain.ProjectFile) error) error
+	Update(name string, mutate func(*domainproject.ProjectFile) error) error
 }
-
 
 // patchSettingsWhitelist 是顶层 settings 白名单（与 Python _SETTINGS_WHITELIST 一致）。
 var patchSettingsWhitelist = []string{
@@ -141,9 +140,9 @@ func applyUpsert(assets AssetWriter, project, table string, entries map[string]m
 }
 
 // allowedAssetFields 返回 agent 可通过 patch_project 写入的资产字段：description + spec 登记的额外字段，排除 sheet 字段。
-func allowedAssetFields(kind domain.AssetKind) map[string]bool {
+func allowedAssetFields(kind domainproject.AssetKind) map[string]bool {
 	allow := map[string]bool{"description": true}
-	if spec, ok := domain.Spec(kind); ok {
+	if spec, ok := domainproject.Spec(kind); ok {
 		for _, f := range spec.ExtraStringFields {
 			allow[f] = true
 		}
@@ -176,9 +175,9 @@ func applyOverview(projects ProjectWriter, project string, overview map[string]a
 	}
 
 	set := map[string]string{}
-	err := projects.Update(project, func(pf *domain.ProjectFile) error {
+	err := projects.Update(project, func(pf *domainproject.ProjectFile) error {
 		if pf.Overview == nil {
-			pf.Overview = &domain.Overview{}
+			pf.Overview = &domainproject.Overview{}
 		}
 		for key, value := range values {
 			cur := overviewField(pf.Overview, key)
@@ -197,7 +196,7 @@ func applyOverview(projects ProjectWriter, project string, overview map[string]a
 	return renderDiagnostics("overview", set), nil
 }
 
-func overviewField(o *domain.Overview, key string) *string {
+func overviewField(o *domainproject.Overview, key string) *string {
 	switch key {
 	case "synopsis":
 		return &o.Synopsis
@@ -215,7 +214,7 @@ func applySettings(projects ProjectWriter, project string, settings map[string]a
 	if len(settings) == 0 {
 		return "", fmt.Errorf("settings 必须是非空 { 字段名: 值 } 映射")
 	}
-	setters := make(map[string]func(*domain.ProjectFile) error, len(settings))
+	setters := make(map[string]func(*domainproject.ProjectFile) error, len(settings))
 	for _, key := range tools.SortedKeys(settings) {
 		if !tools.Contains(patchSettingsWhitelist, key) {
 			return "", fmt.Errorf("settings 字段 %q 不在白名单 %v 内", key, patchSettingsWhitelist)
@@ -231,9 +230,9 @@ func applySettings(projects ProjectWriter, project string, settings map[string]a
 	}
 
 	diag := map[string]string{}
-	err := projects.Update(project, func(pf *domain.ProjectFile) error {
+	err := projects.Update(project, func(pf *domainproject.ProjectFile) error {
 		// brief 仅广告项目可用：与 Python 一致，只要 key 出现（含 null）即门控。
-		if _, ok := settings["brief"]; ok && pf.ContentMode != string(domain.ContentAd) {
+		if _, ok := settings["brief"]; ok && pf.ContentMode != string(domainproject.ContentAd) {
 			return fmt.Errorf("brief 仅广告/短片项目（content_mode=ad）可用")
 		}
 		for _, key := range tools.SortedKeys(setters) {
@@ -254,57 +253,57 @@ func applySettings(projects ProjectWriter, project string, settings map[string]a
 }
 
 // settingSetter 返回单个设置项的写入函数，并在此完成类型校验（值 null 表示清除）。
-func settingSetter(key string, value any) (func(*domain.ProjectFile) error, error) {
+func settingSetter(key string, value any) (func(*domainproject.ProjectFile) error, error) {
 	switch key {
 	case "episode_target_units", "planning_window_chars", "planning_max_episodes":
 		if value == nil {
-			return func(pf *domain.ProjectFile) error { *intField(pf, key) = nil; return nil }, nil
+			return func(pf *domainproject.ProjectFile) error { *intField(pf, key) = nil; return nil }, nil
 		}
 		n, err := positiveInt(key, value)
 		if err != nil {
 			return nil, err
 		}
-		return func(pf *domain.ProjectFile) error {
+		return func(pf *domainproject.ProjectFile) error {
 			target := intField(pf, key)
 			*target = &n
 			return nil
 		}, nil
 	case "source_language":
 		if value == nil {
-			return func(pf *domain.ProjectFile) error { pf.SourceLanguage = ""; return nil }, nil
+			return func(pf *domainproject.ProjectFile) error { pf.SourceLanguage = ""; return nil }, nil
 		}
 		s, ok := value.(string)
 		if !ok || !tools.Contains([]string{"zh", "en", "vi"}, s) {
 			return nil, fmt.Errorf("source_language 必须是 [zh en vi] 之一或 null，收到 %v", value)
 		}
-		return func(pf *domain.ProjectFile) error { pf.SourceLanguage = s; return nil }, nil
+		return func(pf *domainproject.ProjectFile) error { pf.SourceLanguage = s; return nil }, nil
 	case "brief":
 		if value == nil {
-			return func(pf *domain.ProjectFile) error { pf.Brief = ""; return nil }, nil
+			return func(pf *domainproject.ProjectFile) error { pf.Brief = ""; return nil }, nil
 		}
 		s, ok := value.(string)
 		if !ok {
 			return nil, fmt.Errorf("brief 必须是字符串或 null，收到 %v", value)
 		}
-		return func(pf *domain.ProjectFile) error { pf.Brief = s; return nil }, nil
+		return func(pf *domainproject.ProjectFile) error { pf.Brief = s; return nil }, nil
 	case "narration_voice":
 		if value == nil {
-			return func(pf *domain.ProjectFile) error { pf.NarrationVoice = ""; return nil }, nil
+			return func(pf *domainproject.ProjectFile) error { pf.NarrationVoice = ""; return nil }, nil
 		}
 		s, ok := value.(string)
 		if !ok || strings.TrimSpace(s) == "" {
 			return nil, fmt.Errorf("narration_voice 必须是非空字符串或 null，收到 %v", value)
 		}
-		return func(pf *domain.ProjectFile) error { pf.NarrationVoice = s; return nil }, nil
+		return func(pf *domainproject.ProjectFile) error { pf.NarrationVoice = s; return nil }, nil
 	case "narration_speed":
 		if value == nil {
-			return func(pf *domain.ProjectFile) error { pf.NarrationSpeed = nil; return nil }, nil
+			return func(pf *domainproject.ProjectFile) error { pf.NarrationSpeed = nil; return nil }, nil
 		}
 		v, err := positiveFloat(value)
 		if err != nil {
 			return nil, fmt.Errorf("narration_speed 必须是正的有限数值或 null，收到 %v", value)
 		}
-		return func(pf *domain.ProjectFile) error { pf.NarrationSpeed = &v; return nil }, nil
+		return func(pf *domainproject.ProjectFile) error { pf.NarrationSpeed = &v; return nil }, nil
 	}
 	return nil, fmt.Errorf("settings 字段 %q 缺类型校验", key)
 }
@@ -349,7 +348,7 @@ func positiveFloat(value any) (float64, error) {
 	return f, nil
 }
 
-func intField(pf *domain.ProjectFile, key string) **int {
+func intField(pf *domainproject.ProjectFile, key string) **int {
 	switch key {
 	case "episode_target_units":
 		return &pf.EpisodeTargetUnits
@@ -389,4 +388,3 @@ func renderDiagnostics(scope string, ops map[string]string) string {
 	}
 	return fmt.Sprintf("✅ %s: %s", scope, summary)
 }
-

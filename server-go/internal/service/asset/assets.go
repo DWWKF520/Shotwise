@@ -1,16 +1,16 @@
 // 项目级资产（角色/场景/道具/产品）的读写服务。四类资产共用一套实现，
-// 差异全部由 domain.AssetSpec 驱动 —— 与 Python 侧 build_asset_router 同源。
+// 差异全部由 domainproject.AssetSpec 驱动 —— 与 Python 侧 build_asset_router 同源。
 package asset
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"errors"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 )
 
@@ -77,12 +77,12 @@ type RenameReport struct {
 
 // Create 新增资产条目。extras 是请求体里除 name/description 之外的键，
 // 只有 spec 登记的字符串/列表字段会落盘（其余键静默丢弃，避免污染 project.json）。
-func (a *AssetService) Create(project string, kind domain.AssetKind, rawName, description string, extras map[string]any) (*domain.AssetEntry, error) {
-	spec, ok := domain.Spec(kind)
+func (a *AssetService) Create(project string, kind domainproject.AssetKind, rawName, description string, extras map[string]any) (*domainproject.AssetEntry, error) {
+	spec, ok := domainproject.Spec(kind)
 	if !ok {
 		return nil, ErrUnknownAssetKind
 	}
-	name, err := domain.ValidateAssetName(rawName)
+	name, err := domainproject.ValidateAssetName(rawName)
 	if err != nil {
 		return nil, &AssetNameError{Raw: rawName}
 	}
@@ -116,13 +116,13 @@ func (a *AssetService) Create(project string, kind domain.AssetKind, rawName, de
 		listValues[field] = items
 	}
 
-	var created *domain.AssetEntry
-	err = a.store.Update(project, func(pf *domain.ProjectFile) error {
+	var created *domainproject.AssetEntry
+	err = a.store.Update(project, func(pf *domainproject.ProjectFile) error {
 		bucket := bucketFor(pf, kind)
 		if existing, ok := bucket.ResolveKey(name); ok {
 			return &AssetExistsError{Name: existing}
 		}
-		entry := domain.NewAssetEntry()
+		entry := domainproject.NewAssetEntry()
 		entry.SetString("description", description)
 		entry.SetString(spec.SheetKey, "")
 		for _, field := range spec.ExtraStringFields {
@@ -148,7 +148,7 @@ func (a *AssetService) Create(project string, kind domain.AssetKind, rawName, de
 
 // Upsert 按名 upsert 资产：不存在则 Create，存在则 Patch（字段白名单与类型校验复用）。
 // fields 里的 description 缺省时，新建条目会因缺描述在写盘守卫被拒。返回 created 表示是否新增。
-func (a *AssetService) Upsert(project string, kind domain.AssetKind, rawName string, fields map[string]any) (bool, error) {
+func (a *AssetService) Upsert(project string, kind domainproject.AssetKind, rawName string, fields map[string]any) (bool, error) {
 	description, _ := fields["description"].(string)
 	extras := make(map[string]any, len(fields))
 	for k, v := range fields {
@@ -169,8 +169,8 @@ func (a *AssetService) Upsert(project string, kind domain.AssetKind, rawName str
 }
 
 // Patch 按 spec 白名单更新条目字段。payload 里值为 nil 的字段跳过。
-func (a *AssetService) Patch(project string, kind domain.AssetKind, entryName string, payload map[string]any) (*domain.AssetEntry, error) {
-	spec, ok := domain.Spec(kind)
+func (a *AssetService) Patch(project string, kind domainproject.AssetKind, entryName string, payload map[string]any) (*domainproject.AssetEntry, error) {
+	spec, ok := domainproject.Spec(kind)
 	if !ok {
 		return nil, ErrUnknownAssetKind
 	}
@@ -203,8 +203,8 @@ func (a *AssetService) Patch(project string, kind domain.AssetKind, entryName st
 		listValues[field] = items
 	}
 
-	var updated *domain.AssetEntry
-	err := a.store.Update(project, func(pf *domain.ProjectFile) error {
+	var updated *domainproject.AssetEntry
+	err := a.store.Update(project, func(pf *domainproject.ProjectFile) error {
 		bucket := bucketFor(pf, kind)
 		key, ok := bucket.ResolveKey(entryName)
 		if !ok {
@@ -212,7 +212,7 @@ func (a *AssetService) Patch(project string, kind domain.AssetKind, entryName st
 		}
 		entry := bucket[key]
 		if entry == nil {
-			entry = domain.NewAssetEntry()
+			entry = domainproject.NewAssetEntry()
 			bucket[key] = entry
 		}
 		for _, field := range stringFields {
@@ -243,15 +243,15 @@ func (a *AssetService) Patch(project string, kind domain.AssetKind, entryName st
 }
 
 // Delete 删除条目。角色还须一并移除关系边，避免画布留下无法渲染的孤儿节点。
-func (a *AssetService) Delete(project string, kind domain.AssetKind, entryName string) error {
-	return a.store.Update(project, func(pf *domain.ProjectFile) error {
+func (a *AssetService) Delete(project string, kind domainproject.AssetKind, entryName string) error {
+	return a.store.Update(project, func(pf *domainproject.ProjectFile) error {
 		bucket := bucketFor(pf, kind)
 		key, ok := bucket.ResolveKey(entryName)
 		if !ok {
 			return service.ErrAssetNotFound
 		}
-		if kind == domain.AssetCharacter {
-			pf.CharacterRelations = domain.RemoveRelationReferences(pf.CharacterRelations, key)
+		if kind == domainproject.AssetCharacter {
+			pf.CharacterRelations = domainproject.RemoveRelationReferences(pf.CharacterRelations, key)
 		}
 		delete(bucket, key)
 		return nil
@@ -263,13 +263,13 @@ func (a *AssetService) Delete(project string, kind domain.AssetKind, entryName s
 // dryRun 与执行共用同一次扫描，预览数字与实际改动必然一致。
 // 落盘顺序是「剧本 → 草稿 → 磁盘文件 → project.json 最后」：project.json 是资产目录的
 // 真相源，它最后写意味着中途失败时旧名仍然自洽，重跑同一次改名即可收敛。
-func (a *AssetService) Rename(project string, kind domain.AssetKind, oldName, newName string, dryRun bool) (RenameReport, error) {
+func (a *AssetService) Rename(project string, kind domainproject.AssetKind, oldName, newName string, dryRun bool) (RenameReport, error) {
 	var report RenameReport
-	spec, ok := domain.Spec(kind)
+	spec, ok := domainproject.Spec(kind)
 	if !ok {
 		return report, ErrUnknownAssetKind
 	}
-	name, err := domain.ValidateAssetName(newName)
+	name, err := domainproject.ValidateAssetName(newName)
 	if err != nil {
 		return report, &AssetNameError{Raw: newName}
 	}
@@ -320,7 +320,7 @@ func (a *AssetService) Rename(project string, kind domain.AssetKind, oldName, ne
 				}
 				return err
 			}
-			changes := domain.RewritePayloadReferences(payload, kind, oldKey, name)
+			changes := domainproject.RewritePayloadReferences(payload, kind, oldKey, name)
 			if changes == 0 {
 				continue
 			}
@@ -340,7 +340,7 @@ func (a *AssetService) Rename(project string, kind domain.AssetKind, oldName, ne
 			if err != nil {
 				continue // 草稿可能是半成品/隔离的 .invalid.json，跳过而非中止
 			}
-			changes := domain.RewritePayloadReferences(payload, kind, oldKey, name)
+			changes := domainproject.RewritePayloadReferences(payload, kind, oldKey, name)
 			if changes == 0 {
 				continue
 			}
@@ -363,14 +363,14 @@ func (a *AssetService) Rename(project string, kind domain.AssetKind, oldName, ne
 		}
 		rekeyed, _ := (*entry).RekeyEquivalent(oldKey, name)
 		if rekeyed != nil {
-			domain.RewriteEntryPaths(rekeyed, spec, oldKey, name)
+			domainproject.RewriteEntryPaths(rekeyed, spec, oldKey, name)
 		}
-		if kind == domain.AssetCharacter {
+		if kind == domainproject.AssetCharacter {
 			// 关系图节点身份就是角色名：与剧本引用在同一事务内改写，
 			// 否则画布会在改名成功后留下指向旧角色的悬空边。
-			working.CharacterRelations = domain.RenameRelationReferences(working.CharacterRelations, oldKey, name)
+			working.CharacterRelations = domainproject.RenameRelationReferences(working.CharacterRelations, oldKey, name)
 		}
-		if fresh := domain.NewErrors(working.ValidateErrors(), allow); len(fresh) > 0 {
+		if fresh := domainproject.NewErrors(working.ValidateErrors(), allow); len(fresh) > 0 {
 			return &service.ProjectInvalidError{Errors: fresh}
 		}
 
@@ -415,7 +415,7 @@ type fileMove struct{ src, dst string }
 // 按目录扫描而非只信条目里的路径字段：生成中间产物可能已按旧名落盘而字段未写，
 // 旧名文件不应残留。「旧名_{序号}」形态只在多图序列资产的 refs 子目录放行，
 // 否则兄弟资产「旧名_2」的设计图会被一并卷走。
-func planAssetFileRenames(projectDir string, spec domain.AssetSpec, oldName, newName string) ([]fileMove, error) {
+func planAssetFileRenames(projectDir string, spec domainproject.AssetSpec, oldName, newName string) ([]fileMove, error) {
 	sequencedRefs := spec.SequencedRefs()
 	var (
 		moves   []fileMove
@@ -438,7 +438,7 @@ func planAssetFileRenames(projectDir string, spec domain.AssetSpec, oldName, new
 			}
 			src := filepath.Join(abs, e.Name())
 			stem, ext := splitBaseStemExt(e.Name())
-			renamed, ok := domain.RenamedFileStem(stem, oldName, newName, allowSequence)
+			renamed, ok := domainproject.RenamedFileStem(stem, oldName, newName, allowSequence)
 			if !ok || renamed == stem {
 				continue
 			}
@@ -476,13 +476,13 @@ func sameFile(src string, st os.FileInfo) bool {
 	return os.SameFile(srcSt, st)
 }
 
-func bucketFor(pf *domain.ProjectFile, kind domain.AssetKind) domain.AssetBucket {
+func bucketFor(pf *domainproject.ProjectFile, kind domainproject.AssetKind) domainproject.AssetBucket {
 	ref, ok := pf.BucketRef(kind)
 	if !ok {
-		return domain.AssetBucket{}
+		return domainproject.AssetBucket{}
 	}
 	if *ref == nil {
-		*ref = domain.AssetBucket{}
+		*ref = domainproject.AssetBucket{}
 	}
 	return *ref
 }

@@ -3,13 +3,14 @@
 package asset
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"errors"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domaincharacter "github.com/shotwise/shotwise/internal/domain/character"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
 	"github.com/shotwise/shotwise/internal/infra/img"
 )
@@ -57,7 +58,7 @@ func (s *CharacterVariants) ListVariants(project, name string) ([]map[string]any
 	if err != nil {
 		return nil, err
 	}
-	return domain.IterCharacterVariants(character, name), nil
+	return domaincharacter.IterCharacterVariants(character, name), nil
 }
 
 // GetVariant 按 id 或 slug 定位变体。
@@ -66,7 +67,7 @@ func (s *CharacterVariants) GetVariant(project, name, identifier string) (map[st
 	if err != nil {
 		return nil, err
 	}
-	variant := domain.FindCharacterVariant(character, identifier)
+	variant := domaincharacter.FindCharacterVariant(character, identifier)
 	if variant == nil {
 		return nil, ErrVariantNotFound
 	}
@@ -86,7 +87,7 @@ type VariantCreateInput struct {
 
 // CreateVariant 创建稳定 id 的变体；slug 冲突报 409。
 func (s *CharacterVariants) CreateVariant(project, name string, in VariantCreateInput) (map[string]any, error) {
-	cleanSlug, err := domain.ValidateAssetName(in.Slug)
+	cleanSlug, err := domainproject.ValidateAssetName(in.Slug)
 	if err != nil {
 		return nil, ErrVariantInvalidSlug
 	}
@@ -99,7 +100,7 @@ func (s *CharacterVariants) CreateVariant(project, name string, in VariantCreate
 		return nil, err
 	}
 	var created map[string]any
-	err = s.store.Update(project, func(pf *domain.ProjectFile) error {
+	err = s.store.Update(project, func(pf *domainproject.ProjectFile) error {
 		character, _, err := locateCharacter(pf, name)
 		if err != nil {
 			return err
@@ -114,7 +115,7 @@ func (s *CharacterVariants) CreateVariant(project, name string, in VariantCreate
 			return &CharacterVariantSlugExistsError{Slug: cleanSlug}
 		}
 		item := map[string]any{
-			"id":          domain.NewVariantID(),
+			"id":          domaincharacter.NewVariantID(),
 			"slug":        cleanSlug,
 			"status":      variantStatusValue(cleanStatus),
 			"image_path":  variantImagePathValue(cleanImage),
@@ -134,7 +135,7 @@ func (s *CharacterVariants) CreateVariant(project, name string, in VariantCreate
 			item["image_asset_id"] = *in.ImageAssetID
 		}
 		rawVariants[cleanSlug] = item
-		created = domain.NormalizeVariant(item, name, cleanSlug)
+		created = domaincharacter.NormalizeVariant(item, name, cleanSlug)
 		return nil
 	})
 	if err != nil {
@@ -159,7 +160,7 @@ type VariantUpdateInput struct {
 func (s *CharacterVariants) UpdateVariant(project, name, identifier string, in VariantUpdateInput) (map[string]any, error) {
 	var cleanSlug *string
 	if in.Slug != nil {
-		resolved, err := domain.ValidateAssetName(*in.Slug)
+		resolved, err := domainproject.ValidateAssetName(*in.Slug)
 		if err != nil {
 			return nil, ErrVariantInvalidSlug
 		}
@@ -174,7 +175,7 @@ func (s *CharacterVariants) UpdateVariant(project, name, identifier string, in V
 		return nil, err
 	}
 	var updated map[string]any
-	err = s.store.Update(project, func(pf *domain.ProjectFile) error {
+	err = s.store.Update(project, func(pf *domainproject.ProjectFile) error {
 		character, _, err := locateCharacter(pf, name)
 		if err != nil {
 			return err
@@ -230,7 +231,7 @@ func (s *CharacterVariants) UpdateVariant(project, name, identifier string, in V
 		if rawKey != targetSlug {
 			delete(rawVariants, rawKey)
 		}
-		updated = domain.NormalizeVariant(raw, name, targetSlug)
+		updated = domaincharacter.NormalizeVariant(raw, name, targetSlug)
 		return nil
 	})
 	if err != nil {
@@ -242,7 +243,7 @@ func (s *CharacterVariants) UpdateVariant(project, name, identifier string, in V
 // DeleteVariant 按 id 或 slug 删除，返回被删条目（供响应回显）。
 func (s *CharacterVariants) DeleteVariant(project, name, identifier string) (map[string]any, error) {
 	var deleted map[string]any
-	err := s.store.Update(project, func(pf *domain.ProjectFile) error {
+	err := s.store.Update(project, func(pf *domainproject.ProjectFile) error {
 		character, _, err := locateCharacter(pf, name)
 		if err != nil {
 			return err
@@ -255,7 +256,7 @@ func (s *CharacterVariants) DeleteVariant(project, name, identifier string) (map
 		if !found {
 			return ErrVariantNotFound
 		}
-		deleted = domain.NormalizeVariant(raw, name, rawKey)
+		deleted = domaincharacter.NormalizeVariant(raw, name, rawKey)
 		if deleted == nil {
 			deleted = map[string]any{}
 		}
@@ -278,9 +279,9 @@ func (s *CharacterVariants) DeleteVariant(project, name, identifier string) (map
 // 注：Python 侧此前用 OpenCV 做人脸裁切（character_avatar.py），现行为已是
 // 「整图归一直用」；Go 侧同样落整图，人脸检测属遗留留白。
 func (s *CharacterVariants) UploadCharacterAvatar(project, name string, content []byte) (string, error) {
-	safeName, err := domain.ValidateAssetName(name)
+	safeName, err := domainproject.ValidateAssetName(name)
 	if err != nil {
-		return "", domain.ErrInvalidAssetName
+		return "", domainproject.ErrInvalidAssetName
 	}
 	normalized, err := img.NormalizeToPNG(content, nil)
 	if err != nil {
@@ -329,7 +330,7 @@ func (s *CharacterVariants) UploadCharacterAvatar(project, name string, content 
 
 	var oldPointer string
 	hadPointer := false
-	err = s.store.Update(project, func(pf *domain.ProjectFile) error {
+	err = s.store.Update(project, func(pf *domainproject.ProjectFile) error {
 		character, _, err := locateCharacter(pf, name)
 		if err != nil {
 			return err
@@ -377,13 +378,13 @@ func copyAvatarBytes(source, target string) error {
 // --- 内部助手 ---
 
 // locateCharacter 在项目文件里定位角色条目；桶未初始化时先初始化（写路径前置条件）。
-func locateCharacter(pf *domain.ProjectFile, name string) (*domain.AssetEntry, string, error) {
-	bucket, ok := pf.BucketRef(domain.AssetCharacter)
+func locateCharacter(pf *domainproject.ProjectFile, name string) (*domainproject.AssetEntry, string, error) {
+	bucket, ok := pf.BucketRef(domainproject.AssetCharacter)
 	if !ok {
 		return nil, "", service.ErrAssetNotFound
 	}
 	if *bucket == nil {
-		*bucket = domain.AssetBucket{}
+		*bucket = domainproject.AssetBucket{}
 	}
 	key, ok := (*bucket).ResolveKey(name)
 	if !ok {
@@ -397,7 +398,7 @@ func locateCharacter(pf *domain.ProjectFile, name string) (*domain.AssetEntry, s
 
 // findRawVariant 在 variants 底层字典里按 id 或 slug 找原始条目（返回引用，可直接改）。
 func findRawVariant(rawVariants map[string]any, identifier string) (map[string]any, string, bool) {
-	target := domain.NormalizeAssetName(identifier)
+	target := domainproject.NormalizeAssetName(identifier)
 	for key, raw := range rawVariants {
 		item, _ := raw.(map[string]any)
 		if item == nil {
@@ -408,11 +409,11 @@ func findRawVariant(rawVariants map[string]any, identifier string) (map[string]a
 			return item, key, true
 		}
 		slug, _ := item["slug"].(string)
-		if slug != "" && domain.NormalizeAssetName(slug) == target {
+		if slug != "" && domainproject.NormalizeAssetName(slug) == target {
 			return item, key, true
 		}
 		// key 本身就是 slug（写入侧恒落 slug key）：按 key 兜底匹配 NFD 存量。
-		if slug == "" && domain.NormalizeAssetName(key) == target {
+		if slug == "" && domainproject.NormalizeAssetName(key) == target {
 			return item, key, true
 		}
 	}
@@ -421,9 +422,9 @@ func findRawVariant(rawVariants map[string]any, identifier string) (map[string]a
 
 // rawVariantsResolveKey 是 variants 子字典的 ResolveKey（NFC 坐标系）。
 func rawVariantsResolveKey(variants map[string]any, slug string) (string, bool) {
-	target := domain.NormalizeAssetName(slug)
+	target := domainproject.NormalizeAssetName(slug)
 	for key := range variants {
-		if domain.NormalizeAssetName(key) == target {
+		if domainproject.NormalizeAssetName(key) == target {
 			return key, true
 		}
 	}
@@ -431,12 +432,12 @@ func rawVariantsResolveKey(variants map[string]any, slug string) (string, bool) 
 }
 
 // characterEntry 读取角色条目（只读路径）。
-func (s *CharacterVariants) characterEntry(project, name string) (*domain.AssetEntry, string, error) {
+func (s *CharacterVariants) characterEntry(project, name string) (*domainproject.AssetEntry, string, error) {
 	pf, err := s.store.Get(project)
 	if err != nil {
 		return nil, "", service.ErrAssetNotFound
 	}
-	bucket, ok := pf.BucketRef(domain.AssetCharacter)
+	bucket, ok := pf.BucketRef(domainproject.AssetCharacter)
 	if !ok {
 		return nil, "", service.ErrAssetNotFound
 	}
@@ -489,7 +490,7 @@ func validateVariantStatus(status *string) (*string, error) {
 	if status == nil {
 		return nil, nil
 	}
-	if !domain.VariantStatuses[*status] {
+	if !domaincharacter.VariantStatuses[*status] {
 		return nil, ErrVariantInvalidStatus
 	}
 	return status, nil

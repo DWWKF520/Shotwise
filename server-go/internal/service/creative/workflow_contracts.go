@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
 )
 
 // WorkflowContractIssue 是一条契约问题。
@@ -78,7 +78,7 @@ func ValidateWorkflowTemplateContract(
 
 	generationMode := payload["generation_mode"]
 	if generationMode != nil {
-		if text, ok := generationMode.(string); !ok || !domain.WorkflowGenerationModes[text] {
+		if text, ok := generationMode.(string); !ok || !creation.WorkflowGenerationModes[text] {
 			addIssue("invalid_generation_mode", "$.generation_mode", "generation_mode is unsupported")
 		}
 	}

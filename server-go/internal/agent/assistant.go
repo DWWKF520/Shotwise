@@ -58,11 +58,11 @@ type AssistantService struct {
 	store   *service.ProjectStore
 	dataDir string
 
-	mu                sync.Mutex
-	newSessionKeys    map[string]string // client_key → session_id（快路径）
-	newSessionOrder   []string          // 插入序（LRU 淘汰用）
-	newLocks          keyedLocks
-	rewriteLocks      keyedLocks
+	mu              sync.Mutex
+	newSessionKeys  map[string]string // client_key → session_id（快路径）
+	newSessionOrder []string          // 插入序（LRU 淘汰用）
+	newLocks        keyedLocks
+	rewriteLocks    keyedLocks
 }
 
 // NewAssistantService 构造编排层。ev 必须与 Runtime 共用同一 *eventlog.SQLStore
@@ -484,9 +484,9 @@ func (a *AssistantService) DeleteSession(ctx context.Context, sessionID, userID 
 type EntryPage struct {
 	SessionID string            `json:"session_id"`
 	Status    string            `json:"status"`
-	Entries   []*eventlog.Entry  `json:"entries"`
+	Entries   []*eventlog.Entry `json:"entries"`
 	Draft     any               `json:"draft"`
-	DraftRev  int                `json:"draft_rev"`
+	DraftRev  int               `json:"draft_rev"`
 }
 
 // ListEntries 冷读事件日志（历史回放，afterSeq 为游标；-1 表示从头）。

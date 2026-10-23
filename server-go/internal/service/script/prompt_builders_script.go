@@ -8,13 +8,13 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // UserInstructionsHeader 是用户意见（instructions）注入分节的统一标题：五个分集生成入口
@@ -30,7 +30,7 @@ func AppendUserInstructions(prompt, instructions string) string {
 }
 
 // assetNames 返回资产桶内的登记名（排序，保证 prompt 稳定可复现）。
-func assetNames(bucket *domain.AssetBucket) []string {
+func assetNames(bucket *project.AssetBucket) []string {
 	if bucket == nil || len(*bucket) == 0 {
 		return nil
 	}
@@ -43,7 +43,7 @@ func assetNames(bucket *domain.AssetBucket) []string {
 }
 
 // formatNames 渲染资产名清单（仅名字）。
-func formatNames(bucket *domain.AssetBucket) string {
+func formatNames(bucket *project.AssetBucket) string {
 	names := assetNames(bucket)
 	if len(names) == 0 {
 		return "（暂无）"
@@ -59,7 +59,7 @@ func formatNames(bucket *domain.AssetBucket) string {
 //
 // 缺描述 / 条目缺失时退化为纯名字。名称与描述都是 project.json 动态文本，过 neutralizeTags
 // 中和尖括号；多行描述续行缩进，避免 flush-left 溢出标签块。
-func formatAssetsWithDesc(bucket *domain.AssetBucket) string {
+func formatAssetsWithDesc(bucket *project.AssetBucket) string {
 	names := assetNames(bucket)
 	if len(names) == 0 {
 		return "（暂无）"
@@ -259,12 +259,12 @@ func formatNarrationStep1Segments(step1Segments []map[string]any) string {
 
 // NarrationPromptOptions 是 BuildNarrationPrompt 的入参。
 type NarrationPromptOptions struct {
-	ProjectOverview  *domain.Overview
+	ProjectOverview  *project.Overview
 	Style            string
 	StyleDescription string
-	Characters       *domain.AssetBucket
-	Scenes           *domain.AssetBucket
-	Props            *domain.AssetBucket
+	Characters       *project.AssetBucket
+	Scenes           *project.AssetBucket
+	Props            *project.AssetBucket
 	Step1Segments    []map[string]any
 	Episode          int
 	AspectRatio      string
@@ -379,7 +379,7 @@ func RenderDramaContentForStep2(contentScenes []any) string {
 
 // DramaPromptOptions 是 BuildDramaPrompt 的入参。
 type DramaPromptOptions struct {
-	ProjectOverview  *domain.Overview
+	ProjectOverview  *project.Overview
 	Style            string
 	StyleDescription string
 	ScenesContent    string
@@ -387,9 +387,9 @@ type DramaPromptOptions struct {
 	AspectRatio      string
 	TargetLanguage   string
 	// Characters / Scenes / Props 有任一非 nil 时渲染资产块（三者都为 nil 时不渲染）。
-	Characters *domain.AssetBucket
-	Scenes     *domain.AssetBucket
-	Props      *domain.AssetBucket
+	Characters *project.AssetBucket
+	Scenes     *project.AssetBucket
+	Props      *project.AssetBucket
 }
 
 // BuildDramaPrompt 构建剧集动画模式 step2（视觉层）prompt。
@@ -449,11 +449,11 @@ func BuildDramaPrompt(opts DramaPromptOptions) (string, error) {
 // NormalizePromptOptions 是 BuildNormalizePrompt 的入参。
 type NormalizePromptOptions struct {
 	NovelText          string
-	ProjectOverview    *domain.Overview
+	ProjectOverview    *project.Overview
 	Style              string
-	Characters         *domain.AssetBucket
-	Scenes             *domain.AssetBucket
-	Props              *domain.AssetBucket
+	Characters         *project.AssetBucket
+	Scenes             *project.AssetBucket
+	Props              *project.AssetBucket
 	DefaultDuration    *int
 	SupportedDurations []int
 	Episode            int
@@ -581,10 +581,10 @@ func BuildNormalizePrompt(opts NormalizePromptOptions) (string, error) {
 // NarrationSplitPromptOptions 是 BuildNarrationSplitPrompt 的入参。
 type NarrationSplitPromptOptions struct {
 	NovelText          string
-	ProjectOverview    *domain.Overview
-	Characters         *domain.AssetBucket
-	Scenes             *domain.AssetBucket
-	Props              *domain.AssetBucket
+	ProjectOverview    *project.Overview
+	Characters         *project.AssetBucket
+	Scenes             *project.AssetBucket
+	Props              *project.AssetBucket
 	DefaultDuration    *int
 	SupportedDurations []int
 	Episode            int
@@ -687,7 +687,7 @@ func BuildOverviewPrompt(sourceContent, sourceKind, targetLanguage string) strin
 
 // --- 内部小工具 ---
 
-func overviewValue(ov *domain.Overview, field string) string {
+func overviewValue(ov *project.Overview, field string) string {
 	if ov == nil {
 		return ""
 	}
@@ -703,8 +703,6 @@ func overviewValue(ov *domain.Overview, field string) string {
 	}
 	return ""
 }
-
-
 
 func joinInts(list []int, sep string) string {
 	parts := make([]string, 0, len(list))
@@ -725,7 +723,6 @@ func joinOr(items []string, fallback string) string {
 	}
 	return strings.Join(items, "、")
 }
-
 
 func defaultString(value any, fallback string) string {
 	if s, ok := value.(string); ok && s != "" {
@@ -756,4 +753,3 @@ func listStrings(value any) []string {
 
 // filterStrings 与 listStrings 同义（语义化别名，供 step2 渲染使用）。
 func filterStrings(value any) []string { return listStrings(value) }
-

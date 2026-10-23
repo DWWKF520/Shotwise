@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
 )
@@ -59,10 +59,10 @@ const openAIVideo1080pMinShort = 1080
 // sora-2（base）或缺分辨率时落 720p（缺分辨率默认 720P，不擅自升 1080p 以免超额计费）。其它
 // 比例（1:1 / 21:9 等）sora 无对应档，吸附后告警。
 func openAIVideoResolveSize(model, resolution, aspectRatio string) string {
-	aw, ah := domain.ParseAspectRatio(aspectRatio)
+	aw, ah := project.ParseAspectRatio(aspectRatio)
 	target := float64(aw) / float64(ah)
 	isPro := strings.Contains(strings.ToLower(model), "pro")
-	short := domain.ResolutionToShortEdge(resolution, domain.VideoTierShortEdge, domain.DefaultShortEdge)
+	short := project.ResolutionToShortEdge(resolution, project.VideoTierShortEdge, project.DefaultShortEdge)
 
 	// sora 支持的短边档：base 仅 720；pro 增 1080。按「最近档」选（等距取更高档），避免把
 	// short=1000 这类自定义分辨率值无故降到 720p。

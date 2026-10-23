@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/creative"
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit"
@@ -121,7 +121,7 @@ func parseCreativeContextBody(c *gin.Context, withPlan bool) (creative.CreativeC
 	}, true
 }
 
-func parseSelectedResources(c *gin.Context, body map[string]any) ([]domain.SelectedResource, bool) {
+func parseSelectedResources(c *gin.Context, body map[string]any) ([]creation.SelectedResource, bool) {
 	raw, present := body["selected_resources"]
 	if !present || raw == nil {
 		return nil, true
@@ -133,7 +133,7 @@ func parseSelectedResources(c *gin.Context, body map[string]any) ([]domain.Selec
 		}})
 		return nil, false
 	}
-	out := make([]domain.SelectedResource, 0, len(list))
+	out := make([]creation.SelectedResource, 0, len(list))
 	for i, item := range list {
 		entry, ok := item.(map[string]any)
 		if !ok {
@@ -159,12 +159,12 @@ func parseSelectedResources(c *gin.Context, body map[string]any) ([]domain.Selec
 			}})
 			return nil, false
 		}
-		out = append(out, domain.SelectedResource{ID: id, ResourceType: resourceType})
+		out = append(out, creation.SelectedResource{ID: id, ResourceType: resourceType})
 	}
 	return out, true
 }
 
-func parseContextReferences(c *gin.Context, body map[string]any) ([]domain.ContextReference, bool) {
+func parseContextReferences(c *gin.Context, body map[string]any) ([]creation.ContextReference, bool) {
 	raw, present := body["context_references"]
 	if !present || raw == nil {
 		return nil, true
@@ -176,7 +176,7 @@ func parseContextReferences(c *gin.Context, body map[string]any) ([]domain.Conte
 		}})
 		return nil, false
 	}
-	out := make([]domain.ContextReference, 0, len(list))
+	out := make([]creation.ContextReference, 0, len(list))
 	for i, item := range list {
 		entry, ok := item.(map[string]any)
 		if !ok {
@@ -198,7 +198,7 @@ func parseContextReferences(c *gin.Context, body map[string]any) ([]domain.Conte
 		if s, ok := entry["expected_type"].(string); ok && s != "" {
 			expectedType = &s
 		}
-		out = append(out, domain.ContextReference{Text: text, ExpectedType: expectedType})
+		out = append(out, creation.ContextReference{Text: text, ExpectedType: expectedType})
 	}
 	return out, true
 }
@@ -229,7 +229,7 @@ func bodyBoolOr(body map[string]any, field string) bool {
 // abortCreativeContextErr 把解析错误映射成 409 {"code", **details}
 // （对应 except CreativeContextResolutionError as exc）。
 func abortCreativeContextErr(c *gin.Context, err error) {
-	var resolutionErr *domain.CreativeContextResolutionError
+	var resolutionErr *creation.CreativeContextResolutionError
 	if errors.As(err, &resolutionErr) {
 		apperr.Abort(c, apperr.New(http.StatusConflict, resolutionErr.Code, resolutionErr.Details))
 		return

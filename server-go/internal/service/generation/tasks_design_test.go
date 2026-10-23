@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/repository"
 )
 
@@ -19,14 +19,14 @@ func TestExistingReferenceImagesSkipsMissingAndEscapes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "products", "a.png"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	entry := domain.NewAssetEntry()
+	entry := project.NewAssetEntry()
 	entry.SetList("reference_images", []string{"products/a.png", "products/missing.png", "../escape.png"})
 
 	refs := existingReferenceImages(dir, entry)
 	if len(refs) != 1 || filepath.Base(refs[0].Path) != "a.png" {
 		t.Fatalf("refs = %+v", refs)
 	}
-	if existingReferenceImages(dir, domain.NewAssetEntry()) != nil {
+	if existingReferenceImages(dir, project.NewAssetEntry()) != nil {
 		t.Fatal("no reference_images must yield nil (text-only generation)")
 	}
 }

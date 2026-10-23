@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/agent/tools"
 	"github.com/cloudwego/eino/schema"
+	"github.com/shotwise/shotwise/internal/agent/tools"
 )
 
 // writeReviewFixture 在临时目录写入 project.json 与 scripts/，并返回项目目录。
@@ -380,4 +380,3 @@ func TestReviewExtractsFramesAsImageParts(t *testing.T) {
 }
 
 // reviewAllowGuard 放行所有调用并记录 Post 收到的结果文本（实现已随 guard 测试移入 agent 包）。
-

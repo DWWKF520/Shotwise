@@ -8,7 +8,8 @@ package generation
 import (
 	"encoding/json"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	domaintask "github.com/shotwise/shotwise/internal/domain/task"
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/repository"
 	"github.com/shotwise/shotwise/internal/service"
@@ -32,8 +33,8 @@ func LocalizeTask(task repository.TaskData, loc i18n.Locale) map[string]any {
 		return map[string]any{}
 	}
 	if message, ok := localized["error_message"].(string); ok && message != "" {
-		safe := domain.SanitizeFailureReason(message)
-		if rendered := domain.RenderFailure(&safe, translate); rendered != nil {
+		safe := domaintask.SanitizeFailureReason(message)
+		if rendered := domaintask.RenderFailure(&safe, translate); rendered != nil {
 			localized["error_message"] = *rendered
 		}
 	}
@@ -50,11 +51,11 @@ func LocalizeTask(task repository.TaskData, loc i18n.Locale) map[string]any {
 	return localized
 }
 
-// RenderWarnings 把 ``result.warnings`` 的 {key, params} 条目渲染成本地语言文本。
+// RenderWarnings 把 “result.warnings“ 的 {key, params} 条目渲染成本地语言文本。
 //
 // 形态不符的条目跳过而非报错：warnings 是纯提示，畸形条目不该让整个任务列表 500。
 // 未知 key 由 i18n 兜底回落成 key 本身。
-func RenderWarnings(warnings any, translate domain.FailureTranslator) []string {
+func RenderWarnings(warnings any, translate domaintask.FailureTranslator) []string {
 	items, ok := warnings.([]any)
 	if !ok {
 		return []string{}
@@ -79,9 +80,9 @@ func RenderWarnings(warnings any, translate domain.FailureTranslator) []string {
 	return texts
 }
 
-// localizeWarningParams 把 params 中裸的资产类型标识（如 ``"product"``）换成当前语言显示名。
+// localizeWarningParams 把 params 中裸的资产类型标识（如 “"product"“）换成当前语言显示名。
 // 只处理已登记 warning key 的已知字段；非字符串值（畸形持久化值）原样透传。
-func localizeWarningParams(key string, params map[string]any, translate domain.FailureTranslator) map[string]any {
+func localizeWarningParams(key string, params map[string]any, translate domaintask.FailureTranslator) map[string]any {
 	field, ok := assetTypeParamByWarning[key]
 	if !ok {
 		return params
@@ -99,8 +100,8 @@ func localizeWarningParams(key string, params map[string]any, translate domain.F
 }
 
 // localizeAssetType 把资产类型内部标识换成显示名；未登记的类型原样透传。
-func localizeAssetType(value string, translate domain.FailureTranslator) string {
-	if _, ok := domain.AssetSpecs[domain.AssetKind(value)]; !ok {
+func localizeAssetType(value string, translate domaintask.FailureTranslator) string {
+	if _, ok := project.AssetSpecs[project.AssetKind(value)]; !ok {
 		return value
 	}
 	return translate("asset_type_"+value, nil)

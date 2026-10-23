@@ -7,15 +7,15 @@
 package script
 
 import (
-	"github.com/shotwise/shotwise/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shotwise/shotwise/internal/service"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service/reference"
 )
 
@@ -36,7 +36,7 @@ func WithReferenceContext(rc ScriptReferenceContext) ScriptGenOption {
 
 // composeAD 构造 ad 分支的 (prompt, response_schema)。
 func (g *ScriptGenerator) composeAD(episode int, genMode string) (string, map[string]any, error) {
-	if genMode == string(domain.GenerationReferenceVideo) {
+	if genMode == string(project.GenerationReferenceVideo) {
 		prompt, err := g.buildADPrompt(episode, genMode, nil)
 		if err != nil {
 			return "", nil, err
@@ -218,7 +218,7 @@ func (g *ScriptGenerator) loadReferenceStep1(episode int, supportedDurations []i
 
 	// 与 Web 端保存 / 确认共享同一把 per-path 锁：迁移的读改写与它们相互互斥。
 	var root map[string]any
-	var migratedProject *domain.ProjectFile
+	var migratedProject *project.ProjectFile
 	var migrationWarnings []service.MigrationWarning
 	migrateErr := reference.Step1WriteLock(g.dir, episode, func(step1Path string) error {
 		// 顺序不变量：审阅 gate 的判定在更早的 step2 工具入口完成，迁移在其后运行且可能

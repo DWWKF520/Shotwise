@@ -212,8 +212,8 @@ func InferCustomEndpoint(modelID, discoveryFormat string) string {
 
 // customCapabilityAllowlist 是开放给用户覆盖的能力维度（写入与回显两侧同源收窄）。
 var customCapabilityAllowlist = map[string]bool{
-	"last_frame":               true,
-	"reference_audio_mode":     true,
+	"last_frame":                true,
+	"reference_audio_mode":      true,
 	"max_reference_audio_count": true,
 }
 
@@ -369,4 +369,3 @@ func CustomSystemCapabilitiesForResponse(endpoint, modelID string) *provider.Vid
 	}
 	return &caps
 }
-

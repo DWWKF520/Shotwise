@@ -15,7 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/generation"
@@ -40,10 +40,10 @@ func RegisterGenerate(group *gin.RouterGroup, d GenerateDeps) {
 	group.GET("/projects/:name/audio-backend/voices", audioBackendVoices(d))
 	group.POST("/projects/:name/characters/:entry/voice-sample", generateVoiceSample(d))
 	group.POST("/projects/:name/characters/:entry/voice-sample/confirm", confirmVoiceSample(d))
-	group.POST("/projects/:name/generate/character/:entry", generateAsset(d, domain.AssetCharacter))
-	group.POST("/projects/:name/generate/scene/:entry", generateAsset(d, domain.AssetScene))
-	group.POST("/projects/:name/generate/prop/:entry", generateAsset(d, domain.AssetProp))
-	group.POST("/projects/:name/generate/product/:entry", generateAsset(d, domain.AssetProduct))
+	group.POST("/projects/:name/generate/character/:entry", generateAsset(d, project.AssetCharacter))
+	group.POST("/projects/:name/generate/scene/:entry", generateAsset(d, project.AssetScene))
+	group.POST("/projects/:name/generate/prop/:entry", generateAsset(d, project.AssetProp))
+	group.POST("/projects/:name/generate/product/:entry", generateAsset(d, project.AssetProduct))
 	group.POST("/projects/:name/edit/image", editImage(d))
 	group.POST("/projects/:name/canvas-images/split", splitCanvasImage(d))
 	group.POST("/projects/:name/canvas-images/advanced", advancedCanvasImage(d))
@@ -300,7 +300,7 @@ func confirmVoiceSample(d GenerateDeps) gin.HandlerFunc {
 }
 
 // generateAsset 提交资产设计图生成任务（四类资产共用）。
-func generateAsset(d GenerateDeps, kind domain.AssetKind) gin.HandlerFunc {
+func generateAsset(d GenerateDeps, kind project.AssetKind) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !httpkit.RequireExistingProject(c, d.Store) {
 			return

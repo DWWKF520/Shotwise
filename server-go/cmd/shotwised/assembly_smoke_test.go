@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 	infradb "github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/queue"
@@ -149,7 +149,7 @@ func TestP4AssemblySmoke(t *testing.T) {
 	gdb := openSmokeDB(t)
 	store := service.NewProjectStore(t.TempDir())
 	project := "smoke"
-	if _, err := store.Create(project, "冒烟项目", domain.ContentNarration, domain.GenerationStoryboard, "写实"); err != nil {
+	if _, err := store.Create(project, "冒烟项目", domainproject.ContentNarration, domainproject.GenerationStoryboard, "写实"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 

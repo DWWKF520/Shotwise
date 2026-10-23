@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/provider"
 )
 
@@ -17,12 +17,12 @@ type fakeVideoCaps struct {
 	err  error
 }
 
-func (f *fakeVideoCaps) VideoCapabilitiesForProject(context.Context, *domain.ProjectFile) (config.VideoCapabilityView, error) {
+func (f *fakeVideoCaps) VideoCapabilitiesForProject(context.Context, *project.ProjectFile) (config.VideoCapabilityView, error) {
 	return f.view, f.err
 }
 
 func TestGetVideoCapabilitiesReturnsModelFacts(t *testing.T) {
-	projects := &fakeAssetProjects{pf: &domain.ProjectFile{ContentMode: "drama", GenerationMode: "storyboard"}}
+	projects := &fakeAssetProjects{pf: &project.ProjectFile{ContentMode: "drama", GenerationMode: "storyboard"}}
 	reader := &fakeVideoCaps{view: config.VideoCapabilityView{
 		ProviderID:         "p1",
 		ModelID:            "m1",
@@ -64,7 +64,7 @@ func TestGetVideoCapabilitiesReturnsModelFacts(t *testing.T) {
 }
 
 func TestGetVideoCapabilitiesDeniesUnresolvableOrUndeclaredModel(t *testing.T) {
-	projects := &fakeAssetProjects{pf: &domain.ProjectFile{GenerationMode: "reference_video"}}
+	projects := &fakeAssetProjects{pf: &project.ProjectFile{GenerationMode: "reference_video"}}
 
 	failing := &fakeVideoCaps{err: errors.New("bucket r2v missing")}
 	tl, _ := NewGetVideoCapabilitiesTool("proj", failing, projects)

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/repository"
 )
 
@@ -40,12 +40,12 @@ func (f *fakeAssetQueue) GetTask(_ context.Context, id string) (*repository.Task
 func (f *fakeAssetQueue) IsWorkerOnline(context.Context, string) (bool, error) { return true, nil }
 
 type fakeAssetProjects struct {
-	pf  *domain.ProjectFile
+	pf  *project.ProjectFile
 	dir string
 }
 
-func (f *fakeAssetProjects) Get(string) (*domain.ProjectFile, error) { return f.pf, nil }
-func (f *fakeAssetProjects) Dir(string) (string, error)              { return f.dir, nil }
+func (f *fakeAssetProjects) Get(string) (*project.ProjectFile, error) { return f.pf, nil }
+func (f *fakeAssetProjects) Dir(string) (string, error)               { return f.dir, nil }
 
 func newAssetFixture(t *testing.T) (*fakeAssetProjects, string) {
 	t.Helper()
@@ -57,17 +57,17 @@ func newAssetFixture(t *testing.T) (*fakeAssetProjects, string) {
 	if err := os.WriteFile(filepath.Join(dir, "characters", "小红.png"), []byte("png"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mk := func(desc string, sheet string) *domain.AssetEntry {
-		e := domain.NewAssetEntry()
+	mk := func(desc string, sheet string) *project.AssetEntry {
+		e := project.NewAssetEntry()
 		e.SetString("description", desc)
 		if sheet != "" {
 			e.SetString("character_sheet", sheet)
 		}
 		return e
 	}
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		ContentMode: "drama",
-		Characters: domain.AssetBucket{
+		Characters: project.AssetBucket{
 			"阿明": mk("少年，黑发", ""),
 			"小红": mk("少女，红裙", "characters/小红.png"),
 			"空白": mk("   ", ""),
@@ -81,7 +81,7 @@ func TestGenerateAssetsPendingModeEnqueuesOnlyMissingSheets(t *testing.T) {
 	q := &fakeAssetQueue{}
 
 	text, failed, err := runGenerateAssets(context.Background(), "proj",
-		[]domain.AssetKind{domain.AssetCharacter}, nil, false, q, projects)
+		[]project.AssetKind{project.AssetCharacter}, nil, false, q, projects)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestGenerateAssetsNamesModeSkipsExistingSheetUnlessRegenerate(t *testing.T)
 	q := &fakeAssetQueue{}
 
 	text, _, err := runGenerateAssets(context.Background(), "proj",
-		[]domain.AssetKind{domain.AssetCharacter}, []string{"小红", "不存在"}, false, q, projects)
+		[]project.AssetKind{project.AssetCharacter}, []string{"小红", "不存在"}, false, q, projects)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestGenerateAssetsNamesModeSkipsExistingSheetUnlessRegenerate(t *testing.T)
 	}
 
 	if _, _, err := runGenerateAssets(context.Background(), "proj",
-		[]domain.AssetKind{domain.AssetCharacter}, []string{"小红"}, true, q, projects); err != nil {
+		[]project.AssetKind{project.AssetCharacter}, []string{"小红"}, true, q, projects); err != nil {
 		t.Fatal(err)
 	}
 	if len(q.enqueued) != 1 || q.enqueued[0].ResourceID != "小红" {

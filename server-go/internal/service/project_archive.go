@@ -25,7 +25,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // 归档常量（与 Python 一致）。
@@ -78,11 +78,11 @@ type ImportDiagnostics struct {
 
 // ProjectImportResult 是导入成功结果。
 type ProjectImportResult struct {
-	ProjectName        string              `json:"project_name"`
-	Project            *domain.ProjectFile `json:"project"`
-	Warnings           []ArchiveMessage    `json:"warnings"`
-	ConflictResolution string              `json:"conflict_resolution"`
-	Diagnostics        ImportDiagnostics   `json:"diagnostics"`
+	ProjectName        string                     `json:"project_name"`
+	Project            *domainproject.ProjectFile `json:"project"`
+	Warnings           []ArchiveMessage           `json:"warnings"`
+	ConflictResolution string                     `json:"conflict_resolution"`
+	Diagnostics        ImportDiagnostics          `json:"diagnostics"`
 }
 
 // ArchivePreflightResult 是导入前校验结果。
@@ -295,8 +295,8 @@ func extractArchiveRoot(
 // validateImportedProject 是最小 schema 校验（收敛自 Python 完整 validator + 迁移链）。
 func validateImportedProject(project map[string]any) error {
 	contentMode, _ := project["content_mode"].(string)
-	switch domain.ContentMode(contentMode) {
-	case domain.ContentNarration, domain.ContentDrama, domain.ContentAd:
+	switch domainproject.ContentMode(contentMode) {
+	case domainproject.ContentNarration, domainproject.ContentDrama, domainproject.ContentAd:
 	default:
 		return validationFailedLiteral(
 			"content_mode must be one of narration/drama/ad (legacy archives need migration first)")

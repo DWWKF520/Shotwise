@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
-type fakeProjects struct{ pf *domain.ProjectFile }
+type fakeProjects struct{ pf *project.ProjectFile }
 
-func (f *fakeProjects) Update(_ string, mutate func(*domain.ProjectFile) error) error {
+func (f *fakeProjects) Update(_ string, mutate func(*project.ProjectFile) error) error {
 	return mutate(f.pf)
 }
 
@@ -20,7 +20,7 @@ type fakeAssets struct {
 	fresh  map[string]bool
 }
 
-func (f *fakeAssets) Upsert(_ string, kind domain.AssetKind, name string, fields map[string]any) (bool, error) {
+func (f *fakeAssets) Upsert(_ string, kind project.AssetKind, name string, fields map[string]any) (bool, error) {
 	f.calls = append(f.calls, string(kind)+":"+name)
 	f.fields = append(f.fields, fields)
 	return f.fresh[name], nil
@@ -52,7 +52,7 @@ func TestPositiveFloatCoercion(t *testing.T) {
 }
 
 func TestApplySettingsWritesCoercedValuesAndClears(t *testing.T) {
-	pf := &domain.ProjectFile{ContentMode: "drama", SourceLanguage: "zh"}
+	pf := &project.ProjectFile{ContentMode: "drama", SourceLanguage: "zh"}
 	p := &fakeProjects{pf: pf}
 
 	out, err := applySettings(p, "proj", map[string]any{
@@ -82,7 +82,7 @@ func TestApplySettingsWritesCoercedValuesAndClears(t *testing.T) {
 }
 
 func TestApplySettingsRejectsBriefOutsideAd(t *testing.T) {
-	pf := &domain.ProjectFile{ContentMode: "drama"}
+	pf := &project.ProjectFile{ContentMode: "drama"}
 	if _, err := applySettings(&fakeProjects{pf: pf}, "proj", map[string]any{"brief": "x"}); err == nil {
 		t.Fatal("brief must be rejected for non-ad projects")
 	}
@@ -92,7 +92,7 @@ func TestApplySettingsRejectsBriefOutsideAd(t *testing.T) {
 }
 
 func TestApplySettingsRejectsUnknownKeyAndWritesNothing(t *testing.T) {
-	pf := &domain.ProjectFile{ContentMode: "ad", Brief: "keep"}
+	pf := &project.ProjectFile{ContentMode: "ad", Brief: "keep"}
 	_, err := applySettings(&fakeProjects{pf: pf}, "proj", map[string]any{"brief": "new", "not_a_field": 1})
 	if err == nil {
 		t.Fatal("unknown settings key must be rejected")
@@ -103,7 +103,7 @@ func TestApplySettingsRejectsUnknownKeyAndWritesNothing(t *testing.T) {
 }
 
 func TestApplyOverviewMergesOnlyPassedFields(t *testing.T) {
-	pf := &domain.ProjectFile{Overview: &domain.Overview{Synopsis: "old", Genre: "drama"}}
+	pf := &project.ProjectFile{Overview: &project.Overview{Synopsis: "old", Genre: "drama"}}
 	out, err := applyOverview(&fakeProjects{pf: pf}, "proj", map[string]any{"theme": "hope"})
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestApplyUpsertRejectsUnknownTable(t *testing.T) {
 }
 
 func TestPatchProjectToolRejectsMultipleBranches(t *testing.T) {
-	tl, err := NewPatchProjectTool("proj", &fakeAssets{}, &fakeProjects{pf: &domain.ProjectFile{}})
+	tl, err := NewPatchProjectTool("proj", &fakeAssets{}, &fakeProjects{pf: &project.ProjectFile{}})
 	if err != nil {
 		t.Fatal(err)
 	}

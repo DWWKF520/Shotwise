@@ -12,7 +12,8 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
+	"github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -94,9 +95,9 @@ func TestEncodeTaskErrorEncodesCapabilityAndScriptEdit(t *testing.T) {
 		},
 		{
 			name: "script edit",
-			err: &domain.ScriptEditError{
+			err: &script.ScriptEditError{
 				Message: "items must be list",
-				Key:     domain.ScriptEditItemsNotList,
+				Key:     script.ScriptEditItemsNotList,
 				Params:  map[string]any{"kind": "segments", "type_name": "dict"},
 			},
 			want: `[script_edit_items_not_list] {"kind": "segments", "type_name": "dict"}`,
@@ -250,11 +251,11 @@ func writeUnderProject(t *testing.T, dir, rel string) {
 func registerCharacter(t *testing.T, store *service.ProjectStore, projectName, projectDir, name string) {
 	t.Helper()
 	writeUnderProject(t, projectDir, "characters/"+name+".png")
-	if err := store.Update(projectName, func(p *domain.ProjectFile) error {
+	if err := store.Update(projectName, func(p *project.ProjectFile) error {
 		if p.Characters == nil {
-			p.Characters = domain.AssetBucket{}
+			p.Characters = project.AssetBucket{}
 		}
-		p.Characters[name] = domain.WrapAssetEntry(map[string]any{
+		p.Characters[name] = project.WrapAssetEntry(map[string]any{
 			"description":     name,
 			"character_sheet": "characters/" + name + ".png",
 		})
@@ -266,7 +267,7 @@ func registerCharacter(t *testing.T, store *service.ProjectStore, projectName, p
 
 func TestWorkerPreflightStoryboardItemReferences(t *testing.T) {
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "t", domain.ContentNarration, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "t", project.ContentNarration, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	projectDir, err := store.Dir("p1")
@@ -312,7 +313,7 @@ func TestWorkerPreflightStoryboardItemReferences(t *testing.T) {
 
 func TestWorkerPreflightReferenceUnitReferences(t *testing.T) {
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p2", "t", domain.ContentNarration, domain.GenerationReferenceVideo, "水墨"); err != nil {
+	if _, err := store.Create("p2", "t", project.ContentNarration, project.GenerationReferenceVideo, "水墨"); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	projectDir, err := store.Dir("p2")

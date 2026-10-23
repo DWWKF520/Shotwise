@@ -22,9 +22,9 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/shotwise/shotwise/internal/domain"
-	"github.com/shotwise/shotwise/internal/service"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/fs"
+	"github.com/shotwise/shotwise/internal/service"
 )
 
 // --- step1 / 剧本路径（episode_paths.py） ---
@@ -60,7 +60,6 @@ func Step1ReadCandidates(contentMode string) []string {
 	out = append(out, step1LegacyFilenames[contentMode]...)
 	return out
 }
-
 
 // EpisodeScriptFilename 返回该集剧本文件名 episode_N.json（不含 scripts/ 目录前缀）。
 func EpisodeScriptFilename(episode int) string { return fmt.Sprintf("episode_%d.json", episode) }
@@ -135,9 +134,9 @@ func isASCIIDigits(value string) bool {
 // ParseSourceRange 解析条目的 source_range 坐标；结构不完整（字段类型不对）时 ok=false。
 //
 // 只查字段类型，不校验数值是否越界——是否要求坐标落在源文界内由调用方按各自口径决定。
-func ParseSourceRange(entry *domain.EpisodeMeta) (domain.SourceRange, bool) {
+func ParseSourceRange(entry *project.EpisodeMeta) (project.SourceRange, bool) {
 	if entry == nil || entry.SourceRange == nil {
-		return domain.SourceRange{}, false
+		return project.SourceRange{}, false
 	}
 	return *entry.SourceRange, true
 }
@@ -145,7 +144,7 @@ func ParseSourceRange(entry *domain.EpisodeMeta) (domain.SourceRange, bool) {
 // EpisodesWithoutSourceRange 返回账本中没有位置记录的集号（升序去重）。
 //
 // 这类条目无法重造派生文件、也无法据以续接规划，是规划入口拒绝执行的依据。
-func EpisodesWithoutSourceRange(pf *domain.ProjectFile) []int {
+func EpisodesWithoutSourceRange(pf *project.ProjectFile) []int {
 	if pf == nil {
 		return nil
 	}
@@ -310,7 +309,7 @@ func dirHasStep1Product(dir string) bool {
 // HasDownstreamProducts 判定该集是否已有下游产物（剧本 JSON / step1 中间文件）。
 //
 // 磁盘证据优先于账本状态：账本损坏时仍能判定该集是否已被消费。
-func HasDownstreamProducts(projectDir string, episodeNum int, entry *domain.EpisodeMeta) bool {
+func HasDownstreamProducts(projectDir string, episodeNum int, entry *project.EpisodeMeta) bool {
 	if entry != nil && entry.ScriptFile != "" && fs.SafeExists(projectDir, entry.ScriptFile) {
 		return true
 	}
@@ -325,7 +324,7 @@ func HasDownstreamProducts(projectDir string, episodeNum int, entry *domain.Epis
 // 只做登记（episode / title / script_file / ledger_status），不写 source_range——补建出的条目
 // 因此没有位置记录，规划入口会据此拒绝并指引全量重置，消费链路照常。已登记的集号不重复补建，
 // 可安全重跑。
-func RegisterOrphanEpisodeEntries(projectDir string, pf *domain.ProjectFile) {
+func RegisterOrphanEpisodeEntries(projectDir string, pf *project.ProjectFile) {
 	if pf == nil {
 		return
 	}
@@ -345,10 +344,10 @@ func RegisterOrphanEpisodeEntries(projectDir string, pf *domain.ProjectFile) {
 		if known[num] {
 			continue
 		}
-		entry := domain.EpisodeMeta{Episode: num, Title: "", ScriptFile: EpisodeScriptRelpath(num)}
-		status := domain.LedgerStatusPlanned
+		entry := project.EpisodeMeta{Episode: num, Title: "", ScriptFile: EpisodeScriptRelpath(num)}
+		status := project.LedgerStatusPlanned
 		if HasDownstreamProducts(projectDir, num, &entry) {
-			status = domain.LedgerStatusConsumed
+			status = project.LedgerStatusConsumed
 		}
 		entry.LedgerStatus = status
 		pf.Episodes = append(pf.Episodes, entry)
@@ -408,8 +407,8 @@ func MismatchedSourceFingerprints(recorded map[string]string, sources []SourceDo
 //
 // 大纲 dict 含 title / hook / story_beats / next_episode_teaser。条目无任何规划数据时对应项
 // 为 nil；末集无下集，第二项为 nil。story_beats 内非字符串项一并过滤。
-func EpisodeOutlineContext(pf *domain.ProjectFile, episode int) (map[string]any, map[string]any) {
-	entry := func(num int) *domain.EpisodeMeta {
+func EpisodeOutlineContext(pf *project.ProjectFile, episode int) (map[string]any, map[string]any) {
+	entry := func(num int) *project.EpisodeMeta {
 		if pf == nil {
 			return nil
 		}
@@ -420,7 +419,7 @@ func EpisodeOutlineContext(pf *domain.ProjectFile, episode int) (map[string]any,
 		}
 		return nil
 	}
-	build := func(item *domain.EpisodeMeta) map[string]any {
+	build := func(item *project.EpisodeMeta) map[string]any {
 		if item == nil {
 			return nil
 		}
@@ -486,7 +485,7 @@ func ledgerSlice(text string, start, end int) (string, bool) {
 }
 
 // ledgerSource 按账本 source_range 切片源文。
-func ledgerSource(projectDir string, pf *domain.ProjectFile, episode int) (service.EpisodeSource, bool) {
+func ledgerSource(projectDir string, pf *project.ProjectFile, episode int) (service.EpisodeSource, bool) {
 	if pf == nil {
 		return service.EpisodeSource{}, false
 	}
@@ -517,7 +516,7 @@ func ledgerSource(projectDir string, pf *domain.ProjectFile, episode int) (servi
 // 显式 source 始终优先；省略时先使用账本中的原文范围，随后使用本集手动预拆分的
 // source/episode_N.txt，最后回退到旧项目的原始源文拼接。
 func ResolveEpisodeSource(
-	projectDir string, episode int, source string, pf *domain.ProjectFile,
+	projectDir string, episode int, source string, pf *project.ProjectFile,
 ) (service.EpisodeSource, error) {
 	if source != "" {
 		path, text, ok := readSourceFile(projectDir, source)

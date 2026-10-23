@@ -15,7 +15,8 @@ import (
 
 	"github.com/shotwise/shotwise/internal/agent/tools/assets"
 	"github.com/shotwise/shotwise/internal/apperr"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/character"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 )
 
@@ -27,7 +28,7 @@ type CharacterRelationsDeps struct {
 }
 
 // relationsFromProject 读项目并归一关系图（characters 必须是对象）。
-func relationsFromProject(pf *domain.ProjectFile) (map[string]any, error) {
+func relationsFromProject(pf *project.ProjectFile) (map[string]any, error) {
 	if pf == nil {
 		return nil, &service.ValueError{Msg: "project characters must be an object"}
 	}
@@ -35,15 +36,15 @@ func relationsFromProject(pf *domain.ProjectFile) (map[string]any, error) {
 	if raw, err := json.Marshal(pf.CharacterRelations); err == nil && pf.CharacterRelations != nil {
 		_ = json.Unmarshal(raw, &existing)
 	}
-	var characters domain.AssetBucket
-	if bucket, ok := pf.BucketRef(domain.AssetCharacter); ok && bucket != nil {
+	var characters project.AssetBucket
+	if bucket, ok := pf.BucketRef(project.AssetCharacter); ok && bucket != nil {
 		characters = *bucket
 	}
-	data, err := domain.NormalizeCharacterRelations(existing, characters)
+	data, err := character.NormalizeCharacterRelations(existing, characters)
 	if err != nil {
 		return nil, err
 	}
-	return domain.RelationsPayload(data), nil
+	return character.RelationsPayload(data), nil
 }
 
 // getCharacterRelations 读取关系图。
@@ -83,7 +84,7 @@ func saveCharacterRelations(d CharacterRelationsDeps) gin.HandlerFunc {
 			}}})
 			return
 		}
-		edges := make([]domain.RelationEdge, 0, len(body.Edges))
+		edges := make([]character.RelationEdge, 0, len(body.Edges))
 		for _, raw := range body.Edges {
 			var obj map[string]any
 			if err := json.Unmarshal(raw, &obj); err != nil {
@@ -91,7 +92,7 @@ func saveCharacterRelations(d CharacterRelationsDeps) gin.HandlerFunc {
 					map[string]any{"details": err.Error()}))
 				return
 			}
-			edge, err := domain.ParseRelationEdge(obj)
+			edge, err := character.ParseRelationEdge(obj)
 			if err != nil {
 				apperr.Abort(c, apperr.NewText(http.StatusUnprocessableEntity, "script_validation_failed",
 					map[string]any{"details": err.Error()}))
@@ -101,7 +102,7 @@ func saveCharacterRelations(d CharacterRelationsDeps) gin.HandlerFunc {
 		}
 		baseRevision := *body.BaseRevision
 		saved := map[string]any{}
-		err := d.Store.Update(c.Param("name"), func(pf *domain.ProjectFile) error {
+		err := d.Store.Update(c.Param("name"), func(pf *project.ProjectFile) error {
 			current, err := relationsFromProject(pf)
 			if err != nil {
 				return err
@@ -113,11 +114,11 @@ func saveCharacterRelations(d CharacterRelationsDeps) gin.HandlerFunc {
 				// 后写方拿 409 去刷新合并，先写方的内容不被静默覆盖。
 				return errRelationsRevisionConflict
 			}
-			var characters domain.AssetBucket
-			if bucket, ok := pf.BucketRef(domain.AssetCharacter); ok && bucket != nil {
+			var characters project.AssetBucket
+			if bucket, ok := pf.BucketRef(project.AssetCharacter); ok && bucket != nil {
 				characters = *bucket
 			}
-			data, err := domain.ApplyManualRelationships(pf.CharacterRelations, characters, edges)
+			data, err := character.ApplyManualRelationships(pf.CharacterRelations, characters, edges)
 			if err != nil {
 				return err
 			}
@@ -134,13 +135,13 @@ func saveCharacterRelations(d CharacterRelationsDeps) gin.HandlerFunc {
 				if unmarshalErr := json.Unmarshal(rawPositions, &wrapper); unmarshalErr != nil {
 					return unmarshalErr
 				}
-				normalized, normalizeErr := domain.NormalizeCharacterRelations(wrapper, characters)
+				normalized, normalizeErr := character.NormalizeCharacterRelations(wrapper, characters)
 				if normalizeErr != nil {
 					return normalizeErr
 				}
 				data.NodePositions = normalized.NodePositions
 			}
-			payload := domain.RelationsPayload(data)
+			payload := character.RelationsPayload(data)
 			saved = payload
 			if pf.CharacterRelations == nil {
 				pf.CharacterRelations = map[string]any{}
@@ -196,11 +197,11 @@ func analyzeCharacterRelationsEndpoint(d CharacterRelationsDeps) gin.HandlerFunc
 // relationProjectsAdapter 把 ProjectStore 适配成 assets.RelationProjects。
 type relationProjectsAdapter struct{ store *service.ProjectStore }
 
-func (a relationProjectsAdapter) Get(name string) (*domain.ProjectFile, error) {
+func (a relationProjectsAdapter) Get(name string) (*project.ProjectFile, error) {
 	return a.store.Get(name)
 }
 func (a relationProjectsAdapter) Dir(name string) (string, error) { return a.store.Dir(name) }
-func (a relationProjectsAdapter) Update(name string, mutate func(*domain.ProjectFile) error) error {
+func (a relationProjectsAdapter) Update(name string, mutate func(*project.ProjectFile) error) error {
 	return a.store.Update(name, mutate)
 }
 func (a relationProjectsAdapter) ScriptFileNames(name string) ([]string, error) {

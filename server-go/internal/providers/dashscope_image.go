@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
 )
@@ -176,7 +176,7 @@ const (
 	dashscopeWanRefLimit  = 9
 
 	// 缺分辨率时各族默认短边。比例永远来自 aspect_ratio，不再用带比例偏差的静态像素表，
-	// 改由 domain.AspectSize 在各族像素约束内算精确比例。
+	// 改由 project.AspectSize 在各族像素约束内算精确比例。
 	dashscopeDefaultWanBudget = "2K"
 	dashscopeDefaultShortWan  = 1440
 	dashscopeDefaultShortEdit = 2048
@@ -359,29 +359,29 @@ func (b *dashscopeImageBackend) resolveSize(
 		if exceeds {
 			maxTotal = dashscopeFourkPixelBudget
 		}
-		short := domain.ResolutionToShortEdge(explicit, domain.ImageTierShortEdge, dashscopeDefaultShortWan)
+		short := project.ResolutionToShortEdge(explicit, project.ImageTierShortEdge, dashscopeDefaultShortWan)
 		ratio := dashscopeMaxRatio
-		w, h := domain.AspectSize(aspect, short, domain.AspectSizeOptions{
+		w, h := project.AspectSize(aspect, short, project.AspectSizeOptions{
 			RoundTo: 16, MaxTotalPixels: &maxTotal, MaxRatio: &ratio,
 		})
 		return fmt.Sprintf("%d*%d", w, h), nil
 	}
 
 	if b.isEdit {
-		short := domain.ResolutionToShortEdge(explicit, domain.ImageTierShortEdge, dashscopeDefaultShortEdit)
+		short := project.ResolutionToShortEdge(explicit, project.ImageTierShortEdge, dashscopeDefaultShortEdit)
 		maxLong := dashscopeEditMaxLongEdge
 		ratio := dashscopeEditMaxRatio
-		w, h := domain.AspectSize(aspect, short, domain.AspectSizeOptions{
+		w, h := project.AspectSize(aspect, short, project.AspectSizeOptions{
 			RoundTo: 16, MaxLongEdge: &maxLong, MaxRatio: &ratio,
 		})
 		return fmt.Sprintf("%d*%d", w, h), nil
 	}
 
 	// qwen-image-2.0 融合系列。
-	short := domain.ResolutionToShortEdge(explicit, domain.ImageTierShortEdge, dashscopeDefaultShortFusion)
+	short := project.ResolutionToShortEdge(explicit, project.ImageTierShortEdge, dashscopeDefaultShortFusion)
 	maxTotal := dashscopeStandardPixelBudget
 	ratio := dashscopeMaxRatio
-	w, h := domain.AspectSize(aspect, short, domain.AspectSizeOptions{
+	w, h := project.AspectSize(aspect, short, project.AspectSizeOptions{
 		RoundTo: 16, MaxTotalPixels: &maxTotal, MaxRatio: &ratio,
 	})
 	return fmt.Sprintf("%d*%d", w, h), nil

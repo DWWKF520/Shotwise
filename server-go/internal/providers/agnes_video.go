@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/provider"
@@ -328,9 +328,9 @@ func (b *agnesVideoBackend) encodeImage(path string, code provider.FailureCode, 
 // agnesResolveVideoSize 比例优先、清晰度其次：短边来自 resolution（档位 / 自定义 / 兜底 720p），
 // 比例精确来自 aspect_ratio、长宽被 8 整除、长边收口 1920。
 func agnesResolveVideoSize(resolution, aspectRatio string) (int, int) {
-	short := domain.ResolutionToShortEdge(resolution, domain.VideoTierShortEdge, domain.DefaultShortEdge)
+	short := project.ResolutionToShortEdge(resolution, project.VideoTierShortEdge, project.DefaultShortEdge)
 	maxLong := agnesVideoMaxLongEdge
-	return domain.AspectSize(aspectRatio, short, domain.AspectSizeOptions{
+	return project.AspectSize(aspectRatio, short, project.AspectSizeOptions{
 		RoundTo:     agnesVideoRoundTo,
 		MaxLongEdge: &maxLong,
 	})

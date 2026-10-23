@@ -3,15 +3,15 @@ package script
 import "github.com/shotwise/shotwise/internal/agent/tools"
 
 import (
-	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"context"
 	"errors"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // fakeTextCompletion 按序返回预置输出。
@@ -45,14 +45,14 @@ func newEpisodePlanningFixture(t *testing.T) (*fakeGenerationProjects, string) {
 	if err := os.WriteFile(filepath.Join(dir, "scripts", "episode_1.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pf := &domain.ProjectFile{
+	pf := &project.ProjectFile{
 		Title: "测试", ContentMode: "narration", SourceLanguage: "zh",
-		Episodes: []domain.EpisodeMeta{{
+		Episodes: []project.EpisodeMeta{{
 			Episode: 1, Title: "一", ScriptFile: "scripts/episode_1.json",
-			SourceRange:  &domain.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 4},
-			LedgerStatus: domain.LedgerStatusConsumed,
+			SourceRange:  &project.SourceRange{SourceFile: "source/novel.txt", Start: 0, End: 4},
+			LedgerStatus: project.LedgerStatusConsumed,
 		}},
-		PlanningCursor: &domain.PlanningCursor{SourceFile: "source/novel.txt", Offset: 4},
+		PlanningCursor: &project.PlanningCursor{SourceFile: "source/novel.txt", Offset: 4},
 	}
 	return &fakeGenerationProjects{pf: pf, dir: dir}, dir
 }
@@ -99,7 +99,7 @@ func TestResetEpisodePlanningToolTwoStageConfirmation(t *testing.T) {
 func TestPlanEpisodesToolReportsSummaryAndLedgerStats(t *testing.T) {
 	projects, _ := newEpisodePlanningFixture(t)
 	// 清空账本与上游产物，走首次规划路径。
-	projects.pf.Episodes = []domain.EpisodeMeta{}
+	projects.pf.Episodes = []project.EpisodeMeta{}
 	projects.pf.PlanningCursor = nil
 	if err := os.Remove(filepath.Join(projects.dir, "scripts", "episode_1.json")); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestPlanEpisodesToolReportsSummaryAndLedgerStats(t *testing.T) {
 	completion := &fakeTextCompletion{outputs: []string{
 		`{"episodes":[{"title":"第一集","hook":"留个悬念","end_anchor":"丙丁"}]}`,
 	}}
-	factory := func(context.Context, *domain.ProjectFile) (servicescript.TextCompletion, error) {
+	factory := func(context.Context, *project.ProjectFile) (servicescript.TextCompletion, error) {
 		return completion, nil
 	}
 	tl, err := NewPlanEpisodesTool("p1", projects, factory)

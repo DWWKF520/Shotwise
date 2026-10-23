@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
 )
-
 
 // UnregisteredReferencesError 表示 references 引用了未登记的资产（400 ref_not_registered）。
 type UnregisteredReferencesError struct{ Missing []string }
@@ -42,22 +42,21 @@ type ReorderValidationError struct{ Kind string }
 
 func (e *ReorderValidationError) Error() string { return "unit_ids validation failed: " + e.Kind }
 
-
 // assetKindForRefType 把参考类型映射到资产种类。
-func assetKindForRefType(refType string) (domain.AssetKind, bool) {
+func assetKindForRefType(refType string) (domainproject.AssetKind, bool) {
 	switch refType {
 	case "character":
-		return domain.AssetCharacter, true
+		return domainproject.AssetCharacter, true
 	case "scene":
-		return domain.AssetScene, true
+		return domainproject.AssetScene, true
 	case "prop":
-		return domain.AssetProp, true
+		return domainproject.AssetProp, true
 	}
 	return "", false
 }
 
 // UnregisteredReferences 返回 references 中未在 project.json 对应资产桶登记的条目（"type:name"）。
-func UnregisteredReferences(project *domain.ProjectFile, refs []domain.AdReference) []string {
+func UnregisteredReferences(project *domainproject.ProjectFile, refs []media.AdReference) []string {
 	var missing []string
 	for _, ref := range refs {
 		kind, ok := assetKindForRefType(ref.Type)
@@ -70,18 +69,17 @@ func UnregisteredReferences(project *domain.ProjectFile, refs []domain.AdReferen
 			missing = append(missing, ref.Type+":"+ref.Name)
 			continue
 		}
-		if _, found := bucket.ResolveKey(domain.NormalizeAssetName(ref.Name)); !found {
+		if _, found := bucket.ResolveKey(domainproject.NormalizeAssetName(ref.Name)); !found {
 			missing = append(missing, ref.Type+":"+ref.Name)
 		}
 	}
 	return missing
 }
 
-
 // requireAdProject 守卫端点适用的项目类型：ad 的 unit 是 shots 的派生索引（手工增删改重排走不通），
 // narration/drama 的 unit 内容自包含（派生走不通），互斥拒绝。
-func requireAdProject(project *domain.ProjectFile, required bool) error {
-	isAd := project.ContentMode == string(domain.ContentAd)
+func requireAdProject(project *domainproject.ProjectFile, required bool) error {
+	isAd := project.ContentMode == string(domainproject.ContentAd)
 	if required && !isAd {
 		return &AdOnlyDeriveError{}
 	}
@@ -95,8 +93,8 @@ func requireAdProject(project *domain.ProjectFile, required bool) error {
 //
 // 校验顺序与 Python _episode_script_resolver 一致：可选 ad 守卫 → 找集 → 参考模式 → 可选引用存在性。
 // requireAd 为 nil 时跳过 ad 守卫；refs 为 nil 时跳过引用存在性校验。
-func EpisodeScriptResolverFor(episode int, requireAd *bool, refs []domain.AdReference) service.EpisodeScriptResolver {
-	return func(project *domain.ProjectFile) (string, error) {
+func EpisodeScriptResolverFor(episode int, requireAd *bool, refs []media.AdReference) service.EpisodeScriptResolver {
+	return func(project *domainproject.ProjectFile) (string, error) {
 		if requireAd != nil {
 			if err := requireAdProject(project, *requireAd); err != nil {
 				return "", err
@@ -126,7 +124,7 @@ func AnnotateAdUnitStaleness(script map[string]any, units any) []any {
 	if !ok {
 		return []any{}
 	}
-	byID := domain.AdShotsByID(script)
+	byID := media.AdShotsByID(script)
 	out := make([]any, 0, len(list))
 	for _, raw := range list {
 		unit, ok := raw.(map[string]any)
@@ -141,7 +139,7 @@ func AnnotateAdUnitStaleness(script map[string]any, units any) []any {
 			}
 			entry[k] = v
 		}
-		if domain.AdUnitStaleByID(byID, unit) {
+		if media.AdUnitStaleByID(byID, unit) {
 			entry["stale"] = true
 		}
 		out = append(out, entry)
@@ -212,12 +210,13 @@ func FindUnitInKey(script map[string]any, key, unitID string) (map[string]any, e
 }
 
 // FindUnitForProject 按项目内容模式选 unit 所在列表：ad 在 reference_units 派生索引，其余在 video_units。
-func FindUnitForProject(project *domain.ProjectFile, script map[string]any, unitID string) (map[string]any, error) {
-	if project.ContentMode == string(domain.ContentAd) {
+func FindUnitForProject(project *domainproject.ProjectFile, script map[string]any, unitID string) (map[string]any, error) {
+	if project.ContentMode == string(domainproject.ContentAd) {
 		return FindAdUnit(script, unitID)
 	}
 	return FindUnit(script, unitID)
 }
+
 // NextUnitID 生成下一个可用的 unit_id（E{episode}U{n}，基于现有 video_units 序号递增）。
 func NextUnitID(script map[string]any, episode int) string {
 	existing := map[string]bool{}
@@ -256,7 +255,7 @@ func NewUnitGeneratedAssets() map[string]any {
 
 // BuildReferenceUnit 构造一个新 unit（对应 Python _build_unit_dict）：shots 由 prompt 书写层派生。
 func BuildReferenceUnit(
-	unitID, prompt string, refs []domain.AdReference, durationSeconds int, transition string, note *string,
+	unitID, prompt string, refs []media.AdReference, durationSeconds int, transition string, note *string,
 ) map[string]any {
 	shots, _ := parsePrompt(prompt)
 	shotsAny := make([]any, 0, len(shots))
@@ -290,5 +289,6 @@ func ToAnyList(in []map[string]any) []any {
 	}
 	return out
 }
+
 // ParsePrompt 导出书写层解析（parsePrompt），供 transport 复用为 unit 的 shots 派生入口。
 func ParsePrompt(text string) ([]map[string]any, []string) { return parsePrompt(text) }

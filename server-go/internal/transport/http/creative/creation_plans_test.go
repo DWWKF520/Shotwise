@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/shotwise/shotwise/internal/auth"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/creative"
@@ -85,7 +85,7 @@ func newCreationPlanTestEngineWithRole(t *testing.T, role string) (*gin.Engine, 
 
 	projects := t.TempDir()
 	store := service.NewProjectStore(projects)
-	if _, err := store.Create("p1", "项目一", domain.ContentDrama, domain.GenerationStoryboard, ""); err != nil {
+	if _, err := store.Create("p1", "项目一", project.ContentDrama, project.GenerationStoryboard, ""); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	plans := creative.NewCreationPlanService(gdb, dialect, creative.NewWorkflowService(gdb), nil)
@@ -251,7 +251,7 @@ func TestCreationPlanStartRejectsChangedSnapshot(t *testing.T) {
 	}
 	planID := workflowDecodeBody(t, rec)["plan_id"].(string)
 
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
 		pf.Style = "水墨"
 		return nil
 	}); err != nil {
@@ -292,7 +292,7 @@ func TestCreationPlanInvalidateThenRecompile(t *testing.T) {
 
 	// 重编译的意义在于「项目快照已变 → 用新快照重出一条不可变计划」：
 	// 快照不变时新计划与旧计划完全同构（plan_id 由快照决定），这里先改项目风格。
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
 		pf.Style = "水墨"
 		return nil
 	}); err != nil {

@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm/logger"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/migrations"
@@ -38,15 +38,15 @@ func newRelationsFixture(t *testing.T) relationsFixture {
 		}
 	})
 	store := service.NewProjectStore(t.TempDir())
-	if _, err := store.Create("p1", "测试项目", domain.ContentDrama, domain.GenerationStoryboard, "水墨"); err != nil {
+	if _, err := store.Create("p1", "测试项目", project.ContentDrama, project.GenerationStoryboard, "水墨"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := store.Update("p1", func(pf *project.ProjectFile) error {
 		if pf.Characters == nil {
-			pf.Characters = domain.AssetBucket{}
+			pf.Characters = project.AssetBucket{}
 		}
-		pf.Characters["阿明"] = domain.WrapAssetEntry(map[string]any{"description": "少年"})
-		pf.Characters["阿花"] = domain.WrapAssetEntry(map[string]any{"description": "少女"})
+		pf.Characters["阿明"] = project.WrapAssetEntry(map[string]any{"description": "少年"})
+		pf.Characters["阿花"] = project.WrapAssetEntry(map[string]any{"description": "少女"})
 		return nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -134,11 +134,11 @@ func TestRelationsSaveWithRevision(t *testing.T) {
 func TestRelationsDeletionSuppressesAIEdge(t *testing.T) {
 	f := newRelationsFixture(t)
 	// 先造一条 AI 边 + 一条人工边。
-	if err := f.store.Update("p1", func(pf *domain.ProjectFile) error {
+	if err := f.store.Update("p1", func(pf *project.ProjectFile) error {
 		if pf.Characters == nil {
-			pf.Characters = domain.AssetBucket{}
+			pf.Characters = project.AssetBucket{}
 		}
-		pf.Characters["小刚"] = domain.WrapAssetEntry(map[string]any{"description": "男孩"})
+		pf.Characters["小刚"] = project.WrapAssetEntry(map[string]any{"description": "男孩"})
 		if pf.CharacterRelations == nil {
 			pf.CharacterRelations = map[string]any{}
 		}

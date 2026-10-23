@@ -10,11 +10,12 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/media"
+	domainproject "github.com/shotwise/shotwise/internal/domain/project"
+	domainscript "github.com/shotwise/shotwise/internal/domain/script"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/generation"
 )
-
 
 // --- generate_storyboards ---
 
@@ -63,11 +64,11 @@ func runGenerateStoryboards(
 	}
 	// 失配剧本在此被拒：按分镜路线该读的数组不在剧本里，继续走下去会落进
 	// 「所有片段的分镜图都已生成」的假成功，把成因埋掉。
-	if _, err := domain.EnsureRouteSkeleton(script, pf.ContentMode, pf.GenerationMode); err != nil {
+	if _, err := domainscript.EnsureRouteSkeleton(script, pf.ContentMode, pf.GenerationMode); err != nil {
 		return "", false, err
 	}
 
-	items, idField, fields := domain.StoryboardItems(script)
+	items, idField, fields := media.StoryboardItems(script)
 	if len(items) == 0 {
 		return "", false, fmt.Errorf("剧本没有可生成分镜图的片段")
 	}
@@ -86,7 +87,7 @@ func runGenerateStoryboards(
 			targetIDs = append(targetIDs, fmt.Sprint(item[idField]))
 		}
 	} else {
-		targetIDs = domain.StoryboardItemsMissingImage(items, idField)
+		targetIDs = media.StoryboardItemsMissingImage(items, idField)
 		if len(targetIDs) == 0 {
 			return "✨ 所有片段的分镜图都已生成", false, nil
 		}
@@ -109,7 +110,7 @@ func runGenerateStoryboards(
 		itemsByID[fmt.Sprint(entry[idField])] = entry
 	}
 
-	plans := domain.BuildStoryboardDependencyPlan(items, idField, targetIDs, in.Script)
+	plans := media.BuildStoryboardDependencyPlan(items, idField, targetIDs, in.Script)
 	var tasks []tools.GenerationTask
 	for _, plan := range plans {
 		item, ok := itemsByID[plan.ResourceID]
@@ -152,8 +153,8 @@ func runGenerateStoryboards(
 
 // preflightFor 逐条校验待入队分镜的资产引用。
 func preflightFor(
-	tasks []tools.GenerationTask, itemsByID map[string]map[string]any, pf *domain.ProjectFile,
-	projectDir string, fields domain.StoryboardItemFields,
+	tasks []tools.GenerationTask, itemsByID map[string]map[string]any, pf *domainproject.ProjectFile,
+	projectDir string, fields media.StoryboardItemFields,
 ) []service.PreflightResult {
 	results := make([]service.PreflightResult, 0, len(tasks))
 	for _, task := range tasks {
@@ -167,7 +168,7 @@ func preflightFor(
 }
 
 // scriptContentMode 取剧本内容模式，缺失时回落到项目配置（与读侧既定口径一致）。
-func scriptContentMode(script map[string]any, pf *domain.ProjectFile) string {
+func scriptContentMode(script map[string]any, pf *domainproject.ProjectFile) string {
 	if mode, ok := script["content_mode"].(string); ok && mode != "" {
 		return mode
 	}
@@ -217,17 +218,17 @@ func runGenerateNarrationAudio(
 	// 内容模式与路线都以项目为兜底真相源：只读剧本自身的 content_mode 会让缺该字段的剧本
 	// 在 drama 项目下绕过模式拒绝，落进「0 succeeded, 0 failed」的空转（drama 的 scenes 没有 novel_text）。
 	contentMode := scriptContentMode(script, pf)
-	if contentMode == string(domain.ContentDrama) {
+	if contentMode == string(domainproject.ContentDrama) {
 		return "", false, fmt.Errorf("旁白配音仅适用说书（narration）模式剧本；drama 模式的 scenes 没有 novel_text")
 	}
-	if _, err := domain.EnsureRouteSkeleton(script, contentMode, pf.GenerationMode); err != nil {
+	if _, err := domainscript.EnsureRouteSkeleton(script, contentMode, pf.GenerationMode); err != nil {
 		return "", false, err
 	}
 	if pf.IsReferenceVideo() {
 		return "", false, fmt.Errorf("参考生视频（reference_video）路线的剧本没有 segments，不适用旁白配音")
 	}
 
-	items, idField, _ := domain.StoryboardItems(script)
+	items, idField, _ := media.StoryboardItems(script)
 	if len(items) == 0 {
 		return "", false, fmt.Errorf("剧本没有可配音的片段")
 	}

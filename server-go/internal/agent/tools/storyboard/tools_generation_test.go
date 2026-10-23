@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 )
 
 // 分镜图 / 旁白配音工具的端到端用例；共享替身见 fakes_test.go。
@@ -80,10 +80,10 @@ func TestGenerateStoryboardsRejectsRouteMismatchAndUnknownIDs(t *testing.T) {
 func TestGenerateStoryboardsBlocksOnPreflightFailure(t *testing.T) {
 	q, projects := newGenerationFixture(t)
 	// 角色条目的设计图指向不存在的文件 → preflight 应阻断整批。
-	entry := domain.NewAssetEntry()
+	entry := project.NewAssetEntry()
 	entry.SetString("description", "少年")
 	entry.SetString("character_sheet", "characters/缺图.png")
-	projects.pf.Characters = domain.AssetBucket{"阿明": entry}
+	projects.pf.Characters = project.AssetBucket{"阿明": entry}
 
 	tl, err := NewGenerateStoryboardsTool("proj", q, projects)
 	if err != nil {

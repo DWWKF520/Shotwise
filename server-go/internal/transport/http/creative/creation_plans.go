@@ -18,7 +18,8 @@ import (
 
 	"github.com/shotwise/shotwise/internal/apperr"
 	"github.com/shotwise/shotwise/internal/auth"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
 	"github.com/shotwise/shotwise/internal/service/creative"
 )
@@ -88,7 +89,7 @@ var creationPlanModes = map[string]bool{"auto": true, "manual": true, "hybrid": 
 // --- 项目读取 ---
 
 // loadProjectMap 读取项目并转成通用映射；不存在时写出 404。
-func loadProjectMap(c *gin.Context, store *service.ProjectStore, projectID string) (map[string]any, *domain.ProjectFile, bool) {
+func loadProjectMap(c *gin.Context, store *service.ProjectStore, projectID string) (map[string]any, *project.ProjectFile, bool) {
 	file, err := store.Get(projectID)
 	if err != nil || file == nil {
 		apperr.Abort(c, apperr.NewLiteral(http.StatusNotFound, "project_not_found"))
@@ -455,10 +456,10 @@ func abortCreationErr(c *gin.Context, err error) {
 	var (
 		notFound       *creative.CreationPlanNotFoundError
 		startError     *creative.CreationPlanStartError
-		planError      *domain.CreationPlanError
+		planError      *creation.CreationPlanError
 		forbidden      *creative.CreationSkillForbiddenError
 		invalidOutcome *creative.CreationPlanInvalidOutcomeError
-		validation     *domain.WorkflowValidationError
+		validation     *creation.WorkflowValidationError
 		workflowNF     *creative.WorkflowNotFoundError
 		workflowCF     *creative.WorkflowConflictError
 		manifest       *creative.CreationSkillManifestConflictError

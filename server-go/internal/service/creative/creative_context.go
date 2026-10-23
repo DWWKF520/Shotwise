@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
 	"github.com/shotwise/shotwise/internal/repository"
 	"gorm.io/gorm"
 )
@@ -34,8 +34,8 @@ type CreativeContextRequest struct {
 	CreativeBoardID        string
 	EpisodeID              *string
 	ShotID                 *string
-	SelectedResources      []domain.SelectedResource
-	ContextReferences      []domain.ContextReference
+	SelectedResources      []creation.SelectedResource
+	ContextReferences      []creation.ContextReference
 	CurrentSkillID         *string
 	CreationPlanID         string
 	WorkflowRunID          *string
@@ -71,7 +71,7 @@ func (s *CreativeContextService) ResolveCreationContext(
 	boardPayload := map[string]any{
 		"id": board.ID, "project_id": board.ProjectID, "items": boardItems,
 	}
-	return domain.ResolveCreationContext(domain.ResolveCreationContextParams{
+	return creation.ResolveCreationContext(creation.ResolveCreationContextParams{
 		ProjectID:              projectID,
 		Project:                project,
 		SelectedResources:      req.SelectedResources,
@@ -110,7 +110,7 @@ func (s *CreativeContextService) ResolveContextReferences(
 	if err != nil {
 		return nil, err
 	}
-	return domain.ResolveContextReferences(domain.ResolveContextReferencesParams{
+	return creation.ResolveContextReferences(creation.ResolveContextReferencesParams{
 		ProjectID:         projectID,
 		Project:           project,
 		References:        req.ContextReferences,
@@ -148,12 +148,12 @@ func (s *CreativeContextService) loadBoard(
 		return nil, nil, err
 	}
 	if board == nil {
-		return nil, nil, &domain.CreativeContextResolutionError{
+		return nil, nil, &creation.CreativeContextResolutionError{
 			Code: "creative_board_not_found", Details: map[string]any{"creative_board_id": boardID},
 		}
 	}
 	if board.ProjectID != projectID {
-		return nil, nil, &domain.CreativeContextResolutionError{Code: "creative_board_project_mismatch"}
+		return nil, nil, &creation.CreativeContextResolutionError{Code: "creative_board_project_mismatch"}
 	}
 	items, err := s.boards.ListItems(ctx, board.ID)
 	if err != nil {
@@ -186,7 +186,7 @@ func (s *CreativeContextService) loadPlanPayload(
 	var plan repository.CreationPlan
 	err := s.db.WithContext(ctx).Where("id = ? AND user_id = ?", planID, userID).Take(&plan).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, &domain.CreativeContextResolutionError{
+		return nil, &creation.CreativeContextResolutionError{
 			Code: "creation_plan_not_found", Details: map[string]any{"creation_plan_id": planID},
 		}
 	}
@@ -229,7 +229,7 @@ func (s *CreativeContextService) loadRunPayload(
 	var run repository.WorkflowRun
 	err := s.db.WithContext(ctx).Where("id = ? AND user_id = ?", *runID, userID).Take(&run).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, &domain.CreativeContextResolutionError{
+		return nil, &creation.CreativeContextResolutionError{
 			Code: "workflow_run_not_found", Details: map[string]any{"workflow_run_id": *runID},
 		}
 	}
@@ -237,7 +237,7 @@ func (s *CreativeContextService) loadRunPayload(
 		return nil, err
 	}
 	if run.ProjectID != projectID {
-		return nil, &domain.CreativeContextResolutionError{Code: "workflow_run_project_mismatch"}
+		return nil, &creation.CreativeContextResolutionError{Code: "workflow_run_project_mismatch"}
 	}
 	payload := map[string]any{
 		"id": run.ID, "project_id": run.ProjectID, "status": run.Status,

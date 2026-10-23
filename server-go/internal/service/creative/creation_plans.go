@@ -21,7 +21,8 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/shotwise/shotwise/internal/config"
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/creation"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
 	"github.com/shotwise/shotwise/internal/provider"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -43,13 +44,13 @@ func (e *CreationPlanStartError) Error() string { return e.Code }
 // CreationPlanResolver 是能力预检所需的通道解析能力（*config.Resolver 满足）。
 type CreationPlanResolver interface {
 	ResolveImageBackend(
-		ctx context.Context, project *domain.ProjectFile, payload map[string]any, cap config.ImageCapability,
+		ctx context.Context, project *project.ProjectFile, payload map[string]any, cap config.ImageCapability,
 	) (config.ProviderModel, error)
 	ResolveVideoBackend(
-		ctx context.Context, project *domain.ProjectFile, payload map[string]any, bucket *provider.VideoBucket,
+		ctx context.Context, project *project.ProjectFile, payload map[string]any, bucket *provider.VideoBucket,
 	) (config.ProviderModel, error)
 	ResolveAudioBackend(
-		ctx context.Context, project *domain.ProjectFile, payload map[string]any,
+		ctx context.Context, project *project.ProjectFile, payload map[string]any,
 	) (config.ProviderModel, error)
 }
 
@@ -176,7 +177,7 @@ func stringify(value any) string {
 }
 
 func jsonNumber(value float64) string {
-	encoded, err := domain.WorkflowCanonicalJSON(value)
+	encoded, err := creation.WorkflowCanonicalJSON(value)
 	if err != nil {
 		return "0"
 	}
@@ -192,7 +193,7 @@ type CreationPlanPreviewParams struct {
 	ProjectID              string
 	CreationSkillVersionID string
 	Project                map[string]any
-	ProjectFile            *domain.ProjectFile
+	ProjectFile            *project.ProjectFile
 	ResourceIDs            []string
 	ResourceTypes          []string
 	ResourceMapping        []map[string]any
@@ -206,7 +207,7 @@ type CreationPlanPreviewParams struct {
 
 // CreationPlanPreview 是面向用户的预览，刻意与"启动"分离。
 type CreationPlanPreview struct {
-	Plan            *domain.CreationPlan
+	Plan            *creation.CreationPlan
 	ResourceIDs     []string
 	ResourceMapping []map[string]any
 	Parameters      map[string]any
@@ -282,7 +283,7 @@ func (s *CreationPlanService) createPreview(
 	}
 	normalizedIDs := normalizeResourceIDs(p.ResourceIDs)
 	if len(normalizedIDs) == 0 {
-		return nil, &domain.CreationPlanError{Message: "at least one real resource must be selected"}
+		return nil, &creation.CreationPlanError{Message: "at least one real resource must be selected"}
 	}
 	normalizedMapping := normalizeResourceMapping(p.ResourceMapping, normalizedIDs, p.ResourceTypes)
 	if len(normalizedMapping) > 0 {
@@ -303,7 +304,7 @@ func (s *CreationPlanService) createPreview(
 		return nil, err
 	}
 	if p.EstimatedCost != nil && (!isFinite(*p.EstimatedCost) || *p.EstimatedCost < 0) {
-		return nil, &domain.CreationPlanError{Message: "estimated_cost must be finite and non-negative"}
+		return nil, &creation.CreationPlanError{Message: "estimated_cost must be finite and non-negative"}
 	}
 	effectiveCost := p.EstimatedCost
 	effectiveSteps := append([]string{}, p.Steps...)
@@ -356,7 +357,7 @@ func (s *CreationPlanService) createPreview(
 	if err != nil {
 		return nil, err
 	}
-	report := domain.CompatibilityReportWithAlternatives(
+	report := creation.CompatibilityReportWithAlternatives(
 		skill, p.Project, availableInputs, alternativeSkillIDs(skill, p.Project, availableInputs),
 	)
 	var compatibilityEventID string
@@ -526,7 +527,7 @@ func normalizeResourceMapping(
 // resolveSkillVersion 解析请求的版本；缺失时先同步官方目录再解析一次。
 func (s *CreationPlanService) resolveSkillVersion(
 	ctx context.Context, tx *gorm.DB, skillVersionID string,
-) (*domain.CreationSkillDefinition, *domain.CreationSkillVersion, error) {
+) (*creation.CreationSkillDefinition, *creation.CreationSkillVersion, error) {
 	skill, version, err := s.catalog.GetPersistedCreationSkillVersion(ctx, skillVersionID)
 	if err != nil {
 		return nil, nil, err
@@ -541,7 +542,7 @@ func (s *CreationPlanService) resolveSkillVersion(
 		}
 	}
 	if skill == nil {
-		return nil, nil, &domain.CreationPlanError{
+		return nil, nil, &creation.CreationPlanError{
 			Message: "unknown or unavailable creation_skill_version_id: " + skillVersionID,
 		}
 	}
@@ -550,32 +551,32 @@ func (s *CreationPlanService) resolveSkillVersion(
 
 // resolveWorkflowRevision 解析具体已发布 revision，绝不接受 Skill id / version 别名。
 func (s *CreationPlanService) resolveWorkflowRevision(
-	ctx context.Context, tx *gorm.DB, version *domain.CreationSkillVersion, requested *string,
+	ctx context.Context, tx *gorm.DB, version *creation.CreationSkillVersion, requested *string,
 ) (string, error) {
 	boundRevision := ""
 	if version.WorkflowRevisionID != nil {
 		boundRevision = strings.TrimSpace(*version.WorkflowRevisionID)
 	}
 	if boundRevision == "" || strings.HasPrefix(boundRevision, "official:") {
-		return "", &domain.CreationPlanError{Message: "CreationSkillVersion has no bound Workflow Revision"}
+		return "", &creation.CreationPlanError{Message: "CreationSkillVersion has no bound Workflow Revision"}
 	}
 	if boundRevision == version.ID || boundRevision == version.SkillID {
-		return "", &domain.CreationPlanError{Message: "CreationPlan requires a concrete Workflow Revision id"}
+		return "", &creation.CreationPlanError{Message: "CreationPlan requires a concrete Workflow Revision id"}
 	}
 	if requested != nil && *requested != "" && *requested != boundRevision {
-		return "", &domain.CreationPlanError{
+		return "", &creation.CreationPlanError{
 			Message: "requested workflow_revision does not match the Skill Version binding",
 		}
 	}
 	var revision repository.WorkflowRevision
 	if err := tx.Where("id = ?", boundRevision).Take(&revision).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", &domain.CreationPlanError{Message: "Workflow Revision was not found"}
+			return "", &creation.CreationPlanError{Message: "Workflow Revision was not found"}
 		}
 		return "", err
 	}
 	if revision.Status != "published" {
-		return "", &domain.CreationPlanError{Message: "Workflow Revision must be published"}
+		return "", &creation.CreationPlanError{Message: "Workflow Revision must be published"}
 	}
 	return boundRevision, nil
 }
@@ -598,7 +599,7 @@ func requiredCapabilities(nodeRows []repository.WorkflowNode) []string {
 
 // capabilityPreflight 在计划落库或启动前解析可执行的供应商 / 模型通道。
 func (s *CreationPlanService) capabilityPreflight(
-	ctx context.Context, projectID string, projectFile *domain.ProjectFile, nodeRows []repository.WorkflowNode,
+	ctx context.Context, projectID string, projectFile *project.ProjectFile, nodeRows []repository.WorkflowNode,
 ) map[string]any {
 	required := map[string]bool{}
 	invalid := false
@@ -734,7 +735,7 @@ func intersects(set map[string]bool, keys ...string) bool {
 
 // CompilePreviewParams 是 CompileCreationPlanPreview 的入参。
 type CompilePreviewParams struct {
-	SkillVersion     *domain.CreationSkillVersion
+	SkillVersion     *creation.CreationSkillVersion
 	ProjectID        string
 	Project          map[string]any
 	ResourceIDs      []string
@@ -754,14 +755,14 @@ func CompileCreationPlanPreview(p CompilePreviewParams) (*CreationPlanPreview, e
 		parameters[key] = value
 	}
 	forbidden := make([]string, 0)
-	for _, key := range domain.CreationPlanForbiddenOverrides {
+	for _, key := range creation.CreationPlanForbiddenOverrides {
 		if _, exists := parameters[key]; exists {
 			forbidden = append(forbidden, key)
 		}
 	}
 	if len(forbidden) > 0 {
 		sort.Strings(forbidden)
-		return nil, &domain.CreationPlanError{
+		return nil, &creation.CreationPlanError{
 			Message: "CreationPlan does not accept mode overrides: " + strings.Join(forbidden, ", "),
 		}
 	}
@@ -787,7 +788,7 @@ func CompileCreationPlanPreview(p CompilePreviewParams) (*CreationPlanPreview, e
 			availableInputs[item["type"]] = true
 		}
 	}
-	context, err := domain.ProjectContextSnapshotFromProject(p.ProjectID, p.Project)
+	context, err := creation.ProjectContextSnapshotFromProject(p.ProjectID, p.Project)
 	if err != nil {
 		return nil, err
 	}
@@ -808,7 +809,7 @@ func CompileCreationPlanPreview(p CompilePreviewParams) (*CreationPlanPreview, e
 		"parameters":        parameters,
 		"workflow_revision": p.WorkflowRevision,
 	}
-	planID, err := domain.CreationPlanStableID(stablePayload)
+	planID, err := creation.CreationPlanStableID(stablePayload)
 	if err != nil {
 		return nil, err
 	}
@@ -820,7 +821,7 @@ func CompileCreationPlanPreview(p CompilePreviewParams) (*CreationPlanPreview, e
 	for _, item := range p.ReviewPoints {
 		reviewPoints = append(reviewPoints, item)
 	}
-	plan, err := domain.CompileCreationPlan(domain.CompileCreationPlanParams{
+	plan, err := creation.CompileCreationPlan(creation.CompileCreationPlanParams{
 		PlanID:           planID,
 		SkillID:          p.SkillVersion.SkillID,
 		WorkflowRevision: p.WorkflowRevision,
@@ -841,7 +842,7 @@ func CompileCreationPlanPreview(p CompilePreviewParams) (*CreationPlanPreview, e
 		return nil, err
 	}
 	if p.EstimatedCost < 0 {
-		return nil, &domain.CreationPlanError{Message: "estimated_cost must be non-negative"}
+		return nil, &creation.CreationPlanError{Message: "estimated_cost must be non-negative"}
 	}
 	return &CreationPlanPreview{
 		Plan:            plan,
@@ -1138,11 +1139,11 @@ func (s *CreationPlanService) setPlanRunning(
 }
 
 func assertSnapshotMatches(record *repository.CreationPlan, project map[string]any) error {
-	context, err := domain.ProjectContextSnapshotFromProject(record.ProjectID, project)
+	context, err := creation.ProjectContextSnapshotFromProject(record.ProjectID, project)
 	if err != nil {
 		return err
 	}
-	current, err := domain.WorkflowCanonicalJSON(context.ToDict())
+	current, err := creation.WorkflowCanonicalJSON(context.ToDict())
 	if err != nil {
 		return err
 	}
@@ -1182,7 +1183,7 @@ func (s *CreationPlanService) CancelCreationPlan(
 		if record.WorkflowRunID != nil && *record.WorkflowRunID != "" {
 			var run repository.WorkflowRun
 			if err := tx.Where("id = ?", *record.WorkflowRunID).Take(&run).Error; err == nil {
-				if !domain.WorkflowTerminalRunStatuses[run.Status] {
+				if !creation.WorkflowTerminalRunStatuses[run.Status] {
 					if _, err := s.workflows.transitionRun(
 						ctx, tx, run.ID, "cancelled", run.Version, userID,
 					); err != nil {
@@ -1286,11 +1287,11 @@ func (s *CreationPlanService) RecompileCreationPlan(
 		if err := json.Unmarshal([]byte(record.ParametersJSON), &parameters); err != nil {
 			return &CreationPlanStartError{Code: "creation_plan_snapshot_invalid"}
 		}
-		context, err := domain.ProjectContextSnapshotFromProject(record.ProjectID, project)
+		context, err := creation.ProjectContextSnapshotFromProject(record.ProjectID, project)
 		if err != nil {
 			return err
 		}
-		snapshotKey, err := domain.WorkflowCanonicalJSON(context.ToDict())
+		snapshotKey, err := creation.WorkflowCanonicalJSON(context.ToDict())
 		if err != nil {
 			return err
 		}
@@ -1346,7 +1347,7 @@ func (s *CreationPlanService) RestartCreationPlan(
 			}
 			return err
 		}
-		if !domain.WorkflowTerminalRunStatuses[previousRun.Status] {
+		if !creation.WorkflowTerminalRunStatuses[previousRun.Status] {
 			return &CreationPlanStartError{Code: "creation_plan_run_not_terminal"}
 		}
 		if err := assertSnapshotMatches(record, p.Project); err != nil {

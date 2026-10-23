@@ -15,10 +15,10 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	toolutils "github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/shotwise/shotwise/internal/domain"
+	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/service"
-	servicescript "github.com/shotwise/shotwise/internal/service/script"
 	serviceref "github.com/shotwise/shotwise/internal/service/reference"
+	servicescript "github.com/shotwise/shotwise/internal/service/script"
 )
 
 // referenceSplitIn 是 split_reference_video_units 的入参。
@@ -341,7 +341,7 @@ func newValidateAndPromoteReferenceDraftTool(
 //
 // 返回 (消息文本, 是否为错误)。isError 为 true 时消息以 deny 信封回传；为 false 时是晋升成功的摘要。
 func promoteReferenceStep1(
-	ctx context.Context, dir string, pf *domain.ProjectFile, episode int,
+	ctx context.Context, dir string, pf *project.ProjectFile, episode int,
 	draft *serviceref.QuarantinedDraft, caps tools.VideoCapabilityReader,
 ) (string, bool) {
 	resolver, ok := tools.ReferenceResolver(caps)
@@ -409,7 +409,6 @@ func promoteReferenceStep1(
 	warnings := serviceref.ReferenceVoiceWarningLines(texts, pf, revalidation.Caps.Voice)
 	return serviceref.ReferenceResultText(step1Path, units, warnings, "晋升"), false
 }
-
 
 // unsupportedVersion 提取隔离信封的未来版本号（非该错误时 ok=false）。
 func unsupportedVersion(err error) (int, bool) {
