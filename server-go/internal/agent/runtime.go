@@ -513,17 +513,43 @@ func (r *Runtime) Query(ctx context.Context, sessionID, project, message string)
 // ErrSkillNotInvocable 表示显式触发的 skill 在项目中不存在或不可由用户触发。
 var ErrSkillNotInvocable = errors.New("agent: skill is not user-invocable in this project")
 
+// SkillNotInvocableError 在 ErrSkillNotInvocable 之上携带 skill 名与项目内可用 skill 列表，
+// transport 据此渲染带可用列表的结构化错误（供客户端补全提示）。
+type SkillNotInvocableError struct {
+	Skill     string
+	Available []string
+}
+
+func (e *SkillNotInvocableError) Error() string {
+	return fmt.Sprintf("%s: %s", ErrSkillNotInvocable, e.Skill)
+}
+
+func (e *SkillNotInvocableError) Unwrap() error { return ErrSkillNotInvocable }
+
+// ensureInvocableSkill 校验 skill 在项目中存在且 user-invocable；不满足时返回
+// SkillNotInvocableError（Available 为项目内全部可用 skill 名，恒非 nil）。
+func (r *Runtime) ensureInvocableSkill(project, skill string) error {
+	entries, err := skills.ListUserInvocable(filepath.Join(r.dataDir, project, ".claude", "skills"))
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(entries, func(e skills.CatalogEntry) bool { return e.Name == skill }) {
+		return nil
+	}
+	available := make([]string, 0, len(entries))
+	for _, e := range entries {
+		available = append(available, e.Name)
+	}
+	return &SkillNotInvocableError{Skill: skill, Available: available}
+}
+
 // QueryWithSkill 提交一条用户消息并显式触发 skill（§17.5）。skill 为空时等价于 Query。
 func (r *Runtime) QueryWithSkill(ctx context.Context, sessionID, project, skill, message string) (string, <-chan Event, func(), error) {
 	if skill == "" {
 		return r.Query(ctx, sessionID, project, message)
 	}
-	entries, err := skills.ListUserInvocable(filepath.Join(r.dataDir, project, ".claude", "skills"))
-	if err != nil {
+	if err := r.ensureInvocableSkill(project, skill); err != nil {
 		return sessionID, nil, nil, err
-	}
-	if !slices.ContainsFunc(entries, func(e skills.CatalogEntry) bool { return e.Name == skill }) {
-		return sessionID, nil, nil, fmt.Errorf("%w: %s", ErrSkillNotInvocable, skill)
 	}
 	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message, SkillHint: skill}, false)
 }

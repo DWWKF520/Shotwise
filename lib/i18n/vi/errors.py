@@ -390,6 +390,8 @@ MESSAGES = {
     "version_not_found": "Phiên bản {version} không tồn tại",
     "version_resource_not_found": "Tài nguyên '{resource_type}/{resource_id}' không tồn tại",
     "session_busy": "Phiên đang xử lý; vui lòng đợi phản hồi hiện tại hoàn tất trước khi gửi",
+    "skill_not_invocable": "Skill '{skill}' không tồn tại hoặc không thể gọi trực tiếp",
+    "skill_not_invocable_available": "Skill '{skill}' không tồn tại hoặc không thể gọi trực tiếp; skill khả dụng: {available}",
     "session_capacity_exceeded": "Đã đạt giới hạn phiên đồng thời, vui lòng thử lại sau",
     "session_question_unavailable": "Phiên chưa chạy hoặc không có câu hỏi đang chờ",
     "rewrite_anchor_invalid": "Tin nhắn bạn muốn sửa không thuộc cuộc trò chuyện này, hãy tải lại rồi thử lại",

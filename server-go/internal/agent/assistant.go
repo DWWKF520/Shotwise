@@ -215,11 +215,31 @@ func (a *AssistantService) createNewSession(ctx context.Context, project, text, 
 
 // dispatch 把消息排入会话 loop 并挂状态回写：meta 置 running，轮次终结时按
 // 末次 status 事件映射回写终态（error / cancelled→interrupted / 其余 completed）。
+//
+// 消息以 /skill-name 开头时按显式 skill 调用路由（§17.5）：先校验 user-invocable 再改
+// 会话状态，不可触发的 skill 直接报错，不写 running；正文只送参数部分，SkillHint 由
+// 轮输入前缀向模型明示，事件日志里保留用户原始输入（受理条目由调用方先写）。
 func (a *AssistantService) dispatch(ctx context.Context, sessionID, project, text, userID string) error {
+	skill, modelText := ParseSlashCommand(text)
+	if skill != "" {
+		if err := a.rt.ensureInvocableSkill(project, skill); err != nil {
+			return err
+		}
+	}
 	if _, err := a.meta.UpdateStatus(ctx, sessionID, service.SessionStatusRunning, strPtr(userID)); err != nil {
 		return err
 	}
-	_, ch, _, err := a.rt.QueryPrelogged(ctx, sessionID, project, text)
+	var (
+		ch  <-chan Event
+		err error
+	)
+	if skill != "" {
+		// skill 已在上方校验，这里只注入 SkillHint，不再重复读目录。
+		_, ch, _, err = a.rt.submitQuery(ctx, sessionID, project,
+			InboxItem{Kind: InboxUserMessage, Text: modelText, SkillHint: skill}, true)
+	} else {
+		_, ch, _, err = a.rt.QueryPrelogged(ctx, sessionID, project, modelText)
+	}
 	if err != nil {
 		_, _ = a.meta.UpdateStatus(ctx, sessionID, service.SessionStatusError, strPtr(userID))
 		return err

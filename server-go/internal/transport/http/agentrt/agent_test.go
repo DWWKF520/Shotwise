@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,9 +23,30 @@ import (
 	"github.com/shotwise/shotwise/internal/agent/eventlog"
 )
 
-// scriptedModel 按脚本回放 assistant 消息（streaming 单 chunk），脚本耗尽后返回兜底文本。
+// scriptedModel 按脚本回放 assistant 消息（streaming 单 chunk），脚本耗尽后返回兜底文本；
+// 同时记录每次调用收到的用户轮文本，供断言 / 前缀改写结果。
 type scriptedModel struct {
 	script []*schema.Message
+
+	mu        sync.Mutex
+	userTexts []string
+}
+
+func (m *scriptedModel) record(in []*schema.Message) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, msg := range in {
+		if msg.Role == schema.User {
+			m.userTexts = append(m.userTexts, msg.Content)
+		}
+	}
+}
+
+// userTurns 返回历次模型调用收集到的用户轮文本。
+func (m *scriptedModel) userTurns() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.userTexts...)
 }
 
 func (m *scriptedModel) next() *schema.Message {
@@ -34,11 +58,13 @@ func (m *scriptedModel) next() *schema.Message {
 	return msg
 }
 
-func (m *scriptedModel) Generate(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
+func (m *scriptedModel) Generate(_ context.Context, in []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	m.record(in)
 	return m.next(), nil
 }
 
-func (m *scriptedModel) Stream(context.Context, []*schema.Message, ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+func (m *scriptedModel) Stream(_ context.Context, in []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	m.record(in)
 	return schema.StreamReaderFromArray([]*schema.Message{m.next()}), nil
 }
 
@@ -52,11 +78,14 @@ func toolCallMsg(id, name, args string) *schema.Message {
 	}}}
 }
 
-// newAgentFixture 起一个不带鉴权的 agent 路由壳（认证中间件由 auth 自己的测试覆盖）。
+// newAgentFixture 起一个不带鉴权的 agent 路由壳（认证中间件由 auth 自己的测试覆盖），
+// 并为项目 p1 落一个 user-invocable 的 demo skill（/ 前缀路由测试用）。
 func newAgentFixture(t *testing.T, m model.ToolCallingChatModel) (*gin.Engine, *agent.Runtime) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	rt, err := agent.NewRuntime(context.Background(), agent.ModelConfig{}, t.TempDir(),
+	dataDir := t.TempDir()
+	writeAgentSkill(t, dataDir, "p1", "demo")
+	rt, err := agent.NewRuntime(context.Background(), agent.ModelConfig{}, dataDir,
 		checkpoint.NewMemStore(), eventlog.NewMemStore(),
 		agent.WithChatModel(m), agent.WithIdleTimeout(100*time.Millisecond))
 	if err != nil {
@@ -67,6 +96,19 @@ func newAgentFixture(t *testing.T, m model.ToolCallingChatModel) (*gin.Engine, *
 	RegisterAgentRoutes(v1, rt)
 	RegisterAgentStreamRoutes(v1, rt)
 	return r, rt
+}
+
+// writeAgentSkill 在 dataDir/<project>/.claude/skills/<name> 下写一个通用 skill。
+func writeAgentSkill(t *testing.T, dataDir, project, name string) {
+	t.Helper()
+	dir := filepath.Join(dataDir, project, ".claude", "skills", name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: " + name + "\ndescription: " + name + " skill\n---\n# " + name + "\nstep one\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func get(t *testing.T, router *gin.Engine, path string, headers map[string]string) *httptest.ResponseRecorder {
@@ -255,6 +297,81 @@ func TestAgentInterrupt_Idempotent(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"status":"idle"`) {
 		t.Fatalf("body = %s, want idle", rec.Body.String())
+	}
+}
+
+// postQuery 提交一条 /agent/query 并返回响应记录。
+func postQuery(t *testing.T, router *gin.Engine, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	return httpkittest.PostJSON(t, router, "/api/v1/agent/query", body)
+}
+
+// / 前缀输入：正文只送 /name 之后的参数，轮输入带 skill 触发前缀。
+func TestAgentQuery_SlashInvokesSkill(t *testing.T) {
+	m := &scriptedModel{script: []*schema.Message{{Role: schema.Assistant, Content: "ok"}}}
+	router, _ := newAgentFixture(t, m)
+
+	rec := postQuery(t, router, map[string]any{"session_id": "slash-1", "project": "p1", "message": "/demo 生成视频"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var found bool
+	for _, turn := range m.userTurns() {
+		if strings.Contains(turn, "[用户请求触发 skill: demo] 生成视频") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("模型用户轮未带 skill 前缀: %v", m.userTurns())
+	}
+}
+
+// skill 不存在：400 结构化错误，附项目内可用 skill 列表。
+func TestAgentQuery_SlashUnknownSkillRejected(t *testing.T) {
+	router, _ := newAgentFixture(t, &scriptedModel{})
+
+	rec := postQuery(t, router, map[string]any{"session_id": "slash-2", "project": "p1", "message": "/nope go"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Code      string   `json:"code"`
+			Message   string   `json:"message"`
+			Available []string `json:"available"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Error.Code != "skill_not_invocable" {
+		t.Fatalf("code = %q", body.Error.Code)
+	}
+	if len(body.Error.Available) != 1 || body.Error.Available[0] != "demo" {
+		t.Fatalf("available = %v, want [demo]", body.Error.Available)
+	}
+	if body.Error.Message == "" {
+		t.Fatal("message 不能为空")
+	}
+}
+
+// / 不在行首或首 token 含 /：按普通文本透传，不触发 skill。
+func TestAgentQuery_SlashNotACommandPassesThrough(t *testing.T) {
+	m := &scriptedModel{script: []*schema.Message{{Role: schema.Assistant, Content: "ok"}}}
+	router, _ := newAgentFixture(t, m)
+
+	rec := postQuery(t, router, map[string]any{"session_id": "slash-3", "project": "p1", "message": "/api/v1/x hello"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	turns := m.userTurns()
+	if len(turns) == 0 || !strings.Contains(turns[0], "/api/v1/x hello") {
+		t.Fatalf("非命令输入应原样透传: %v", turns)
+	}
+	for _, turn := range turns {
+		if strings.Contains(turn, "[用户请求触发 skill:") {
+			t.Fatalf("非命令输入不应带 skill 前缀: %v", turns)
+		}
 	}
 }
 

@@ -388,6 +388,8 @@ MESSAGES = {
     "version_not_found": "Version {version} does not exist",
     "version_resource_not_found": "Resource '{resource_type}/{resource_id}' does not exist",
     "session_busy": "The session is busy; wait for the current reply to finish before sending",
+    "skill_not_invocable": "Skill '{skill}' does not exist or cannot be invoked directly",
+    "skill_not_invocable_available": "Skill '{skill}' does not exist or cannot be invoked directly; available skills: {available}",
     "session_capacity_exceeded": "Concurrent session limit reached, please try again later",
     "session_question_unavailable": "The session is not running or has no pending question",
     "rewrite_anchor_invalid": "The message you are editing is not part of this conversation; refresh and try again",

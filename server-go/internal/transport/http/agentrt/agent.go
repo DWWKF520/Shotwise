@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/shotwise/shotwise/internal/agent"
 	"github.com/shotwise/shotwise/internal/agent/eventlog"
+	"github.com/shotwise/shotwise/internal/i18n"
 	"github.com/shotwise/shotwise/internal/transport/http/httpkit"
 )
 
@@ -36,9 +37,16 @@ func RegisterAgentRoutes(rg *gin.RouterGroup, rt *agent.Runtime) {
 			return
 		}
 
-		sessionID, evCh, unsub, err := rt.QueryWithSkill(c.Request.Context(), body.SessionID, body.Project, body.Skill, body.Message)
+		// / 前缀识别：显式 skill 字段缺省且首 token 形如 /name 时，转成显式 skill 调用
+		// （Claude Code slash command 语义）；正文取 /name 之后的参数部分。
+		skill, message := body.Skill, body.Message
+		if skill == "" {
+			skill, message = agent.ParseSlashCommand(body.Message)
+		}
+
+		sessionID, evCh, unsub, err := rt.QueryWithSkill(c.Request.Context(), body.SessionID, body.Project, skill, message)
 		if errors.Is(err, agent.ErrSkillNotInvocable) {
-			abortBadRequest(c, "skill_not_invocable", err.Error())
+			abortSkillNotInvocable(c, err)
 			return
 		}
 		if err != nil {
@@ -153,6 +161,21 @@ func RegisterAgentStreamRoutes(rg *gin.RouterGroup, rt *agent.Runtime) {
 // abortBadRequest 是 agent 路由内的便捷错误响应。
 func abortBadRequest(c *gin.Context, code, msg string) {
 	c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": code, "message": msg}})
+}
+
+// abortSkillNotInvocable 返回 400：本地化文案 + 项目内可用 skill 列表，客户端据此做补全提示。
+func abortSkillNotInvocable(c *gin.Context, err error) {
+	key, params := httpkit.SkillNotInvocableMessage(err)
+	available := []string{}
+	var skillErr *agent.SkillNotInvocableError
+	if errors.As(err, &skillErr) && skillErr.Available != nil {
+		available = skillErr.Available
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+		"code":      "skill_not_invocable",
+		"message":   i18n.T(i18n.FromRequest(c.Request), key, params),
+		"available": available,
+	}})
 }
 
 func abortInternal(c *gin.Context, code, msg string) {

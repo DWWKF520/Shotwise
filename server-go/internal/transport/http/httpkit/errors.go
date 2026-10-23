@@ -55,11 +55,30 @@ func AbortAssistant(c *gin.Context, err error, sessionID string) {
 		status, key = http.StatusBadRequest, "request_invalid"
 	case errors.Is(err, agent.ErrSDKTypeUnknown):
 		status, key, params = http.StatusBadRequest, "agent_sdk_type_unknown", map[string]any{"sdk_type": sdkTypeFromErr(err)}
+	case errors.Is(err, agent.ErrSkillNotInvocable):
+		status = http.StatusBadRequest
+		key, params = SkillNotInvocableMessage(err)
 	default:
 		apperr.Abort(c, apperr.Internal(err))
 		return
 	}
 	apperr.Abort(c, apperr.NewText(status, key, params))
+}
+
+// SkillNotInvocableMessage 把 skill 不可触发错误映射成 i18n key 与渲染参数。
+// 项目里有可用 skill 时用带列表的 key（文案末尾列出全部可用 skill，便于直接补全）。
+func SkillNotInvocableMessage(err error) (string, map[string]any) {
+	var e *agent.SkillNotInvocableError
+	if !errors.As(err, &e) {
+		return "skill_not_invocable", map[string]any{"skill": ""}
+	}
+	if len(e.Available) == 0 {
+		return "skill_not_invocable", map[string]any{"skill": e.Skill}
+	}
+	return "skill_not_invocable_available", map[string]any{
+		"skill":     e.Skill,
+		"available": strings.Join(e.Available, ", "),
+	}
 }
 
 func sdkTypeFromErr(err error) string {
