@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/shotwise/shotwise/internal/provider"
+	"github.com/shotwise/shotwise/internal/providers/openai"
 )
 
 // customTestConfig 构造自定义供应商信封。
@@ -65,7 +66,7 @@ func TestCreateCustomBackendBuiltinOpenAIImages(t *testing.T) {
 	if gotBody["model"] != "gpt-image-2" || gotBody["prompt"] != "a cat" {
 		t.Fatalf("body: %v", gotBody)
 	}
-	if res.Provider != ProviderOpenAI {
+	if res.Provider != openai.ProviderOpenAI {
 		t.Fatalf("result provider: %q", res.Provider)
 	}
 	data, err := os.ReadFile(out)

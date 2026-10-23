@@ -15,6 +15,15 @@ import (
 
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
+	"github.com/shotwise/shotwise/internal/providers/ark"
+	"github.com/shotwise/shotwise/internal/providers/dashscope"
+	"github.com/shotwise/shotwise/internal/providers/gemini"
+	"github.com/shotwise/shotwise/internal/providers/kling"
+	"github.com/shotwise/shotwise/internal/providers/minimax"
+	"github.com/shotwise/shotwise/internal/providers/newapi"
+	"github.com/shotwise/shotwise/internal/providers/openai"
+	"github.com/shotwise/shotwise/internal/providers/provkit"
+	"github.com/shotwise/shotwise/internal/providers/vidu"
 )
 
 // 自定义供应商 backend 包装层与工厂（端口自 lib/custom_provider/backends.py + factory.py）。
@@ -28,7 +37,7 @@ import (
 //
 // 与 Python 侧的两处已知差异：
 //   - 图片请求超时（provider.image_request_timeout_seconds）在 Python 经 _image_request_timeout_kwargs
-//     透传给 OpenAIImageBackend；Go 的 NewOpenAIImageBackend 无该构造钩子，故不转发（不由此层兜底
+//     透传给 OpenAIImageBackend；Go 的 openai.NewImageBackend 无该构造钩子，故不转发（不由此层兜底
 //     默认值，保持“未设置即由 backend 自决”语义）。
 //   - JSON 数字在 Go 中统一为 float64，能力覆盖里整数字面量与浮点数字面量无法区分，故 int 维度
 //     接受任一整数值的 float64（较 Python 略宽）。
@@ -126,7 +135,7 @@ func customEnsureURLPathSuffix(baseURL, suffix string) string {
 // 包装与能力注入由工厂统一完成。
 
 func customBuildOpenAIImages(cfg customProviderConfig, modelID string) (provider.ImageBackend, error) {
-	return NewOpenAIImageBackend(provider.BackendOptions{
+	return openai.NewImageBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureOpenAIBaseURL(cfg.baseURL),
@@ -134,7 +143,7 @@ func customBuildOpenAIImages(cfg customProviderConfig, modelID string) (provider
 }
 
 func customBuildOpenAIImagesGenerations(cfg customProviderConfig, modelID string) (provider.ImageBackend, error) {
-	return NewOpenAIImageBackend(provider.BackendOptions{
+	return openai.NewImageBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureOpenAIBaseURL(cfg.baseURL),
@@ -143,7 +152,7 @@ func customBuildOpenAIImagesGenerations(cfg customProviderConfig, modelID string
 }
 
 func customBuildOpenAIImagesEdits(cfg customProviderConfig, modelID string) (provider.ImageBackend, error) {
-	return NewOpenAIImageBackend(provider.BackendOptions{
+	return openai.NewImageBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureOpenAIBaseURL(cfg.baseURL),
@@ -152,7 +161,7 @@ func customBuildOpenAIImagesEdits(cfg customProviderConfig, modelID string) (pro
 }
 
 func customBuildGeminiImage(cfg customProviderConfig, modelID string) (provider.ImageBackend, error) {
-	return newGeminiImageBackend(provider.BackendOptions{
+	return gemini.NewImageBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureGoogleBaseURL(cfg.baseURL),
@@ -162,7 +171,7 @@ func customBuildGeminiImage(cfg customProviderConfig, modelID string) (provider.
 
 func customBuildDashscopeImage(cfg customProviderConfig, modelID string) (provider.ImageBackend, error) {
 	// backend 内部由 host 派生 /api/v1（容忍带/不带后缀），传原始 base_url 即可。
-	return newDashscopeImageBackend(provider.BackendOptions{
+	return dashscope.NewImageBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: cfg.baseURL,
@@ -171,7 +180,7 @@ func customBuildDashscopeImage(cfg customProviderConfig, modelID string) (provid
 
 func customBuildMinimaxImage(cfg customProviderConfig, modelID string) (provider.ImageBackend, error) {
 	// backend 内部把 base_url 归一化为 {host}/v1（容忍 host 或带 /v1 后缀），传原始 base_url 即可。
-	return newMinimaxImageBackend(provider.BackendOptions{
+	return minimax.NewImageBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: cfg.baseURL,
@@ -180,7 +189,7 @@ func customBuildMinimaxImage(cfg customProviderConfig, modelID string) (provider
 
 func customBuildKlingImage(cfg customProviderConfig, modelID string) (provider.ImageBackend, error) {
 	// bearer 模式旁路 JWT 管理器，用静态 api_key 直发可灵原生异步图像端点。
-	return newKlingImageBackend(provider.BackendOptions{
+	return kling.NewImageBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureURLPathSuffix(cfg.baseURL, "/v1"),
@@ -189,7 +198,7 @@ func customBuildKlingImage(cfg customProviderConfig, modelID string) (provider.I
 }
 
 func customBuildOpenAIVideo(cfg customProviderConfig, modelID string) (provider.VideoBackend, error) {
-	return newOpenAIVideoBackend(provider.BackendOptions{
+	return openai.NewVideoBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureOpenAIBaseURL(cfg.baseURL),
@@ -201,7 +210,7 @@ func customBuildNewAPIVideo(cfg customProviderConfig, modelID string) (provider.
 	if baseURL == "" {
 		return nil, fmt.Errorf("NewAPI 视频后端需要 base_url")
 	}
-	return newNewAPIVideoBackend(provider.BackendOptions{
+	return newapi.NewVideoBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: baseURL,
@@ -221,7 +230,7 @@ func customBuildV2VideoGenerations(cfg customProviderConfig, modelID string) (pr
 }
 
 func customBuildArkSeedance(cfg customProviderConfig, modelID string) (provider.VideoBackend, error) {
-	return newArkVideoBackend(provider.BackendOptions{
+	return ark.NewVideoBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureURLPathSuffix(cfg.baseURL, "/api/v3"),
@@ -229,7 +238,7 @@ func customBuildArkSeedance(cfg customProviderConfig, modelID string) (provider.
 }
 
 func customBuildViduVideo(cfg customProviderConfig, modelID string) (provider.VideoBackend, error) {
-	return newViduVideoBackend(provider.BackendOptions{
+	return vidu.NewVideoBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureURLPathSuffix(cfg.baseURL, "/ent/v2"),
@@ -237,7 +246,7 @@ func customBuildViduVideo(cfg customProviderConfig, modelID string) (provider.Vi
 }
 
 func customBuildDashscopeVideo(cfg customProviderConfig, modelID string) (provider.VideoBackend, error) {
-	return newDashscopeVideoBackend(provider.BackendOptions{
+	return dashscope.NewVideoBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: cfg.baseURL,
@@ -245,7 +254,7 @@ func customBuildDashscopeVideo(cfg customProviderConfig, modelID string) (provid
 }
 
 func customBuildMinimaxVideo(cfg customProviderConfig, modelID string) (provider.VideoBackend, error) {
-	return newMinimaxVideoBackend(provider.BackendOptions{
+	return minimax.NewVideoBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: cfg.baseURL,
@@ -253,7 +262,7 @@ func customBuildMinimaxVideo(cfg customProviderConfig, modelID string) (provider
 }
 
 func customBuildKlingVideo(cfg customProviderConfig, modelID string) (provider.VideoBackend, error) {
-	return newKlingVideoBackend(provider.BackendOptions{
+	return kling.NewVideoBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureURLPathSuffix(cfg.baseURL, "/v1"),
@@ -264,7 +273,7 @@ func customBuildKlingVideo(cfg customProviderConfig, modelID string) (provider.V
 func customBuildOpenAIAudio(cfg customProviderConfig, modelID string) (provider.AudioBackend, error) {
 	// provider_name 让 delegate 日志与 AudioSynthesisResult.provider 归因到真实 provider，
 	// 与包装层 name 的记账身份一致，而非内置 openai。
-	return newOpenAIAudioBackend(provider.BackendOptions{
+	return openai.NewAudioBackend(provider.BackendOptions{
 		Model:   modelID,
 		APIKey:  cfg.apiKey,
 		BaseURL: customEnsureOpenAIBaseURL(cfg.baseURL),
@@ -477,7 +486,7 @@ func customPollDeclarative(
 				jobID, poll.TimeoutSeconds, lastStatus,
 			)
 		}
-		if err := sleepWithContext(ctx, time.Duration(poll.IntervalSeconds*float64(time.Second))); err != nil {
+		if err := provkit.SleepWithContext(ctx, time.Duration(poll.IntervalSeconds*float64(time.Second))); err != nil {
 			return nil, err
 		}
 	}
@@ -498,13 +507,13 @@ func customStoreImageValue(ctx context.Context, value any, outputPath string) er
 		if err != nil {
 			return fmt.Errorf("decode declarative image payload: %w", err)
 		}
-		return writeFileAtomic(outputPath, decoded)
+		return provkit.WriteFileAtomic(outputPath, decoded)
 	}
 	raw := text
 	if !isString {
 		raw = fmt.Sprint(value)
 	}
-	return downloadImageToPath(ctx, httpc.NewClient(customDeclarativeHTTPTimeout), raw, outputPath)
+	return provkit.DownloadImageToPath(ctx, httpc.NewClient(customDeclarativeHTTPTimeout), raw, outputPath)
 }
 
 // customStorePolledImage 渲染产物 URL 后落盘（无 artifact_url 声明时回退内联值）。
@@ -540,7 +549,7 @@ func customStorePolledImage(
 	if len(resp.Body) == 0 {
 		return fmt.Errorf("downloaded image is empty: %s", validated)
 	}
-	return writeFileAtomic(outputPath, resp.Body)
+	return provkit.WriteFileAtomic(outputPath, resp.Body)
 }
 
 // customResolveAudioContent 把音频字段取值还原成字节：http(s) 下载，其余按 base64 解码。
@@ -743,7 +752,7 @@ func (d *customDeclarativeVideoDelegate) Generate(
 		return provider.VideoGenerationResult{}, err
 	}
 	videoURL := fmt.Sprint(rawURL)
-	if err := DownloadVideo(ctx, videoURL, req.OutputPath, customDeclarativeHTTPTimeout); err != nil {
+	if err := provkit.DownloadVideo(ctx, videoURL, req.OutputPath, customDeclarativeHTTPTimeout); err != nil {
 		return provider.VideoGenerationResult{}, err
 	}
 	return provider.VideoGenerationResult{
@@ -804,7 +813,7 @@ func (d *customDeclarativeAudioDelegate) Synthesize(
 	if err != nil {
 		return provider.AudioSynthesisResult{}, err
 	}
-	if err := writeFileAtomic(req.OutputPath, content); err != nil {
+	if err := provkit.WriteFileAtomic(req.OutputPath, content); err != nil {
 		return provider.AudioSynthesisResult{}, err
 	}
 	return provider.AudioSynthesisResult{

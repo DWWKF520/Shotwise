@@ -9,6 +9,11 @@ import (
 	"strings"
 
 	"github.com/shotwise/shotwise/internal/provider"
+	"github.com/shotwise/shotwise/internal/providers/ark"
+	"github.com/shotwise/shotwise/internal/providers/dashscope"
+	"github.com/shotwise/shotwise/internal/providers/kling"
+	"github.com/shotwise/shotwise/internal/providers/minimax"
+	"github.com/shotwise/shotwise/internal/providers/vidu"
 )
 
 // 自定义供应商 endpoint 注册表与声明式端点 DSL（端口自 lib/custom_provider/endpoints.py）。
@@ -1166,7 +1171,7 @@ var customEndpointRegistry = map[string]customEndpointSpec{
 		key: "ark-seedance", mediaType: provider.MediaVideo, family: "ark",
 		displayNameKey: "endpoint_ark_seedance_display",
 		requestMethod:  "POST", requestPathTemplate: "/api/v3/contents/generations/tasks",
-		videoCapsForModel:     customCapsFunc(arkVideoCapabilitiesForModel),
+		videoCapsForModel:     customCapsFunc(ark.VideoCapabilitiesForModel),
 		endImageCapable:       true,
 		referenceAudioCapable: true,
 		source:                "builtin",
@@ -1176,7 +1181,7 @@ var customEndpointRegistry = map[string]customEndpointSpec{
 		key: "vidu-video", mediaType: provider.MediaVideo, family: "vidu",
 		displayNameKey: "endpoint_vidu_video_display",
 		requestMethod:  "POST", requestPathTemplate: "/ent/v2/img2video",
-		videoCapsForModel: customCapsFunc(viduVideoCapabilitiesForModel),
+		videoCapsForModel: customCapsFunc(vidu.VideoCapabilitiesForModel),
 		endImageCapable:   true,
 		source:            "builtin",
 		buildVideo:        customBuildViduVideo,
@@ -1201,7 +1206,7 @@ var customEndpointRegistry = map[string]customEndpointSpec{
 		key: "dashscope-async-video", mediaType: provider.MediaVideo, family: "dashscope",
 		displayNameKey: "endpoint_dashscope_async_video_display",
 		requestMethod:  "POST", requestPathTemplate: "/api/v1/services/aigc/video-generation/video-synthesis",
-		videoCapsForModel:     customCapsFunc(dashscopeProfileForModel),
+		videoCapsForModel:     customCapsFunc(dashscope.ProfileForModel),
 		referenceAudioCapable: true,
 		source:                "builtin",
 		buildVideo:            customBuildDashscopeVideo,
@@ -1219,7 +1224,7 @@ var customEndpointRegistry = map[string]customEndpointSpec{
 		key: "minimax-video", mediaType: provider.MediaVideo, family: "minimax",
 		displayNameKey: "endpoint_minimax_video_display",
 		requestMethod:  "POST", requestPathTemplate: "/video_generation",
-		videoCapsForModel: customCapsFuncErrless(minimaxVideoCapabilitiesForModel),
+		videoCapsForModel: customCapsFuncErrless(minimax.VideoCapabilitiesForModel),
 		source:            "builtin",
 		buildVideo:        customBuildMinimaxVideo,
 	},
@@ -1236,7 +1241,7 @@ var customEndpointRegistry = map[string]customEndpointSpec{
 		key: "kling-video", mediaType: provider.MediaVideo, family: "kling",
 		displayNameKey: "endpoint_kling_video_display",
 		requestMethod:  "POST", requestPathTemplate: "/v1/videos/{text2video,image2video,multi-image2video}",
-		videoCapsForModel: customCapsFuncErrless(klingVideoCapabilitiesForModel),
+		videoCapsForModel: customCapsFuncErrless(kling.VideoCapabilitiesForModel),
 		endImageCapable:   true,
 		source:            "builtin",
 		buildVideo:        customBuildKlingVideo,

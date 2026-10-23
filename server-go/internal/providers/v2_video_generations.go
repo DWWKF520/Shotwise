@@ -15,6 +15,7 @@ import (
 
 	"github.com/shotwise/shotwise/internal/infra/httpc"
 	"github.com/shotwise/shotwise/internal/provider"
+	"github.com/shotwise/shotwise/internal/providers/provkit"
 )
 
 // V2VideoGenerationsBackend —— 通用「流派 C」/v2/video/generations 视频后端
@@ -202,7 +203,7 @@ func v2VideoBuildRequestBody(model string, req provider.VideoGenerationRequest) 
 	if req.StartImage != "" {
 		if v2VideoFileExists(req.StartImage) {
 			v2WarnIfLarge(req.StartImage)
-			dataURI, err := imageToBase64DataURI(req.StartImage)
+			dataURI, err := provkit.ImageToBase64DataURI(req.StartImage)
 			if err != nil {
 				return nil, err
 			}
@@ -214,7 +215,7 @@ func v2VideoBuildRequestBody(model string, req provider.VideoGenerationRequest) 
 	if req.EndImage != "" {
 		if v2VideoFileExists(req.EndImage) {
 			v2WarnIfLarge(req.EndImage)
-			dataURI, err := imageToBase64DataURI(req.EndImage)
+			dataURI, err := provkit.ImageToBase64DataURI(req.EndImage)
 			if err != nil {
 				return nil, err
 			}
@@ -228,7 +229,7 @@ func v2VideoBuildRequestBody(model string, req provider.VideoGenerationRequest) 
 		for _, ref := range req.ReferenceImages {
 			if v2VideoFileExists(ref) {
 				v2WarnIfLarge(ref)
-				dataURI, err := imageToBase64DataURI(ref)
+				dataURI, err := provkit.ImageToBase64DataURI(ref)
 				if err != nil {
 					return nil, err
 				}
@@ -358,7 +359,7 @@ func (b *v2VideoGenerationsBackend) Generate(
 		return provider.VideoGenerationResult{}, err
 	}
 	slog.Info("V2 任务创建", "generation_id", generationID)
-	if err := PersistProviderJobIDFor(ctx, b.opts, req, generationID, b.root); err != nil {
+	if err := provkit.PersistProviderJobIDFor(ctx, b.opts, req, generationID, b.root); err != nil {
 		return provider.VideoGenerationResult{}, err
 	}
 	return b.pollAndBuild(ctx, generationID, req, false)
@@ -377,14 +378,14 @@ func (b *v2VideoGenerationsBackend) createTask(ctx context.Context, body map[str
 	err := provider.RunWithRetry(
 		ctx, provider.DefaultRetryPolicy, provider.SubmitRetryable,
 		func(ctx context.Context) error {
-			resp, err := SubmitPost(ctx, v2VideoProvider, func(ctx context.Context) (*httpc.Response, error) {
+			resp, err := provkit.SubmitPost(ctx, v2VideoProvider, func(ctx context.Context) (*httpc.Response, error) {
 				return b.client.PostJSON(ctx, b.root+v2VideoSubmitPath, b.headers(), body)
 			})
 			if err != nil {
 				return err
 			}
 			var payload any
-			if err := decodeJSON(resp.Body, &payload); err != nil {
+			if err := provkit.DecodeJSON(resp.Body, &payload); err != nil {
 				return err
 			}
 			id := v2FirstStrByPaths(payload, v2VideoTaskIDPaths)
@@ -421,7 +422,7 @@ func (b *v2VideoGenerationsBackend) pollOnce(
 		return nil, err
 	}
 	var state map[string]any
-	if err := decodeJSON(resp.Body, &state); err != nil {
+	if err := provkit.DecodeJSON(resp.Body, &state); err != nil {
 		return nil, err
 	}
 	return state, nil
@@ -431,7 +432,7 @@ func (b *v2VideoGenerationsBackend) pollOnce(
 func (b *v2VideoGenerationsBackend) pollAndBuild(
 	ctx context.Context, generationID string, req provider.VideoGenerationRequest, isResume bool,
 ) (provider.VideoGenerationResult, error) {
-	final, err := PollWithRetry(ctx, PollConfig[map[string]any]{
+	final, err := provkit.PollWithRetry(ctx, provkit.PollConfig[map[string]any]{
 		PollFn: func(ctx context.Context) (map[string]any, error) {
 			return b.pollOnce(ctx, generationID, isResume)
 		},
@@ -451,7 +452,7 @@ func (b *v2VideoGenerationsBackend) pollAndBuild(
 	if strings.TrimSpace(videoURL) == "" {
 		return provider.VideoGenerationResult{}, fmt.Errorf("V2 任务完成但未能从已知路径提取视频 URL: %v", final)
 	}
-	if err := DownloadVideo(ctx, videoURL, req.OutputPath, 0); err != nil {
+	if err := provkit.DownloadVideo(ctx, videoURL, req.OutputPath, 0); err != nil {
 		return provider.VideoGenerationResult{}, err
 	}
 	return provider.VideoGenerationResult{
