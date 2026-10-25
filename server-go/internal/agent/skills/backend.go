@@ -3,93 +3,50 @@ package skills
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"strings"
+	"os"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/adk/filesystem"
 	"github.com/cloudwego/eino/adk/middlewares/skill"
+	"github.com/cloudwego/eino/schema"
 )
 
-// ModeAwareBackend 实现 skill.Backend：按会话 content_mode 解析变体（§17.1）。
+// defaultSkillToolName 是 skill 工具的注册名（官方默认 "skill"，显式传入以固化契约）。
+var defaultSkillToolName = SkillToolName
+
+// NewFilesystemMiddleware 用官方 skill.NewBackendFromFilesystem + skill.NewTyped 组装
+// skill 中间件（对应 Eino quickstart 第九章的推荐用法）。
 //
-// mode 为空时只暴露通用 SKILL.md；变体 skill 不可见。
-type ModeAwareBackend struct {
-	root string // <project>/.claude/skills
-	mode string // content_mode
-}
-
-// NewModeAwareBackend 构造 mode 感知的 skill 后端。
-func NewModeAwareBackend(root, mode string) *ModeAwareBackend {
-	return &ModeAwareBackend{root: root, mode: mode}
-}
-
-// List 返回当前 mode 下可见的 skill 元数据（供工具描述渲染，模型自主发现入口）。
-func (b *ModeAwareBackend) List(_ context.Context) ([]skill.FrontMatter, error) {
-	visible, err := b.visible()
-	if err != nil {
-		return nil, err
+// fsBackend 的根必须等于 skillsRoot：官方 backend 以 Backend.GlobInfo 返回的路径拼接
+// BaseDir，只有「GlobInfo 返回相对 skillsRoot 的路径」时才能解析回正确文件
+// （workspace.NewBackend(skillsRoot) 满足此约定）。
+//
+// 不自定义 BuildContent：沿用官方的 `Launching skill: <name>` +
+// `Base directory for this skill: <abs>` 两段返回，事件日志的 skill_invocation
+// 由 agent.parseSkillName 兼容中英文两种前缀后提取名字。
+//
+// 返回的 skill.Backend 供 subagent 注入 skill 正文复用；skillsRoot 不存在时先建空目录，
+// 保证「没有 skill 也能正常对话」（与 quickstart 的降级语义一致）。
+func NewFilesystemMiddleware(ctx context.Context, fsBackend filesystem.Backend, skillsRoot string) (adk.ChatModelAgentMiddleware, skill.Backend, error) {
+	if fsBackend == nil {
+		return nil, nil, fmt.Errorf("skills: filesystem backend is required")
 	}
-	out := make([]skill.FrontMatter, 0, len(visible))
-	for _, m := range visible {
-		out = append(out, skill.FrontMatter{Name: m.Name, Description: m.Description})
+	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
+		return nil, nil, fmt.Errorf("skills: prepare dir: %w", err)
 	}
-	return out, nil
-}
-
-// Get 返回指定 skill 的正文与基目录（BuildContent 据此拼注入前缀）。
-func (b *ModeAwareBackend) Get(_ context.Context, name string) (skill.Skill, error) {
-	visible, err := b.visible()
-	if err != nil {
-		return skill.Skill{}, err
-	}
-	for _, m := range visible {
-		if m.Name != name {
-			continue
-		}
-		abs, err := filepath.Abs(filepath.Dir(m.Path))
-		if err != nil {
-			return skill.Skill{}, err
-		}
-		return skill.Skill{
-			FrontMatter:   skill.FrontMatter{Name: m.Name, Description: m.Description},
-			Content:       m.Body,
-			BaseDirectory: abs,
-		}, nil
-	}
-	return skill.Skill{}, fmt.Errorf("skill %q not found", name)
-}
-
-// visible 解析当前 mode 下所有可见 skill。
-func (b *ModeAwareBackend) visible() ([]Meta, error) {
-	dirs, err := skillDirs(b.root)
-	if err != nil {
-		return nil, err
-	}
-	var out []Meta
-	for _, dir := range dirs {
-		path, ok, err := resolveEntry(dir, b.mode)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			continue
-		}
-		meta, err := ParseFile(path, filepath.Base(dir))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, meta)
-	}
-	return out, nil
-}
-
-// NewMiddleware 构造 skill 中间件（inline 模式）。
-// BuildContent 钉死 "Base directory for this skill:" 首行，与 event_log 的 skill_invocation 契约一致。
-func NewMiddleware(ctx context.Context, backend skill.Backend) (adk.ChatModelAgentMiddleware, error) {
-	return skill.NewMiddleware(ctx, &skill.Config{
-		Backend: backend,
-		BuildContent: func(_ context.Context, s skill.Skill, _ string) (string, error) {
-			return fmt.Sprintf("%s %s\n\n%s", baseDirectoryPrefix, s.BaseDirectory, strings.TrimLeft(s.Content, "\n")), nil
-		},
+	backend, err := skill.NewBackendFromFilesystem(ctx, &skill.BackendFromFilesystemConfig{
+		Backend: fsBackend,
+		BaseDir: skillsRoot,
 	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("skills: filesystem backend: %w", err)
+	}
+	mw, err := skill.NewTyped[*schema.Message](ctx, &skill.TypedConfig[*schema.Message]{
+		Backend:       backend,
+		SkillToolName: &defaultSkillToolName,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("skills: middleware: %w", err)
+	}
+	return mw, backend, nil
 }

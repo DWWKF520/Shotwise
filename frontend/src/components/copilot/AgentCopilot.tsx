@@ -408,15 +408,16 @@ export function AgentCopilot() {
     const cursor = e.target.selectionStart ?? val.length;
     setLocalInput(val);
 
-    // Check text left of cursor: trigger menu when "/" is at start or after whitespace/newline
+    // Check text left of cursor: trigger menu only when "/" starts the message
+    // (允许前导空白，发送时会 trim)。与后端 /skill-name 解析规则一致——只有消息开头的
+    // 首 token 会被当作命令，正文中间的 "/" 是普通文本，不弹菜单以免选中后不生效。
     const textBeforeCursor = val.slice(0, cursor);
     const lastSlash = textBeforeCursor.lastIndexOf("/");
     if (lastSlash >= 0) {
-      const charBefore = lastSlash > 0 ? textBeforeCursor[lastSlash - 1] : undefined;
-      const atBoundary = charBefore === undefined || /\s/.test(charBefore);
+      const atCommandStart = textBeforeCursor.slice(0, lastSlash).trim() === "";
       const afterSlash = textBeforeCursor.slice(lastSlash + 1);
       const noSpaceAfterSlash = !afterSlash.includes(" ");
-      if (atBoundary && noSpaceAfterSlash) {
+      if (atCommandStart && noSpaceAfterSlash) {
         setShowSlashMenu(true);
         slashPosRef.current = lastSlash;
       } else {

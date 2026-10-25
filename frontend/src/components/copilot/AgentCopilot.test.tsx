@@ -5,6 +5,7 @@ import { useAppStore } from "@/stores/app-store";
 import { useAssistantStore } from "@/stores/assistant-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { AgentCopilot } from "./AgentCopilot";
+import { SlashCommandMenu } from "./SlashCommandMenu";
 
 vi.mock("@/hooks/useAssistantSession", () => ({
   useAssistantSession: vi.fn(),
@@ -279,6 +280,31 @@ describe("AgentCopilot", () => {
     await waitFor(() => {
       expect(useAssistantStore.getState().input).toBe("");
     });
+  });
+
+  it("only opens the slash menu when / starts the message", () => {
+    render(<AgentCopilot />);
+    const textarea = screen.getByLabelText("助手输入");
+    // 与后端 /skill-name 解析同规则：只有消息开头的首 token 会被当作命令。
+    // 菜单是条件渲染（showSlashMenu 为 false 时组件不被调用），因此用调用次数判断开关。
+    const menuMock = SlashCommandMenu as unknown as ReturnType<typeof vi.fn>;
+    const callCount = () => menuMock.mock.calls.length;
+    const lastFilter = () =>
+      (menuMock.mock.calls.at(-1)?.[0] as { filter: string }).filter;
+
+    fireEvent.change(textarea, { target: { value: "/gen" } });
+    expect(callCount()).toBeGreaterThan(0);
+    expect(lastFilter()).toBe("gen");
+
+    // 正文中间的 "/" 是普通文本：菜单不打开
+    const opened = callCount();
+    fireEvent.change(textarea, { target: { value: "看 /gen" } });
+    expect(callCount()).toBe(opened);
+
+    // 前导空白允许：发送时会 trim，后端仍按命令处理
+    fireEvent.change(textarea, { target: { value: "  /gen" } });
+    expect(callCount()).toBeGreaterThan(opened);
+    expect(lastFilter()).toBe("gen");
   });
 
 });

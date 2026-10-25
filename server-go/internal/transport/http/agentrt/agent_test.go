@@ -87,7 +87,9 @@ func newAgentFixture(t *testing.T, m model.ToolCallingChatModel) (*gin.Engine, *
 	writeAgentSkill(t, dataDir, "p1", "demo")
 	rt, err := agent.NewRuntime(context.Background(), agent.ModelConfig{}, dataDir,
 		checkpoint.NewMemStore(), eventlog.NewMemStore(),
-		agent.WithChatModel(m), agent.WithIdleTimeout(100*time.Millisecond))
+		agent.WithChatModel(m), agent.WithIdleTimeout(100*time.Millisecond),
+		// 隔离仓库真实 profile：否则内置 skill 会被投影进临时项目，污染列表断言。
+		agent.WithProfileDir(""))
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}
@@ -372,6 +374,46 @@ func TestAgentQuery_SlashNotACommandPassesThrough(t *testing.T) {
 		if strings.Contains(turn, "[用户请求触发 skill:") {
 			t.Fatalf("非命令输入不应带 skill 前缀: %v", turns)
 		}
+	}
+}
+
+// GET /agent/skills?project= → user-invocable skill 列表；缺 project → 400。
+func TestAgentSkillsList(t *testing.T) {
+	router, _ := newAgentFixture(t, &scriptedModel{})
+
+	rec := get(t, router, "/api/v1/agent/skills?project=p1", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Skills []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Skills) != 1 || body.Skills[0].Name != "demo" {
+		t.Fatalf("skills = %+v, want [demo]", body.Skills)
+	}
+	if body.Skills[0].Description == "" {
+		t.Fatal("skill description 不能为空")
+	}
+
+	// 无 project 参数：400。
+	bad := get(t, router, "/api/v1/agent/skills", nil)
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("missing project status = %d, want 400", bad.Code)
+	}
+
+	// 未知项目：空列表而非报错（目录不存在）。
+	empty := get(t, router, "/api/v1/agent/skills?project=nope", nil)
+	if empty.Code != http.StatusOK {
+		t.Fatalf("unknown project status = %d, want 200", empty.Code)
+	}
+	if !strings.Contains(empty.Body.String(), `"skills":[]`) {
+		t.Fatalf("unknown project body = %s, want empty list", empty.Body.String())
 	}
 }
 

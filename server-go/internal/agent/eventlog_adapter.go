@@ -222,15 +222,38 @@ func (a *eventAdapter) handleToolMessage(ctx context.Context, mo *adk.TypedMessa
 	}
 }
 
-// parseSkillName 从 skill 注入正文首行的基目录路径提取 skill 名（与 Python _parse_skill_name_from_injection 同语义）。
-// 注入正文全文不进日志，只记名字。
+// parseSkillName 从 skill 工具的返回正文提取 skill 名。
+//
+// 官方 skill middleware 的默认返回是两段拼接：
+//   - `Launching skill: <name>`（中文语言下为 `正在启动 Skill：<name>`）
+//   - `Base directory for this skill: <abs dir>`（`此 Skill 的目录：<abs dir>`）+ 正文
+//
+// 优先取显式名字行；旧版仅含基目录的注入正文按路径末段兜底（与 Python
+// _parse_skill_name_from_injection 同语义）。注入正文全文不进日志，只记名字。
 func parseSkillName(text string) string {
-	const prefix = "Base directory for this skill:"
-	firstLine := strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
-	if !strings.HasPrefix(firstLine, prefix) {
-		return ""
+	lines := strings.SplitN(strings.TrimSpace(text), "\n", 3)
+	explicit := []string{"Launching skill:", "正在启动 Skill："}
+	for _, prefix := range explicit {
+		if strings.HasPrefix(lines[0], prefix) {
+			if name := strings.TrimSpace(lines[0][len(prefix):]); name != "" {
+				return name
+			}
+		}
 	}
-	path := strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(firstLine[len(prefix):]), "\\", "/"), "/")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		for _, prefix := range []string{"Base directory for this skill:", "此 Skill 的目录："} {
+			if strings.HasPrefix(line, prefix) {
+				return skillNameFromDir(strings.TrimSpace(line[len(prefix):]))
+			}
+		}
+	}
+	return ""
+}
+
+// skillNameFromDir 从基目录路径提取 skill 名（末段；若末段是 SKILL.md 则取上一级）。
+func skillNameFromDir(raw string) string {
+	path := strings.TrimRight(strings.ReplaceAll(raw, "\\", "/"), "/")
 	var segments []string
 	for _, s := range strings.Split(path, "/") {
 		if s != "" {

@@ -15,6 +15,7 @@ import (
 
 // RegisterAgentRoutes 注册智能体运行时路由。
 // POST /agent/query                              —— SSE 流式问答（提交一条用户消息）
+// GET  /agent/skills?project=<name>              —— 项目内 user-invocable skill 列表（/ 前缀补全）
 // GET  /agent/sessions                           —— 列出活跃会话
 // GET  /agent/sessions/:session_id/entries       —— 冷读事件日志（?after=<seq> 游标）
 // POST /agent/sessions/:session_id/interrupt     —— 中断当前轮
@@ -65,6 +66,20 @@ func RegisterAgentRoutes(rg *gin.RouterGroup, rt *agent.Runtime) {
 		c.Writer.Flush()
 
 		httpkit.StreamAgentEvents(c, evCh, unsub)
+	})
+
+	rg.GET("/agent/skills", func(c *gin.Context) {
+		project := strings.TrimSpace(c.Query("project"))
+		if project == "" {
+			abortBadRequest(c, "project_required", "缺少 project 查询参数")
+			return
+		}
+		entries, err := rt.ListSkills(project)
+		if err != nil {
+			abortInternal(c, "skills_list_failed", err.Error())
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"skills": entries})
 	})
 
 	rg.GET("/agent/sessions", func(c *gin.Context) {

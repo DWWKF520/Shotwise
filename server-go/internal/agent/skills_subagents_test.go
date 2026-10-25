@@ -103,6 +103,10 @@ func TestSubagentEntriesAttributedToAgentToolCall(t *testing.T) {
 
 func TestParseSkillName(t *testing.T) {
 	cases := map[string]string{
+		// 官方默认格式（英文 / 中文语言）
+		"Launching skill: demo\nBase directory for this skill: C:\\p\\.claude\\skills\\demo\n\nbody": "demo",
+		"正在启动 Skill：demo\n此 Skill 的目录：/data/p/.claude/skills/demo\nbody":                             "demo",
+		// 旧格式：只有基目录行（路径末段）
 		"Base directory for this skill: C:\\p\\.claude\\skills\\generate-video\\SKILL.md\n\nbody": "generate-video",
 		"Base directory for this skill: /data/p/.claude/skills/manga-workflow/\nbody":             "manga-workflow",
 		"not a skill injection": "",

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shotwise/shotwise/internal/agent/workspace"
 )
 
 func writeSkill(t *testing.T, dir, file, name, invocable, body string) {
@@ -23,49 +25,77 @@ func writeSkill(t *testing.T, dir, file, name, invocable, body string) {
 	}
 }
 
-func TestBackendCommonSkillVisibleInAnyMode(t *testing.T) {
+// 官方 backend + 官方 middleware：能发现并加载 <root>/<name>/SKILL.md，
+// BaseDirectory 指向 skill 目录、正文不含 frontmatter。
+func TestFilesystemMiddlewareLoadsSkill(t *testing.T) {
 	root := t.TempDir()
-	writeSkill(t, filepath.Join(root, "plain"), "SKILL.md", "plain", "", "# body\nhello")
+	writeSkill(t, filepath.Join(root, "demo"), "SKILL.md", "demo", "", "# body\nhello world")
 
-	for _, mode := range []string{"", "drama"} {
-		b := NewModeAwareBackend(root, mode)
-		list, err := b.List(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(list) != 1 || list[0].Name != "plain" {
-			t.Fatalf("mode %q: list = %+v", mode, list)
-		}
-	}
-	s, err := NewModeAwareBackend(root, "drama").Get(context.Background(), "plain")
+	fsb, err := workspace.NewBackend(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(s.Content, "hello") || !filepath.IsAbs(s.BaseDirectory) {
-		t.Fatalf("unexpected skill: %+v", s)
+	mw, backend, err := NewFilesystemMiddleware(context.Background(), fsb, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mw == nil {
+		t.Fatal("middleware must be registered for an existing skills dir")
+	}
+
+	list, err := backend.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Name != "demo" {
+		t.Fatalf("list = %+v, want [demo]", list)
+	}
+
+	s, err := backend.Get(context.Background(), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(s.Content, "hello world") || strings.Contains(s.Content, "user-invocable") {
+		t.Fatalf("content = %q", s.Content)
+	}
+	if !filepath.IsAbs(s.BaseDirectory) || filepath.Base(s.BaseDirectory) != "demo" {
+		t.Fatalf("base dir = %q, want absolute .../demo", s.BaseDirectory)
+	}
+
+	if _, err := backend.Get(context.Background(), "nope"); err == nil {
+		t.Fatal("unknown skill must error")
 	}
 }
 
-func TestBackendVariantFilteredByMode(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, "manga")
-	for _, m := range ContentModes {
-		writeSkill(t, dir, "SKILL."+m+".md", "manga", "true", "body-"+m)
-	}
-
-	b := NewModeAwareBackend(root, "narration")
-	s, err := b.Get(context.Background(), "manga")
+// 空 skills 目录也能装配（quickstart 的"没配置 skill 也能跑"语义），列表为空。
+func TestFilesystemMiddlewareEmptyDir(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "skills") // 尚不存在
+	fsb, err := workspace.NewBackend(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(s.Content, "body-narration") || strings.Contains(s.Content, "body-drama") {
-		t.Fatalf("wrong variant body: %q", s.Content)
+	if _, backend, err := NewFilesystemMiddleware(context.Background(), fsb, root); err != nil {
+		t.Fatal(err)
+	} else if list, err := backend.List(context.Background()); err != nil || len(list) != 0 {
+		t.Fatalf("empty dir list = %+v, err = %v", list, err)
 	}
-	if _, err := NewModeAwareBackend(root, "").List(context.Background()); err != nil {
+}
+
+// 变体 skill 在 profile 同步后已投影为项目侧 SKILL.md，官方 backend 只认该入口。
+func TestFilesystemMiddlewareIgnoresVariantOnlySkill(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, filepath.Join(root, "manga"), "SKILL.drama.md", "manga", "true", "body")
+
+	fsb, err := workspace.NewBackend(root)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if list, _ := NewModeAwareBackend(root, "").List(context.Background()); len(list) != 0 {
-		t.Fatalf("variant-only skill must be hidden without mode, got %+v", list)
+	_, backend, err := NewFilesystemMiddleware(context.Background(), fsb, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list, err := backend.List(context.Background()); err != nil || len(list) != 0 {
+		t.Fatalf("variant-only skill must be invisible (sync 负责投影), list = %+v, err = %v", list, err)
 	}
 }
 

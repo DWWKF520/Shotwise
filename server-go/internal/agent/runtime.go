@@ -281,6 +281,9 @@ type Runtime struct {
 	timelinePlans timeline.TimelinePlanService
 	// textGate 记录各项目最近一次文本清单签名，供 read_project_text 门禁使用。
 	textGate tools.TextFileGate
+	// profileDir 是 agent_runtime_profile 源目录（构造期解析，可用 WithProfileDir 覆盖）；
+	// 空串表示部署未带 profile，此时跳过项目 .claude 同步。
+	profileDir string
 
 	mu                sync.Mutex
 	active            map[string]*sessionLoop
@@ -316,6 +319,12 @@ func WithChatModel(m model.ToolCallingChatModel) RuntimeOption {
 // 凭证从下一轮起生效，无需重启；解析失败当场报错不缓存。override 仍优先于解析器。
 func WithModelResolver(resolve func(ctx context.Context) (ModelConfig, error)) RuntimeOption {
 	return func(r *Runtime) { r.modelResolver = resolve }
+}
+
+// WithProfileDir 覆盖 agent profile 源目录（空串禁用项目 .claude 同步）。
+// 测试用空串隔离：否则会把仓库内真实 profile 投影进临时项目，污染 skill 列表断言。
+func WithProfileDir(dir string) RuntimeOption {
+	return func(r *Runtime) { r.profileDir = dir }
 }
 
 // RelationTextGenerator 是角色关系分析所需的文本生成能力（assets.RelationTextGenerator 别名，
@@ -476,6 +485,8 @@ func NewRuntime(ctx context.Context, cfg ModelConfig, dataDir string, cpStore Ch
 		evStore:           evStore,
 		active:            map[string]*sessionLoop{},
 		pendingInterrupts: map[string]*PendingQuestion{},
+		// 构造期解析：运行目录下的 agent_runtime_profile 即内置 skill 源。
+		profileDir: skills.ResolveProfileDir(),
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -529,6 +540,9 @@ func (e *SkillNotInvocableError) Unwrap() error { return ErrSkillNotInvocable }
 // ensureInvocableSkill 校验 skill 在项目中存在且 user-invocable；不满足时返回
 // SkillNotInvocableError（Available 为项目内全部可用 skill 名，恒非 nil）。
 func (r *Runtime) ensureInvocableSkill(project, skill string) error {
+	if err := r.syncProjectProfile(project); err != nil {
+		return err
+	}
 	entries, err := skills.ListUserInvocable(filepath.Join(r.dataDir, project, ".claude", "skills"))
 	if err != nil {
 		return err
@@ -552,6 +566,41 @@ func (r *Runtime) QueryWithSkill(ctx context.Context, sessionID, project, skill,
 		return sessionID, nil, nil, err
 	}
 	return r.submitQuery(ctx, sessionID, project, InboxItem{Kind: InboxUserMessage, Text: message, SkillHint: skill}, false)
+}
+
+// syncProjectProfile 把 agent_runtime_profile 投影到项目 .claude / CLAUDE.md
+// （对应 Python sync_agent_profile）。幂等：项目侧已存在的文件保留（视为用户修改）。
+//
+// profile 缺失时静默跳过（部署环境未带 profile 不阻断）；项目尚不存在时同样跳过，
+// 不代 ProjectStore 创建目录。其余 IO 失败直接上抛：skill 目录是 /skill 调用的前提。
+func (r *Runtime) syncProjectProfile(project string) error {
+	root := r.projectRoot(project)
+	if _, err := os.Stat(filepath.Join(root, "project.json")); err != nil {
+		return nil
+	}
+	if r.profileDir == "" {
+		return nil
+	}
+	if _, err := skills.SyncProfile(r.profileDir, root, readContentMode(filepath.Join(root, "project.json"))); err != nil {
+		return fmt.Errorf("agent: sync agent profile: %w", err)
+	}
+	return nil
+}
+
+// ListSkills 返回项目内 user-invocable 的 skill 目录（供 / 前缀补全查询）。
+// 目录不存在返回空列表而非错误；恒返回非 nil 切片，序列化为 [] 而非 null。
+func (r *Runtime) ListSkills(project string) ([]skills.CatalogEntry, error) {
+	if err := r.syncProjectProfile(project); err != nil {
+		return nil, err
+	}
+	entries, err := skills.ListUserInvocable(filepath.Join(r.dataDir, project, ".claude", "skills"))
+	if err != nil {
+		return nil, err
+	}
+	if entries == nil {
+		entries = []skills.CatalogEntry{}
+	}
+	return entries, nil
 }
 
 // QueryPrelogged 提交一条已由调用方写入事件日志的用户消息（持久会话受理路径）：
@@ -1202,14 +1251,23 @@ func (r *Runtime) buildAgent(ctx context.Context, sessionID, project string) (ad
 		return nil, fmt.Errorf("agent: filesystem middleware: %w", err)
 	}
 
-	// Skills / Subagent 源目录与项目 .claude 同构（§17）。
+	// Skills / Subagent 源目录与项目 .claude 同构（§17）：装配前先投影 profile，
+	// 保证首次对话（尚未列过 skill 列表）也能拿到内置 skill。
+	if err := r.syncProjectProfile(project); err != nil {
+		return nil, err
+	}
 	claudeDir := filepath.Join(r.projectRoot(project), ".claude")
 	skillsRoot := filepath.Join(claudeDir, "skills")
 	if err := skills.ValidateDir(skillsRoot); err != nil {
 		return nil, fmt.Errorf("agent: skills: %w", err)
 	}
-	skillBackend := skills.NewModeAwareBackend(skillsRoot, readContentMode(filepath.Join(r.projectRoot(project), "project.json")))
-	skillMW, err := skills.NewMiddleware(ctx, skillBackend)
+	// 官方路径：项目 skills 目录作为 filesystem backend 的根，交给 skill.NewBackendFromFilesystem
+	// 扫描 <root>/<name>/SKILL.md（content_mode 变体已在 profile 同步时投影成 SKILL.md）。
+	skillFS, err := workspace.NewBackend(skillsRoot)
+	if err != nil {
+		return nil, fmt.Errorf("agent: skills filesystem: %w", err)
+	}
+	skillMW, skillBackend, err := skills.NewFilesystemMiddleware(ctx, skillFS, skillsRoot)
 	if err != nil {
 		return nil, fmt.Errorf("agent: skill middleware: %w", err)
 	}

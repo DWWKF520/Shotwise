@@ -18,8 +18,6 @@ const (
 	commonSkillFile = "SKILL.md"
 	// SkillToolName 是 skill 中间件注册给模型的工具名（Eino 默认值）。
 	SkillToolName = "skill"
-	// baseDirectoryPrefix 是注入 skill 正文的首行前缀，event_log 的 skill_invocation 识别依赖它（§4.4）。
-	baseDirectoryPrefix = "Base directory for this skill:"
 )
 
 // ContentModes 是合法的 content_mode 取值（已排序，与 Python sorted(VALID_CONTENT_MODES) 对齐）。
