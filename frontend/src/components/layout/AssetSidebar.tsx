@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import {
@@ -32,6 +32,19 @@ interface AssetSidebarProps {
   className?: string;
 }
 
+const SIDEBAR_DEFAULT_WIDTH = 256;
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MAX_WIDTH = 420;
+const SIDEBAR_COLLAPSED_WIDTH = 64;
+const SIDEBAR_WIDTH_STORAGE_KEY = "shotwise:sidebarWidth";
+
+function loadSidebarWidth(): number {
+  const saved = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+  return Number.isFinite(saved) && saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH
+    ? Math.round(saved)
+    : SIDEBAR_DEFAULT_WIDTH;
+}
+
 interface NavItem {
   key: string;
   path: string;
@@ -45,6 +58,8 @@ interface NavItem {
  * - 工作区导航（5 个胶囊按钮：项目概览 / 源文件 / 角色集 / 场景库 / 道具库）
  * - 分集列表（搜索 + 卡片列表，每张卡片含缩略+状态+进度+费用）
  * - 折叠态（64px）：仅图标 + Ex 字符
+ * - 右缘可拖拽调宽（200–420px，持久化）；拖到低于 200px 阈值自动折叠，
+ *   折叠态向外拖越过阈值展开，双击手柄切换折叠
  */
 export function AssetSidebar({ className }: AssetSidebarProps) {
   const { t } = useTranslation(["common", "dashboard"]);
@@ -52,6 +67,10 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
   const debouncedFetchCost = useCostStore((s) => s.debouncedFetch);
   const [location, setLocation] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [width, setWidth] = useState(loadSidebarWidth);
+  const [dragging, setDragging] = useState(false);
+  const dragStateRef = useRef<{ startX: number; startWidth: number; wasCollapsed: boolean } | null>(null);
+  const restoreBodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null);
   const [search, setSearch] = useState("");
   const [episodeToDelete, setEpisodeToDelete] = useState<number | null>(null);
   const [episodeToRenumber, setEpisodeToRenumber] = useState<number | null>(null);
@@ -223,14 +242,103 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
     }
   };
 
+  const restoreBodyStyle = useCallback(() => {
+    const saved = restoreBodyStyleRef.current;
+    if (saved) {
+      document.body.style.cursor = saved.cursor;
+      document.body.style.userSelect = saved.userSelect;
+      restoreBodyStyleRef.current = null;
+    }
+  }, []);
+
+  const handleResizeMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // 仅响应主键，避免右键/中键意外进入拖拽态
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragStateRef.current = { startX: e.clientX, startWidth: width, wasCollapsed: collapsed };
+      restoreBodyStyleRef.current = {
+        cursor: document.body.style.cursor,
+        userSelect: document.body.style.userSelect,
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      setDragging(true);
+    },
+    [width, collapsed],
+  );
+
+  const handleResizeDoubleClick = useCallback(() => {
+    setCollapsed((c) => !c);
+  }, []);
+
+  useEffect(() => {
+    if (!dragging) return;
+
+    const finishResize = () => {
+      dragStateRef.current = null;
+      restoreBodyStyle();
+      setDragging(false);
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag) return;
+      // 主键已在中途松开（如焦点切走时）→ 主动收尾
+      if ((e.buttons & 1) === 0) {
+        finishResize();
+        return;
+      }
+      // 手柄在侧栏右缘，鼠标向右 (clientX 增大) → 宽度增大
+      const base = drag.wasCollapsed ? SIDEBAR_COLLAPSED_WIDTH : drag.startWidth;
+      const next = base + (e.clientX - drag.startX);
+      if (drag.wasCollapsed) {
+        // 折叠态向外拖：越过阈值展开并重定基点，继续拖动无宽度跳变
+        if (next >= SIDEBAR_MIN_WIDTH) {
+          dragStateRef.current = { startX: e.clientX, startWidth: next, wasCollapsed: false };
+          setCollapsed(false);
+          setWidth(next);
+        }
+      } else if (next < SIDEBAR_MIN_WIDTH) {
+        // 缩到阈值以下 → 折叠；width 不动，展开按钮回到上次宽度
+        dragStateRef.current = {
+          startX: e.clientX,
+          startWidth: SIDEBAR_COLLAPSED_WIDTH,
+          wasCollapsed: true,
+        };
+        setCollapsed(true);
+      } else {
+        setWidth(Math.min(next, SIDEBAR_MAX_WIDTH));
+      }
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", finishResize);
+    // 鼠标在窗外松开时 mouseup 可能不触发，blur 兜底防止卡死
+    window.addEventListener("blur", finishResize);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", finishResize);
+      window.removeEventListener("blur", finishResize);
+      // 组件意外卸载时兜底清理 body 样式
+      restoreBodyStyle();
+    };
+  }, [dragging, restoreBodyStyle]);
+
+  // 非拖拽期的展开宽度变化（含初次加载的回写）持久化；折叠态不覆盖，展开时回到上次宽度
+  useEffect(() => {
+    if (dragging || collapsed) return;
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+  }, [dragging, collapsed, width]);
+
   return (
     <>
     <aside
-      className={`flex flex-col overflow-hidden ${className ?? ""}`}
+      className={`relative flex flex-col overflow-hidden ${className ?? ""}`}
       style={{
-        width: collapsed ? 64 : 256,
+        width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : width,
         flexShrink: 0,
-        transition: "width .18s ease",
+        transition: dragging ? "none" : "width .18s ease",
         borderRight: "1px solid var(--color-hairline)",
         background:
           "linear-gradient(180deg, var(--color-shell-side-a), var(--color-shell-side-b))",
@@ -457,6 +565,30 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
             <ChevronLeft className="h-3.5 w-3.5" />
           )}
         </button>
+      </div>
+      {/* ---- 右缘拖拽调宽手柄：缩到阈值以下折叠，折叠态拖出展开，双击切换 ---- */}
+      {/* role="separator" 是 WAI-ARIA Authoring Practices 的 window splitter 模式， */}
+      {/* jsx-a11y 默认未把 separator 列入 interactive 角色，就地抑制该规则（同 AssistantResizeHandle）。 */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuenow={width}
+        aria-label={t("dashboard:sidebar_resize")}
+        title={t("dashboard:sidebar_resize")}
+        onMouseDown={handleResizeMouseDown}
+        onDoubleClick={handleResizeDoubleClick}
+        className="group absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize select-none"
+      >
+        <div
+          className={`absolute inset-y-0 right-0 w-px transition-colors duration-150 ${
+            dragging
+              ? "bg-[var(--color-accent)]"
+              : "bg-transparent group-hover:bg-[var(--color-accent)]"
+          }`}
+        />
       </div>
     </aside>
 

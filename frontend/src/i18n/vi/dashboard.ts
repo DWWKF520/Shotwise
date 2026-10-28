@@ -1823,6 +1823,7 @@ export default {
   'shots_section_title': 'Cảnh quay',
   'sidebar_collapse': 'Thu gọn',
   'sidebar_expand': 'Mở rộng',
+  'sidebar_resize': 'Kéo để thay đổi kích thước thanh bên',
   'source_files_drop_hint': 'Kéo văn bản tiểu thuyết vào đây, hoặc nhấn để chọn tệp',
   'source_files_drop_inline_hint': 'Thả thêm tệp để bổ sung',
   'source_open': 'Mở',

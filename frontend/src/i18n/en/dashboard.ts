@@ -1676,6 +1676,7 @@ export default {
   'add_episode_unavailable': 'Not yet available',
   'sidebar_collapse': 'Collapse',
   'sidebar_expand': 'Expand',
+  'sidebar_resize': 'Drag to resize sidebar',
   'episode_status_done': 'Done',
   'episode_status_active': 'In production',
   'episode_status_draft': 'Draft',

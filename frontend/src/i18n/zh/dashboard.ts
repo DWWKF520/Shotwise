@@ -1675,6 +1675,7 @@ export default {
   'add_episode_unavailable': '暂未提供',
   'sidebar_collapse': '折叠',
   'sidebar_expand': '展开',
+  'sidebar_resize': '拖动调整侧栏宽度',
   'episode_status_done': '已完成',
   'episode_status_active': '制作中',
   'episode_status_draft': '草稿',
