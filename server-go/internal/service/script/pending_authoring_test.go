@@ -24,6 +24,10 @@ func makePendingProject(t *testing.T, mode project.ContentMode, generationMode p
 		t.Fatal(err)
 	}
 	if err := store.Update("demo", func(pf *project.ProjectFile) error {
+		// ad 项目创建即带第 1 集单条，不重复登记。
+		if mode == project.ContentAd {
+			return nil
+		}
 		pf.Episodes = append(pf.Episodes, project.EpisodeMeta{
 			Episode: 1, Title: "第一集", ScriptFile: "scripts/episode_1.json",
 		})

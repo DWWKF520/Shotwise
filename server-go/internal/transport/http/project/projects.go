@@ -136,6 +136,10 @@ type CreateProjectRequest struct {
 	Style          string `json:"style"`
 	AspectRatio    string `json:"aspect_ratio"`
 	GridStoryboard bool   `json:"grid_storyboard"`
+	// 模式专属可选字段：target_duration / brief 仅 ad 可用，default_duration 仅非 ad 可用。
+	TargetDuration  *int    `json:"target_duration"`
+	Brief           *string `json:"brief"`
+	DefaultDuration *int    `json:"default_duration"`
 }
 
 // CreateProject 创建项目。
@@ -155,6 +159,32 @@ func CreateProject(d ProjectDeps) gin.HandlerFunc {
 		if !project.IsValidGenerationMode(req.GenerationMode) {
 			apperr.Abort(c, apperr.BadRequest("invalid_generation_mode", map[string]any{"mode": req.GenerationMode}))
 			return
+		}
+		// 模式专属字段互斥：target_duration/brief 仅 ad 可用；
+		// ad 不持有 default_duration、不开放宫格分镜。
+		isAd := req.ContentMode == string(project.ContentAd)
+		if isAd {
+			if req.DefaultDuration != nil {
+				apperr.Abort(c, apperr.BadRequest("ad_no_default_duration", nil))
+				return
+			}
+			if req.GridStoryboard {
+				apperr.Abort(c, apperr.BadRequest("ad_grid_not_supported", nil))
+				return
+			}
+			if req.TargetDuration != nil && *req.TargetDuration <= 0 {
+				apperr.Abort(c, apperr.BadRequest("project_config_invalid", nil))
+				return
+			}
+		} else {
+			if req.TargetDuration != nil {
+				apperr.Abort(c, apperr.BadRequest("ad_only_field", map[string]any{"field": "target_duration"}))
+				return
+			}
+			if req.Brief != nil {
+				apperr.Abort(c, apperr.BadRequest("ad_only_field", map[string]any{"field": "brief"}))
+				return
+			}
 		}
 		// 与 Python create_project 同语义：name 缺省时按标题 slug 自动生成；
 		// title 与 name 均缺省时报 title_required（Python 400）。
@@ -182,6 +212,17 @@ func CreateProject(d ProjectDeps) gin.HandlerFunc {
 		}
 		if req.AspectRatio != "" {
 			pf.AspectRatio = req.AspectRatio
+		}
+		// ad 的 target_duration/brief 覆盖数据层默认值；非 ad 写入可选的 default_duration。
+		if isAd {
+			if req.TargetDuration != nil {
+				pf.TargetDuration = req.TargetDuration
+			}
+			if req.Brief != nil {
+				pf.Brief = *req.Brief
+			}
+		} else if req.DefaultDuration != nil {
+			pf.DefaultDuration = req.DefaultDuration
 		}
 		pf.GridStoryboard = req.GridStoryboard
 		if err := d.Store.Save(name, pf); err != nil {

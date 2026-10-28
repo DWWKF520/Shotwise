@@ -374,3 +374,90 @@ func TestGetProjectDetailEmptyScripts(t *testing.T) {
 		t.Errorf("scripts = %s, want {}", raw)
 	}
 }
+
+// ad 项目创建：target_duration/brief 落盘，episodes 恒为第 1 集单条；未传时取默认档位。
+func TestCreateProjectAd(t *testing.T) {
+	f := newProjectFixture(t)
+
+	status, body := f.call(t, http.MethodPost, "/api/v1/projects", map[string]any{
+		"title": "广告项目", "content_mode": "ad", "generation_mode": "storyboard",
+		"target_duration": 30, "brief": "卖点短片",
+	}, "")
+	if status != http.StatusCreated {
+		t.Fatalf("status = %d, body = %#v", status, body)
+	}
+	proj := body["project"].(map[string]any)
+	if proj["target_duration"] != float64(30) {
+		t.Errorf("target_duration = %v, want 30", proj["target_duration"])
+	}
+	if proj["brief"] != "卖点短片" {
+		t.Errorf("brief = %v", proj["brief"])
+	}
+	episodes := proj["episodes"].([]any)
+	if len(episodes) != 1 {
+		t.Fatalf("episodes = %#v, want 单集", episodes)
+	}
+	ep := episodes[0].(map[string]any)
+	if ep["episode"] != float64(1) || ep["script_file"] != "scripts/episode_1.json" {
+		t.Errorf("episode = %#v", ep)
+	}
+
+	status, body = f.call(t, http.MethodPost, "/api/v1/projects", map[string]any{
+		"title": "广告项目二", "content_mode": "ad", "generation_mode": "storyboard",
+	}, "")
+	if status != http.StatusCreated {
+		t.Fatalf("status = %d, body = %#v", status, body)
+	}
+	proj = body["project"].(map[string]any)
+	if proj["target_duration"] != float64(project.ADDefaultTargetDuration) {
+		t.Errorf("默认 target_duration = %v, want %d", proj["target_duration"], project.ADDefaultTargetDuration)
+	}
+	if brief, present := proj["brief"]; present && brief != "" {
+		t.Errorf("brief = %v, want 空串", brief)
+	}
+}
+
+// 模式专属字段互斥：非 ad 带 target_duration/brief、ad 带 default_duration/宫格，均 400。
+func TestCreateProjectModeFieldMutex(t *testing.T) {
+	f := newProjectFixture(t)
+
+	status, body := f.call(t, http.MethodPost, "/api/v1/projects", map[string]any{
+		"title": "普通项目", "content_mode": "drama", "generation_mode": "storyboard",
+		"target_duration": 30,
+	}, "")
+	if status != http.StatusBadRequest {
+		t.Fatalf("非 ad 带 target_duration: status = %d, body = %#v", status, body)
+	}
+
+	status, body = f.call(t, http.MethodPost, "/api/v1/projects", map[string]any{
+		"title": "普通项目", "content_mode": "drama", "generation_mode": "storyboard",
+		"brief": "诉求",
+	}, "")
+	if status != http.StatusBadRequest {
+		t.Fatalf("非 ad 带 brief: status = %d, body = %#v", status, body)
+	}
+
+	status, body = f.call(t, http.MethodPost, "/api/v1/projects", map[string]any{
+		"title": "广告项目", "content_mode": "ad", "generation_mode": "storyboard",
+		"default_duration": 5,
+	}, "")
+	if status != http.StatusBadRequest {
+		t.Fatalf("ad 带 default_duration: status = %d, body = %#v", status, body)
+	}
+
+	status, body = f.call(t, http.MethodPost, "/api/v1/projects", map[string]any{
+		"title": "广告项目", "content_mode": "ad", "generation_mode": "storyboard",
+		"grid_storyboard": true,
+	}, "")
+	if status != http.StatusBadRequest {
+		t.Fatalf("ad 带宫格: status = %d, body = %#v", status, body)
+	}
+
+	status, body = f.call(t, http.MethodPost, "/api/v1/projects", map[string]any{
+		"title": "广告项目", "content_mode": "ad", "generation_mode": "storyboard",
+		"target_duration": 0,
+	}, "")
+	if status != http.StatusBadRequest {
+		t.Fatalf("ad 带非正 target_duration: status = %d, body = %#v", status, body)
+	}
+}

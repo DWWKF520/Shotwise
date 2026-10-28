@@ -46,6 +46,10 @@ func newProjectExtraFixture(t *testing.T, contentMode project.ContentMode) proje
 		t.Fatalf("create project: %v", err)
 	}
 	if err := store.Update("p1", func(pf *project.ProjectFile) error {
+		// ad 项目创建即带第 1 集单条，不再追加集；其余模式登记第 1、2 两集。
+		if contentMode == project.ContentAd {
+			return nil
+		}
 		pf.Episodes = append(pf.Episodes,
 			project.EpisodeMeta{Episode: 1, ScriptFile: "scripts/episode_1.json"},
 			project.EpisodeMeta{Episode: 2, ScriptFile: "scripts/episode_2.json"},

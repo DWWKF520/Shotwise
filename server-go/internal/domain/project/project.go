@@ -35,6 +35,15 @@ var (
 	ValidGenerationModes = []GenerationMode{GenerationStoryboard, GenerationReferenceVideo}
 )
 
+// ADDefaultTargetDuration 是 ad 项目创建未传 target_duration 时的数据层兜底
+// （与创建向导默认档位同值，对应 Python ProjectManager.AD_DEFAULT_TARGET_DURATION）。
+const ADDefaultTargetDuration = 60
+
+// ADSingleEpisode 构造 ad 项目的恒定单条 episode：第 1 集、无标题、默认剧本路径。
+func ADSingleEpisode() EpisodeMeta {
+	return EpisodeMeta{Episode: 1, Title: "", ScriptFile: "scripts/episode_1.json"}
+}
+
 // IsValidContentMode 判断内容模式是否合法。
 func IsValidContentMode(m string) bool {
 	for _, v := range ValidContentModes {
@@ -214,9 +223,11 @@ type ProjectFile struct {
 
 // NewProjectFile 构造新项目的 project.json。
 // contentMode / generationMode / sourceKind 创建即定，创建后不可更改。
+// ad 项目按数据层默认落盘：target_duration 兜底 60s、brief 空串、恒为第 1 集单条
+// （对应 Python create_project_metadata 的 ad 分支），保证创建即通过落盘校验。
 func NewProjectFile(title string, mode ContentMode, genMode GenerationMode) *ProjectFile {
 	now := time.Now().UTC().Format(time.RFC3339)
-	return &ProjectFile{
+	pf := &ProjectFile{
 		SchemaVersion:  SchemaVersion,
 		Title:          title,
 		ContentMode:    string(mode),
@@ -230,6 +241,13 @@ func NewProjectFile(title string, mode ContentMode, genMode GenerationMode) *Pro
 		Props:          AssetBucket{},
 		Products:       AssetBucket{},
 	}
+	if mode == ContentAd {
+		duration := ADDefaultTargetDuration
+		pf.TargetDuration = &duration
+		pf.Brief = ""
+		pf.Episodes = []EpisodeMeta{ADSingleEpisode()}
+	}
+	return pf
 }
 
 // IsReferenceVideo 判断是否走参考路线。
