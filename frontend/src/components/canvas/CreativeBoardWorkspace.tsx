@@ -179,6 +179,18 @@ type BoardItemType = "document" | "character" | "scene" | "prop" | "product" | "
 
 const ASSET_TYPES: Array<AssetKind | "all"> = ["all", "character", "scene", "prop", "product", "media", "video"];
 const ASSET_CATEGORIES: AssetCategory[] = ["personal", "agent", "global"];
+
+const LEFT_PANEL_DEFAULT_WIDTH = 282;
+const LEFT_PANEL_MIN_WIDTH = 220;
+const LEFT_PANEL_MAX_WIDTH = 460;
+const LEFT_PANEL_WIDTH_STORAGE_KEY = "shotwise:creativeBoardLeftPanelWidth";
+
+function loadLeftPanelWidth(): number {
+  const saved = Number(window.localStorage.getItem(LEFT_PANEL_WIDTH_STORAGE_KEY));
+  return Number.isFinite(saved) && saved >= LEFT_PANEL_MIN_WIDTH && saved <= LEFT_PANEL_MAX_WIDTH
+    ? Math.round(saved)
+    : LEFT_PANEL_DEFAULT_WIDTH;
+}
 type ElementFilter = "all" | "text" | "image" | "video" | "video_edit" | "director" | "frame_extract" | "audio" | "script";
 
 const IMAGE_ITEM_TYPES = new Set(["character", "scene", "prop", "product", "media"]);
@@ -650,6 +662,83 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const [assetCategory, setAssetCategory] = useState<AssetCategory>("personal");
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetKind | "all">("all");
   const [leftOpen, setLeftOpen] = useState(true);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(loadLeftPanelWidth);
+  const [leftPanelDragging, setLeftPanelDragging] = useState(false);
+  const leftPanelDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const leftPanelBodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null);
+
+  const restoreLeftPanelBodyStyle = useCallback(() => {
+    const saved = leftPanelBodyStyleRef.current;
+    if (saved) {
+      document.body.style.cursor = saved.cursor;
+      document.body.style.userSelect = saved.userSelect;
+      leftPanelBodyStyleRef.current = null;
+    }
+  }, []);
+
+  const handleLeftPanelResizeStart = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      // 仅响应主键，避免右键/中键意外进入拖拽态
+      if (event.button !== 0) return;
+      event.preventDefault();
+      leftPanelDragRef.current = { startX: event.clientX, startWidth: leftPanelWidth };
+      leftPanelBodyStyleRef.current = {
+        cursor: document.body.style.cursor,
+        userSelect: document.body.style.userSelect,
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      setLeftPanelDragging(true);
+    },
+    [leftPanelWidth],
+  );
+
+  useEffect(() => {
+    if (!leftPanelDragging) return;
+
+    const finishLeftPanelResize = () => {
+      leftPanelDragRef.current = null;
+      restoreLeftPanelBodyStyle();
+      setLeftPanelDragging(false);
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      const drag = leftPanelDragRef.current;
+      if (!drag) return;
+      // 主键已在中途松开（如焦点切走时）→ 主动收尾
+      if ((event.buttons & 1) === 0) {
+        finishLeftPanelResize();
+        return;
+      }
+      // 手柄在面板右缘，鼠标向右 (clientX 增大) → 宽度增大
+      const next = drag.startWidth + (event.clientX - drag.startX);
+      if (next < LEFT_PANEL_MIN_WIDTH) {
+        // 缩到阈值以下 → 折叠；宽度不清除，重开回到上次宽度
+        finishLeftPanelResize();
+        setLeftOpen(false);
+        return;
+      }
+      setLeftPanelWidth(Math.min(next, LEFT_PANEL_MAX_WIDTH));
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", finishLeftPanelResize);
+    // 鼠标在窗外松开时 mouseup 可能不触发，blur 兜底防止卡死
+    window.addEventListener("blur", finishLeftPanelResize);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", finishLeftPanelResize);
+      window.removeEventListener("blur", finishLeftPanelResize);
+      // 组件意外卸载时兜底清理 body 样式
+      restoreLeftPanelBodyStyle();
+    };
+  }, [leftPanelDragging, restoreLeftPanelBodyStyle]);
+
+  // 非拖拽期的面板宽度变化（含初次加载的回写）持久化；折叠态不覆盖，重开回到上次宽度
+  useEffect(() => {
+    if (leftPanelDragging || !leftOpen) return;
+    window.localStorage.setItem(LEFT_PANEL_WIDTH_STORAGE_KEY, String(leftPanelWidth));
+  }, [leftPanelDragging, leftOpen, leftPanelWidth]);
   const [gridVisible, setGridVisible] = useState(true);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
@@ -1843,7 +1932,10 @@ if (event.key === "Escape") closeBoardMenu();
     <header className="shrink-0 border-b border-[#e4e9f0] bg-white"><div className="flex h-11 items-center gap-1 px-3"><Grid3X3 className="h-5 w-5 text-[#202124]" aria-hidden /><BoardSwitcher name={name} boardId={board?.id} boardOptions={boardOptions} open={boardMenuOpen} creating={creatingBoard} editingBoardId={editingBoardId} editingBoardName={editingBoardName} boardActionsId={boardActionsId} labels={{ title: t("creative_board_switch"), add: t("creative_board_add"), defaultName: t("creative_board_default_name"), nameInput: t("creative_board_name_input"), more: t("creative_board_more"), openNewWindow: t("creative_board_open_new_window"), rename: t("creative_board_rename"), duplicate: t("creative_board_duplicate"), delete: t("creative_board_delete") }} onToggle={() => setBoardMenuOpen((open) => !open)} onCreate={() => void createNewBoard()} onSwitch={switchBoard} onEditNameChange={setEditingBoardName} onSaveName={saveBoardOptionName} onCancelEdit={() => setEditingBoardId(null)} onToggleActions={(id) => setBoardActionsId((currentId) => currentId === id ? null : id)} onOpenNewWindow={openBoardInNewWindow} onRename={beginBoardRename} onDuplicate={duplicateBoard} onDelete={deleteBoard} /></div></header>
     <div className="relative flex min-h-0 flex-1">
       {leftOpen ? (
-        <aside className="flex w-[282px] shrink-0 flex-col border-r border-[#e2e8f0] bg-white">
+        <aside
+          className="relative flex shrink-0 flex-col border-r border-[#e2e8f0] bg-white"
+          style={{ width: leftPanelWidth }}
+        >
           <div className="flex h-12 items-center gap-2 border-b border-[#edf0f4] px-2.5">
             <div className="flex flex-1 items-center gap-0.5">
               <button type="button" onClick={() => setLeftTab("canvas")} className={"rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors " + (leftTab === "canvas" ? "bg-[#eeeeef] text-[#3f4650]" : "text-[#7d8590] hover:bg-[#f7f7f8]")}>
@@ -2035,6 +2127,26 @@ if (event.key === "Escape") closeBoardMenu();
               </div>
             </div>
           )}
+          {/* ---- 右缘拖拽调宽手柄：缩到阈值以下折叠，双击手柄折叠 ---- */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-valuemin={LEFT_PANEL_MIN_WIDTH}
+            aria-valuemax={LEFT_PANEL_MAX_WIDTH}
+            aria-valuenow={leftPanelWidth}
+            aria-label={t("creative_board_resize_left", { defaultValue: "Resize left panel" })}
+            title={t("creative_board_resize_left", { defaultValue: "Resize left panel" })}
+            onMouseDown={handleLeftPanelResizeStart}
+            onDoubleClick={() => setLeftOpen(false)}
+            className="group absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize select-none"
+          >
+            <div
+              className={
+                "absolute inset-y-0 right-0 w-px transition-colors duration-150 " +
+                (leftPanelDragging ? "bg-[#6254d9]" : "bg-transparent group-hover:bg-[#6254d9]")
+              }
+            />
+          </div>
         </aside>
       ) : (
         <button type="button" onClick={() => setLeftOpen(true)} className="focus-ring absolute left-1 top-1 z-30 grid h-5 w-5 place-items-center rounded-md border border-[#dfe5ed] bg-white p-0.5 shadow-sm" aria-label={t("creative_board_open_left", { defaultValue: "Open left panel" })}>

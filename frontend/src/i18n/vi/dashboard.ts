@@ -2648,6 +2648,7 @@ export default {
   'creative_board_open_left': "Mở bảng bên trái",
   'creative_board_open_right': "Mở bảng bên phải",
   'creative_board_collapse_left': "Thu gọn bảng bên trái",
+  'creative_board_resize_left': "Kéo để thay đổi kích thước bảng bên trái",
   'creative_board_collapse_right': "Thu gọn bảng bên phải",
   'creative_board_more': "Thêm",
   'canvas.saveStatus.unsaved': 'Có thay đổi chưa lưu',

@@ -2649,6 +2649,7 @@ export default {
   'creative_board_open_left': "打开左侧面板",
   'creative_board_open_right': "打开右侧面板",
   'creative_board_collapse_left': "收起左侧面板",
+  'creative_board_resize_left': "拖动调整左侧面板宽度",
   'creative_board_collapse_right': "收起右侧面板",
   'creative_board_more': "更多",
   'canvas.saveStatus.unsaved': '有未保存的更改',

@@ -89,6 +89,8 @@ function makeBoard(id: string, itemId: string, name: string) {
 describe("CreativeBoardWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // 左侧面板宽度从 localStorage 恢复，测试间清空避免串扰
+    window.localStorage.clear();
     useProjectsStore.setState(useProjectsStore.getInitialState(), true);
     useProjectsStore.setState({
       currentProjectName: "demo",
@@ -112,6 +114,55 @@ describe("CreativeBoardWorkspace", () => {
     vi.mocked(API.getCreativeBoard).mockResolvedValue(makeBoard("board-a", "item-a", "Canvas A") as never);
     loadCanvasAssets.mockResolvedValue({ assets: [], byKind: {}, errors: [] });
     enqueueCanvasImageAdvanced.mockResolvedValue({ taskIds: [], deduped: false });
+  });
+
+  it("resizes the left panel by dragging the separator and persists the width", async () => {
+    render(
+      <Router hook={memoryLocation({ path: "/creative-board" }).hook}>
+        <Route path="/creative-board">
+          <CreativeBoardWorkspace projectName="demo" />
+        </Route>
+      </Router>,
+    );
+
+    const handle = await screen.findByRole("separator", { name: "creative_board_resize_left" });
+    const aside = screen.getByRole("complementary");
+    expect(aside).toHaveStyle({ width: "282px" });
+
+    fireEvent.mouseDown(handle, { button: 0, clientX: 282 });
+    fireEvent.mouseMove(window, { buttons: 1, clientX: 340 });
+    expect(aside).toHaveStyle({ width: "340px" });
+    fireEvent.mouseUp(window);
+
+    expect(window.localStorage.getItem("shotwise:creativeBoardLeftPanelWidth")).toBe("340");
+  });
+
+  it("collapses the left panel when dragged below the threshold and restores width on reopen", async () => {
+    render(
+      <Router hook={memoryLocation({ path: "/creative-board" }).hook}>
+        <Route path="/creative-board">
+          <CreativeBoardWorkspace projectName="demo" />
+        </Route>
+      </Router>,
+    );
+
+    const handle = await screen.findByRole("separator", { name: "creative_board_resize_left" });
+
+    // 282 → 100：低于 220 阈值，拖动中即折叠（面板卸载，出现重开按钮）
+    fireEvent.mouseDown(handle, { button: 0, clientX: 282 });
+    fireEvent.mouseMove(window, { buttons: 1, clientX: 100 });
+    fireEvent.mouseUp(window);
+
+    expect(
+      screen.queryByRole("separator", { name: "creative_board_resize_left" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "creative_board_open_left" })).toBeInTheDocument();
+    // 折叠不清除宽度槽位
+    expect(window.localStorage.getItem("shotwise:creativeBoardLeftPanelWidth")).toBe("282");
+
+    act(() => screen.getByRole("button", { name: "creative_board_open_left" }).click());
+    const aside = await screen.findByRole("complementary");
+    expect(aside).toHaveStyle({ width: "282px" });
   });
 
   it("filters assets by Personal, Agent, and Global categories", async () => {

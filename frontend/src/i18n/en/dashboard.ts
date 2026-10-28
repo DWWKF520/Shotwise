@@ -2650,6 +2650,7 @@ export default {
   'creative_board_open_left': "Open left panel",
   'creative_board_open_right': "Open right panel",
   'creative_board_collapse_left': "Collapse left panel",
+  'creative_board_resize_left': "Drag to resize left panel",
   'creative_board_collapse_right': "Collapse right panel",
   'creative_board_more': "More",
   'canvas.saveStatus.unsaved': 'Unsaved changes',
