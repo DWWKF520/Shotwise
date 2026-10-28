@@ -2,7 +2,7 @@
 //
 // 前缀：/api/v1/providers
 //
-// 与 Python 的差异只在一处：连接测试只对 OpenAI 兼容端点（openai / ark）实现，
+// 与 Python 的差异只在一处：连接测试只对 OpenAI 兼容端点（openai / ark / agnes）实现，
 // 其余供应商返回 success=false + 明确原因，而不是假装通过。管理面上「测试通过」必须
 // 真意味着能连上——这是用户在配置面板点「测试」时唯一的信息来源。
 package providers

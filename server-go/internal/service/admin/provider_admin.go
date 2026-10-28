@@ -481,6 +481,8 @@ func (s *ProviderAdminService) TestConnection(ctx context.Context, providerID st
 		return testOpenAICompatible(ctx, firstNonEmpty(baseURL, "https://api.openai.com/v1"), apiKey)
 	case "ark", "ark-agent-plan":
 		return testOpenAICompatible(ctx, firstNonEmpty(baseURL, "https://ark.cn-beijing.volces.com/api/v3"), apiKey)
+	case "agnes":
+		return testOpenAICompatible(ctx, agnesBaseURL(baseURL), apiKey)
 	default:
 		return TestResult{
 			Success: false,
@@ -718,6 +720,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// agnesBaseURL 归一化为 {host}/v1：容忍配置里填 host、带尾斜杠、或已带 /v1 的完整 base。
+// Agnes 网关的 OpenAI 风格端点统一挂在 /v1 下，探测 /models 必须落在该前缀上。
+// 入参由 TestConnection 兜底 meta.DefaultBaseURL（https://apihub.agnes-ai.com/v1），无空串路径。
+func agnesBaseURL(configured string) string {
+	base := strings.TrimSuffix(strings.TrimRight(configured, "/"), "/v1")
+	return base + "/v1"
 }
 
 // testOpenAICompatible 用 GET /models 验证 OpenAI 兼容端点：能列出模型即说明

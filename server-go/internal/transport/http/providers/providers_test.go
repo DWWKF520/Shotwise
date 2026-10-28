@@ -259,6 +259,37 @@ func TestProviderTestConnectionWithoutKey(t *testing.T) {
 	}
 }
 
+// TestProviderTestConnectionAgnes 校验 agnes 测试请求打到 {base}/v1/models：
+// base_url 缺 /v1 前缀时被归一化补上，上游 200 即测试通过。
+func TestProviderTestConnectionAgnes(t *testing.T) {
+	f := newProviderFixture(t)
+	gotPath := ""
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"agnes-video-2.5"},{"id":"other-model"}]}`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	status, body := f.do(t, http.MethodPost, "/api/v1/providers/agnes/credentials", map[string]any{
+		"api_key":  "test-key",
+		"base_url": upstream.URL, // 故意不带 /v1：校验归一化
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("创建凭证 status = %d body=%v", status, body)
+	}
+	status, body = f.do(t, http.MethodPost, "/api/v1/providers/agnes/test", nil)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d body=%v", status, body)
+	}
+	if body["success"] != true {
+		t.Fatalf("应通过: %v", body)
+	}
+	if gotPath != "/v1/models" {
+		t.Fatalf("应请求 /v1/models，实际 %q", gotPath)
+	}
+}
+
 // TestProviderModelTypesOverrides 校验模型类型覆盖只接受注册表内的模型。
 func TestProviderModelTypesOverrides(t *testing.T) {
 	f := newProviderFixture(t)
