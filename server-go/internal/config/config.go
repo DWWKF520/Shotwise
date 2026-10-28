@@ -48,7 +48,9 @@ type Config struct {
 	SandboxEnabled bool
 
 	LogLevel string
-	LogDir   string
+	// LogDir 日志文件目录，见 ResolveLogDir；LogFileDisabled 关闭文件日志（仅 stdout）。
+	LogDir         string
+	LogFileDisabled bool
 
 	// LLM 连接配置（env 级基础设施项；生产环境真正来源是 DB 的 provider_config / provider_credential）。
 	// BaseURL 留空则走各厂商默认网关（OpenAI 兼容）。Anthropic Claude 可填 OpenAI 兼容网关地址。
@@ -84,6 +86,8 @@ func Load() (*Config, error) {
 
 	cfg.AuthEnabled = parseBoolEnv(os.Getenv("AUTH_ENABLED"), true)
 	cfg.DataDir = ResolveDataDir()
+	cfg.LogDir = ResolveLogDir()
+	cfg.LogFileDisabled = logFileDisabled()
 	if cfg.DatabaseURL == "" {
 		cfg.DatabaseURL = "sqlite://" + filepath.Join(cfg.DataDir, ".shotwise.db")
 	}
@@ -128,6 +132,36 @@ func ResolveDataDir() string {
 		return "projects"
 	}
 	return filepath.Join(wd, "projects")
+}
+
+// ResolveLogDir 决定日志目录：SHOTWISE_LOG_DIR > <cwd>/logs。
+// 相对路径基于 cwd（Python 侧基于 PROJECT_ROOT，Go 服务以运行目录为其等价物）。
+// 刻意不放在 DataDir 下：projects 根目录会被枚举为项目列表，旁系目录会被当成
+// 伪项目暴露给前端（与 Python 侧 resolve_log_dir 同一理由）。
+func ResolveLogDir() string {
+	raw := strings.TrimSpace(os.Getenv("SHOTWISE_LOG_DIR"))
+	wd, wdErr := os.Getwd()
+	if raw == "" {
+		if wdErr != nil {
+			return "logs"
+		}
+		return filepath.Join(wd, "logs")
+	}
+	if filepath.IsAbs(raw) || wdErr != nil {
+		return raw
+	}
+	return filepath.Join(wd, raw)
+}
+
+// logFileDisabled 解析 SHOTWISE_LOG_FILE_DISABLED：取 1/true/yes（不区分大小写）
+// 时关闭文件日志，仅输出 stdout——与 Python 侧 _DISABLED_TRUTHY 集合一致。
+func logFileDisabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("SHOTWISE_LOG_FILE_DISABLED"))) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 // ResolveFrontendDist 决定前端构建产物目录：SHOTWISE_FRONTEND_DIST > 从 cwd 向上

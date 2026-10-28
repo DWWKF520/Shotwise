@@ -41,7 +41,7 @@ internal/
 ├── textgen/        LLM 文本生成（eino ChatModel 封装）
 ├── providers/      生成模型供应商 backend（视频/图片 API 客户端）+ provkit 通用工具包
 ├── capcut/         剪映（JianYing）draft_content 生成器
-├── infra/          基础设施：db / ffmpeg / httpc / fs / img
+├── infra/          基础设施：db / ffmpeg / httpc / fs / img / logging
 ├── auth/           JWT 认证
 ├── config/         配置加载与 .env 语义
 └── pricing/        计费/定价
@@ -129,6 +129,7 @@ internal/
 ### internal/infra（基础设施）
 
 - `db/` — GORM 打开/迁移（SQLite/PostgreSQL 双方言）、时间类型
+- `logging/` — 进程级 slog 构造：stdout + 日志文件双写，`shotwise.log` 按天轮转保留 7 份（`SHOTWISE_LOG_DIR` / `LOG_LEVEL` / `SHOTWISE_LOG_FILE_DISABLED`，语义对齐 Python `lib/logging_config.py`）
 - `ffmpeg/` — ffmpeg 封装：probe/concat/render/capture/frames/subtitles/packaging
 - `httpc/` — 出站 HTTP 客户端（统一超时/重试）
 - `fs/` — JSON 原子读写、safejoin（路径逃逸防护）

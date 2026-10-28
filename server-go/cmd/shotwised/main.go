@@ -28,6 +28,7 @@ import (
 	"github.com/shotwise/shotwise/internal/config"
 	"github.com/shotwise/shotwise/internal/domain/project"
 	"github.com/shotwise/shotwise/internal/infra/db"
+	"github.com/shotwise/shotwise/internal/infra/logging"
 	"github.com/shotwise/shotwise/internal/pricing"
 	"github.com/shotwise/shotwise/internal/queue"
 	"github.com/shotwise/shotwise/internal/repository"
@@ -45,16 +46,16 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	slog.SetDefault(log)
-
-	if err := run(log); err != nil {
-		log.Error("fatal", "err", err)
+	// 引导 logger 仅输出 stdout；run 读取 .env 后会按 LOG_LEVEL/SHOTWISE_LOG_DIR
+	// 升级为 stdout+文件双写的正式 logger。
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	if err := run(); err != nil {
+		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) error {
+func run() error {
 	// 加载 .env（python-dotenv 语义：已存在的进程环境变量优先）。
 	// 先于 config.Load：后者把 env 摄成快照；也先于 AssertNoProviderSecrets：
 	// provider 密钥若写在 .env 里同样属于禁止进入进程环境的红线，加载后统一由断言拦截。
@@ -64,6 +65,13 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+
+	log := logging.Setup(logging.Options{
+		Level:        cfg.LogLevel,
+		Dir:          cfg.LogDir,
+		FileDisabled: cfg.LogFileDisabled,
+	})
+	slog.SetDefault(log)
 
 	// 必须在任何子进程（ffmpeg / agent 工具 / 沙箱）启动之前：
 	// fork 出去的子进程会继承父进程环境，provider 密钥一旦在 env 里就会泄漏。
