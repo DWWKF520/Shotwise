@@ -129,3 +129,6 @@ deploy/production/pgdata/
 .codeartsdoer
 .trae/
 .zcode/
+
+# ZCode Stop hook 运行时状态（按 session 记录续跑配额与去重签名）
+.workbuddy/.stop_hook_state.json

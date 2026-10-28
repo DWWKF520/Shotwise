@@ -231,6 +231,18 @@ function cloneBoard(board: Board): Board {
   return JSON.parse(JSON.stringify(board)) as Board;
 }
 
+function isCreativeBoardNotFoundError(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (status === 404) return true;
+  return error instanceof Error && error.message.includes("creative_board_not_found");
+}
+
+// 持久化 key 不含 revision：保存成功只是版本号前进，不构成一次编辑
+function boardPersistenceKey(snapshot: Pick<CreativeBoardSnapshot, "boardId" | "name" | "viewport" | "items" | "edges">): string {
+  const { boardId, name, viewport, items, edges } = snapshot;
+  return JSON.stringify({ boardId, name, viewport, items, edges });
+}
+
 function isEditableTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
 }
@@ -577,7 +589,8 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const assetFingerprints = useProjectsStore((state) => state.assetFingerprints);
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef({ x: 28, y: 28, zoom: 1 });
-  const revisionRef = useRef(1);
+  const boardRevisionsRef = useRef(new Map<string, number>());
+  const currentBoardIdRef = useRef<string | null>(null);
   const dragRef = useRef<BoardDragState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
   const panRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
@@ -745,11 +758,19 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
         .filter((item) => typeof item.id === "string")
         .map((item) => ({ id: String(item.id), name: item.name || t("creative_board_default_name") }));
       const existing = boards.items.find((item) => typeof item.id === "string");
-      const nextBoard = currentBoardId
-        ? parseBoard(await API.getCreativeBoard(currentBoardId))
-        : existing
-        ? parseBoard(await API.getCreativeBoard(String(existing.id)))
-        : parseBoard(await API.createCreativeBoard(projectName, { name: t("creative_board_default_name"), viewport: { x: 28, y: 28, zoom: 1 } }));
+      let requestedBoard: Board | undefined;
+      if (currentBoardId) {
+        try {
+          requestedBoard = parseBoard(await API.getCreativeBoard(currentBoardId));
+        } catch (reason) {
+          // URL 的 board 参数可能指向已删除的画布：404 时降级取列表首个/自动建板，而不是卡死整个工作台
+          if (!isCreativeBoardNotFoundError(reason)) throw reason;
+        }
+      }
+      const nextBoard = requestedBoard
+        ?? (existing
+          ? parseBoard(await API.getCreativeBoard(String(existing.id)))
+          : parseBoard(await API.createCreativeBoard(projectName, { name: t("creative_board_default_name"), viewport: { x: 28, y: 28, zoom: 1 } })));
       if (!isCurrentLoad()) return undefined;
       serverItemIdsRef.current.clear();
       serverEdgeIdsRef.current.clear();
@@ -770,7 +791,8 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
       setEditingBoardName(shouldEditNewBoard ? nextBoard.name : "");
       setBoardActionsId(null);
       const nextViewport = { x: nextBoard.viewport.x ?? 28, y: nextBoard.viewport.y ?? 28, zoom: zoomClamp(nextBoard.viewport.zoom ?? 1) };
-      revisionRef.current = nextBoard.revision;
+      boardRevisionsRef.current.set(nextBoard.id, nextBoard.revision);
+      currentBoardIdRef.current = nextBoard.id;
       setRevision(nextBoard.revision);
       viewportRef.current = nextViewport;
       setViewportState(nextViewport);
@@ -1011,6 +1033,14 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     navigate(`${pathname}?${params.toString()}`);
   }, [location, navigate, projectName, routeSearch]);
 
+  const clearBoardParam = useCallback(() => {
+    const params = new URLSearchParams(routeSearch);
+    params.set("project", projectName);
+    params.delete("board");
+    const pathname = location.split("?", 1)[0] || location;
+    navigate(`${pathname}?${params.toString()}`);
+  }, [location, navigate, projectName, routeSearch]);
+
   const createNewBoard = useCallback(async () => {
     if (creatingBoard) return;
     setCreatingBoard(true);
@@ -1048,12 +1078,28 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     setEditingBoardName(option.name);
   }, []);
 
+  // 把变更响应里的 revision 写回按板跟踪表；只同步当前展示的板到 state，
+  // 避免旧板在途保存的响应覆盖当前板的版本号
+  const applyBoardRevision = useCallback((boardId: string, response: { revision?: unknown; board?: unknown }) => {
+    const nested = response.board && typeof response.board === "object" ? (response.board as { revision?: unknown }).revision : undefined;
+    const nextRevision = typeof response.revision === "number" ? response.revision : typeof nested === "number" ? nested : undefined;
+    if (nextRevision === undefined) return;
+    boardRevisionsRef.current.set(boardId, nextRevision);
+    if (mountedRef.current && currentBoardIdRef.current === boardId) setRevision(nextRevision);
+  }, []);
+
   const saveBoardOptionName = useCallback(async (option: BoardOption) => {
     const nextName = editingBoardName.trim() || t("creative_board_default_name");
     setEditingBoardId(null);
     if (nextName === option.name) return;
     try {
-      await API.updateCreativeBoard(option.id, { name: nextName });
+      // 重命名带 CAS 并回写返回的 revision：不带版本号会让服务端版本 +1 而前端持有旧值，
+      // 下一次自动保存必然 409，弹「同名文件已存在」冲突框
+      const response = await API.updateCreativeBoard(option.id, {
+        name: nextName,
+        expected_revision: boardRevisionsRef.current.get(option.id),
+      });
+      applyBoardRevision(option.id, response);
       setBoardOptions((options) => options.map((item) => item.id === option.id ? { ...item, name: nextName } : item));
       if (option.id === board?.id) {
         setName(nextName);
@@ -1062,7 +1108,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("creative_board_rename_error"));
     }
-  }, [board, editingBoardName, setError, t]);
+  }, [applyBoardRevision, board, editingBoardName, setError, t]);
 
   const openBoardInNewWindow = useCallback((boardId: string) => {
     const params = new URLSearchParams(routeSearch);
@@ -1090,11 +1136,18 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     if (!window.confirm(t("creative_board_delete_confirm", { name: option.name }))) return;
     try {
       await API.deleteCreativeBoard(option.id);
-      setBoardOptions((options) => options.filter((item) => item.id !== option.id));
+      const remaining = boardOptions.filter((item) => item.id !== option.id);
+      setBoardOptions(remaining);
+      boardRevisionsRef.current.delete(option.id);
+      // 删除当前板后必须切走：留着会让 URL 与本地 board 态仍指向已删的板，后续自动保存全部 404
+      if (option.id === board?.id) {
+        if (remaining[0]) navigateToBoard(remaining[0].id);
+        else clearBoardParam();
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("creative_board_delete_error"));
     }
-  }, [setError, t]);
+  }, [board, boardOptions, clearBoardParam, navigateToBoard, setError, t]);
 
   const removeItem = (item: BoardItem, shouldRemember = true) => {
     if (!board) return;
@@ -1554,13 +1607,14 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
 
   const persistSnapshot = useCallback(async (snapshot: CreativeBoardSnapshot, previousSnapshot: CreativeBoardSnapshot | undefined): Promise<CreativeBoardSnapshot> => {
     const previous = previousSnapshot?.boardId === snapshot.boardId ? previousSnapshot : EMPTY_SNAPSHOT;
-    let revision = revisionRef.current;
+    // revision 按板维度跟踪：旧板在途保存的响应只写回旧板条目，不污染当前板的版本号
+    let revision = boardRevisionsRef.current.get(snapshot.boardId) ?? snapshot.revision;
     const applyRevision = (response: { revision?: unknown; board?: unknown }) => {
       const nestedRevision = response.board && typeof response.board === "object" ? (response.board as Record<string, unknown>).revision : undefined;
       if (typeof response.revision === "number") revision = response.revision;
       else if (typeof nestedRevision === "number") revision = nestedRevision;
-      revisionRef.current = revision;
-      if (mountedRef.current) setRevision(revision);
+      boardRevisionsRef.current.set(snapshot.boardId, revision);
+      if (mountedRef.current && currentBoardIdRef.current === snapshot.boardId) setRevision(revision);
     };
     const saveRequest = async <T extends { revision?: unknown; board?: unknown }>(request: () => Promise<T>) => {
       const response = await request();
@@ -1622,12 +1676,12 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   }, [setError, t]);
 
   const persistenceSnapshot = useMemo<CreativeBoardSnapshot>(() => board ? { boardId: board.id, name, viewport: { x: viewport.x, y: viewport.y, zoom: viewport.zoom }, items: board.items, edges: board.edges, revision } : EMPTY_SNAPSHOT, [board, name, revision, viewport]);
-  const persistence = useCanvasPersistence({ snapshot: persistenceSnapshot, snapshotKey: board ? JSON.stringify(persistenceSnapshot) : "", hydrated: Boolean(board) && !loading, enabled: Boolean(board), debounceMs: 1_000, save: persistSnapshot });
+  const persistence = useCanvasPersistence({ snapshot: persistenceSnapshot, snapshotKey: board ? boardPersistenceKey(persistenceSnapshot) : "", hydrated: Boolean(board) && !loading, enabled: Boolean(board), debounceMs: 1_000, save: persistSnapshot });
   const { status: persistenceStatus, saveNow, retry, reset } = persistence;
 
   const reloadBoard = useCallback(async () => {
     const loaded = await load();
-    if (loaded && mountedRef.current) reset(loaded, JSON.stringify(loaded));
+    if (loaded && mountedRef.current) reset(loaded, boardPersistenceKey(loaded));
   }, [load, reset]);
 
   const resolveConflict = useCallback((decision: ConflictResolution) => {
@@ -1637,12 +1691,12 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
       return;
     }
     if (decision === "rename") {
-      if (conflictRevision !== null) revisionRef.current = conflictRevision;
+      if (conflictRevision !== null && board) boardRevisionsRef.current.set(board.id, conflictRevision);
       setConflict(false);
       setError(null);
       void retry();
     }
-  }, [conflictRevision, reloadBoard, retry, setError]);
+  }, [board, conflictRevision, reloadBoard, retry, setError]);
 
   const handleSaveRetry = useCallback(() => {
     if (conflict) {

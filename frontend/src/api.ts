@@ -172,9 +172,13 @@ export interface CreativeBoardMutationResponse {
 
 export function isCreativeBoardRevisionConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
-  const value = error as { status?: unknown; status_code?: unknown; response?: { status?: unknown }; detail?: unknown };
-  const status = value.status ?? value.status_code ?? value.response?.status;
-  if (status === 409) return true;
+  const value = error as { detail?: unknown };
+  // 只认 revision conflict 本身：409 还承载其它域错误（如 creative_context 的
+  // creative_board_not_found），裸按状态码判定会把它们误弹成「同名文件已存在」。
+  if (value.detail && typeof value.detail === "object") {
+    const code = (value.detail as Record<string, unknown>).code;
+    if (code === "creative_board_revision_conflict") return true;
+  }
   const detail = typeof value.detail === "string" ? value.detail : JSON.stringify(value.detail ?? "");
   const message = error instanceof Error ? error.message : "";
   return detail.includes("creative_board_revision_conflict") || detail.includes("revision_conflict") || message.includes("creative_board_revision_conflict") || message.includes("revision conflict");
@@ -472,11 +476,13 @@ const API_BASE = "/api/v1";
 
 class ApiHttpError extends Error {
   readonly status: number;
+  readonly detail?: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.name = "ApiHttpError";
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -490,7 +496,7 @@ async function throwIfNotOk(response: Response, fallbackMsg: string): Promise<vo
     const error = await response
       .json()
       .catch(() => ({ detail: response.statusText })) as ErrorResponse;
-    throw new ApiHttpError(response.status, errorDetailMessage(error.detail, fallbackMsg));
+    throw new ApiHttpError(response.status, errorDetailMessage(error.detail, fallbackMsg), error.detail);
   }
 }
 
@@ -708,7 +714,7 @@ class API {
       if (isAgentFailureDetail(error.detail)) {
         throw new AgentFailureError(error.detail.message, error.detail.failure);
       }
-      throw new Error(errorDetailMessage(error.detail, "请求失败"));
+      throw new ApiHttpError(response.status, errorDetailMessage(error.detail, "请求失败"), error.detail);
     }
 
     if (response.status === 204) {

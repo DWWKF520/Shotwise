@@ -25,6 +25,8 @@ vi.mock("@/api", () => ({
   API: {
     listCreativeBoards: vi.fn(),
     getCreativeBoard: vi.fn(),
+    createCreativeBoard: vi.fn(),
+    updateCreativeBoard: vi.fn(),
     getProject: vi.fn(),
     getGlobalAssetUrl: vi.fn((path: string) => path),
     getFileUrl: vi.fn((project: string, path: string) => `/${project}/${path}`),
@@ -807,5 +809,51 @@ describe("CreativeBoardWorkspace", () => {
     });
     await waitFor(() => expect(screen.getAllByText("item-b").length).toBeGreaterThan(0));
     expect(screen.queryByText("item-a")).not.toBeInTheDocument();
+  });
+
+  it("falls back to an existing board when the URL board no longer exists", async () => {
+    vi.mocked(API.getCreativeBoard)
+      .mockRejectedValueOnce({ status: 404, message: "creative_board_not_found" } as never);
+
+    render(
+      <Router hook={memoryLocation({ path: "/creative-board?project=demo&board=board-gone" }).hook}>
+        <Route path="/creative-board">
+          <CreativeBoardWorkspace projectName="demo" />
+        </Route>
+      </Router>,
+    );
+
+    expect((await screen.findAllByText("item-a")).length).toBeGreaterThan(0);
+  });
+
+  it("renames a newly created board with expected_revision and applies the returned revision", async () => {
+    vi.mocked(API.getCreativeBoard).mockImplementation((boardId: string) =>
+      (boardId === "board-new"
+        ? makeBoard("board-new", "item-new", "New Canvas")
+        : makeBoard("board-a", "item-a", "Canvas A")) as never);
+    vi.mocked(API.createCreativeBoard).mockResolvedValue(makeBoard("board-new", "item-new", "New Canvas") as never);
+    vi.mocked(API.updateCreativeBoard).mockResolvedValue({ revision: 2 } as never);
+
+    render(
+      <Router hook={memoryLocation({ path: "/creative-board?project=demo&board=board-a" }).hook}>
+        <Route path="/creative-board">
+          <CreativeBoardWorkspace projectName="demo" />
+        </Route>
+      </Router>,
+    );
+
+    await screen.findByText("Canvas A");
+    act(() => screen.getByRole("button", { name: "creative_board_switch" }).click());
+    act(() => screen.getByRole("button", { name: "creative_board_add" }).click());
+
+    const input = await screen.findByLabelText("creative_board_name_input");
+    expect(input).toHaveValue("New Canvas");
+    fireEvent.change(input, { target: { value: "Renamed canvas" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(API.updateCreativeBoard).toHaveBeenCalledWith("board-new", {
+      name: "Renamed canvas",
+      expected_revision: 1,
+    }));
   });
 });
